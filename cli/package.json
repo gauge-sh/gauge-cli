@@ -1,0 +1,52 @@
+{
+  "name": "@withgauge/cli",
+  "version": "1.0.0",
+  "description": "Gauge CLI: hillclimbing to make something agents want",
+  "private": false,
+  "author": "Gauge <support@withgauge.com> (https://withgauge.com)",
+  "license": "MIT",
+  "type": "module",
+  "homepage": "https://agents.withgauge.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gauge-sh/gauge-cli.git",
+    "directory": "cli"
+  },
+  "bugs": {
+    "url": "https://github.com/gauge-sh/gauge-cli/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "bin": {
+    "gauge": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx src/index.ts",
+    "prepublishOnly": "node scripts/validate-release.mjs",
+    "release:validate": "node scripts/validate-release.mjs",
+    "test": "tsx --test src/**/*.test.ts scripts/*.test.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "commander": "^15.0.0",
+    "minimatch": "^10.2.6",
+    "tar": "^7.5.22",
+    "yaml": "^2.9.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "tsup": "^8.5.1",
+    "tsx": "^4.22.4",
+    "typescript": "^5"
+  }
+}

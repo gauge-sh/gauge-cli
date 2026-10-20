@@ -1,0 +1,53 @@
+name: Publish local execution
+
+on:
+  push:
+    tags: ["local-execution-v*"]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-local-execution
+  cancel-in-progress: false
+
+env:
+  GAUGE_TELEMETRY_DISABLED: "1"
+jobs:
+  publish:
+    if: github.repository == 'gauge-sh/gauge-cli'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require a release commit on main
+        run: git merge-base --is-ancestor HEAD origin/main
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+      - run: npm install -g npm@^11.5.1
+      - run: 'npm --version && echo "id-token: ${ACTIONS_ID_TOKEN_REQUEST_URL:+present}"'
+      - name: Validate release metadata before building
+        run: npm run release:validate:local -- "$GITHUB_REF_NAME"
+      - run: npm ci
+      - run: npm ci --prefix cli
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npm test
+      - name: Pack and test the exact release artifact
+        run: node scripts/test-local-package.mjs --pack-destination "$RUNNER_TEMP/local-execution-release"
+      - name: Revalidate release metadata
+        run: npm run release:validate:local -- "$GITHUB_REF_NAME"
+      - name: Select OIDC authentication
+        run: |
+          npmrc="${NPM_CONFIG_USERCONFIG:-$HOME/.npmrc}"
+          if [ -f "$npmrc" ]; then sed -i '/_authToken/d' "$npmrc"; fi
+          npm config set registry https://registry.npmjs.org/
+      - name: Publish public package
+        run: npm publish "$RUNNER_TEMP/local-execution-release/"*.tgz --access public --provenance

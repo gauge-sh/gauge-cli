@@ -1,0 +1,40 @@
+{
+  "name": "@withgauge/agent-adapters",
+  "version": "0.2.0",
+  "private": false,
+  "description": "Portable adapters that translate coding agents' native protocols into consistent events and session state",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gauge-sh/gauge-cli.git",
+    "directory": "packages/agent-adapters"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./native": {
+      "types": "./dist/native.d.ts",
+      "default": "./dist/native.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
+    "prepublishOnly": "node ../../scripts/validate-agent-adapters-release.mjs"
+  }
+}

@@ -1,0 +1,3 @@
+#!/bin/sh
+CLI="$(cd "$(dirname "$0")/.." && pwd -P)"
+exec "$CLI/node_modules/.bin/tsx" --tsconfig "$CLI/tsconfig.json" "$CLI/src/index.ts" "$@"

@@ -1,0 +1,40 @@
+{
+  "name": "@withgauge/local-execution",
+  "version": "0.1.0",
+  "private": false,
+  "description": "Host-operated agent sessions in a single local Docker container",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "image"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:docker": "GAUGE_DOCKER_TESTS=1 vitest run test/docker.it.test.ts",
+    "prepack": "npm run build",
+    "prepublishOnly": "node ../../scripts/validate-local-execution-release.mjs"
+  },
+  "dependencies": {
+    "@withgauge/agent-adapters": "0.2.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gauge-sh/gauge-cli.git",
+    "directory": "packages/local"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}

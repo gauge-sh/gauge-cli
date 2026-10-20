@@ -1,0 +1,182 @@
+name: Publish public runtime
+on:
+  push:
+    tags: ["runtime-v*"]
+permissions:
+  contents: read
+  packages: write
+concurrency:
+  group: publish-public-runtime
+  cancel-in-progress: false
+jobs:
+  native:
+    if: github.repository == 'gauge-sh/gauge-cli'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require a release commit on main
+        run: git merge-base --is-ancestor HEAD origin/main
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - run: node scripts/validate-runtime-release.mjs --bootstrap "$GITHUB_REF_NAME"
+      - id: runtime
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          echo "image=$(node -p 'const m=require("./cli/runtime-manifest.json"); `${m.repository}:${m.version}-${process.env.ARCH}`')" >> "$GITHUB_OUTPUT"
+          echo "tag=$(node -p 'require("./cli/runtime-manifest.json").version + "-" + process.env.ARCH')" >> "$GITHUB_OUTPUT"
+      - run: npm ci
+      - run: npm ci --prefix cli
+      - run: npm run check
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Check immutable platform version
+        id: existing
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.runtime.outputs.tag }}
+        run: node scripts/runtime-tag.mjs "$TAG" >> "$GITHUB_OUTPUT"
+      - name: Reuse only the same source revision on retry
+        if: steps.existing.outputs.exists == 'true'
+        env:
+          IMAGE: ${{ steps.runtime.outputs.image }}
+        run: |
+          docker pull "$IMAGE"
+          revision=$(docker image inspect "$IMAGE" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')
+          test "$revision" = "$GITHUB_SHA" || { echo 'Runtime version exists for another source revision; bump the version.' >&2; exit 1; }
+      - name: Build the native candidate
+        if: steps.existing.outputs.exists == 'false'
+        env:
+          IMAGE: ${{ steps.runtime.outputs.image }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          docker build --provenance=false --platform "linux/$ARCH" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            -t "$IMAGE" packages/local/image
+      - name: Require a native Linux image
+        env:
+          IMAGE: ${{ steps.runtime.outputs.image }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          test "$(docker version --format '{{.Server.Os}}/{{.Server.Arch}}')" = "linux/$ARCH"
+          test "$(docker image inspect "$IMAGE" --format '{{.Os}}/{{.Architecture}}')" = "linux/$ARCH"
+      - name: Qualify harness executables and arbitrary host UID
+        env:
+          IMAGE: ${{ steps.runtime.outputs.image }}
+        run: bash scripts/test-runtime-image.sh "$IMAGE"
+      - name: Qualify session lifecycle without provider credentials
+        env:
+          IMAGE: ${{ steps.runtime.outputs.image }}
+        run: |
+          docker tag "$IMAGE" gauge-runtime:dev
+          docker build -t gauge-session-fixture:test packages/local/test/runtime-fixture
+          GAUGE_DOCKER_FIXTURES=1 npm exec -- vitest run packages/local/test/lifecycle.it.test.ts
+      - name: Publish the qualified native image
+        if: steps.existing.outputs.exists == 'false'
+        env:
+          IMAGE: ${{ steps.runtime.outputs.image }}
+        run: docker push "$IMAGE"
+      - name: Record native digest and source revision
+        env:
+          IMAGE: ${{ steps.runtime.outputs.image }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          repository=$(node -p 'require("./cli/runtime-manifest.json").repository')
+          docker image inspect "$IMAGE" | jq --arg repo "$repository" --arg platform "linux/$ARCH" '.[0] | {
+            platform: $platform,
+            digest: ([.RepoDigests[] | select(startswith($repo + "@"))][0] | split("@")[1]),
+            revision: .Config.Labels["org.opencontainers.image.revision"]
+          }' > "$RUNNER_TEMP/$ARCH.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-${{ matrix.arch }}
+          path: ${{ runner.temp }}/${{ matrix.arch }}.json
+  index:
+    needs: native
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: runtime-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/native-images
+      - name: Publish or verify immutable multi-platform index
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/publish-runtime-index.mjs "$RUNNER_TEMP/native-images"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: candidate-runtime-manifest
+          path: cli/runtime-manifest.json
+  consumer:
+    needs: index
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: candidate-runtime-manifest
+          path: cli
+      - run: node scripts/validate-runtime-release.mjs
+      - run: npm ci
+      - run: npm ci --prefix cli
+      - run: npm run build
+      - name: Verify anonymous native pull and clean public npm consumer
+        run: node scripts/test-runtime-consumer.mjs --pull
+  qualified:
+    needs: consumer
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: candidate-runtime-manifest
+          path: runtime
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qualified-runtime-manifest
+          path: runtime/runtime-manifest.json
+      - name: Require reviewed CLI pin
+        run: echo 'Commit the qualified manifest in a reviewed PR before creating a CLI release. This workflow does not publish npm.'

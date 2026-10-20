@@ -1,0 +1,27 @@
+{
+  "name": "gauge-cli-workspace",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "build": "npm run build --workspaces && npm run build --prefix cli",
+    "typecheck": "tsc -p tsconfig.test.json --noEmit && npm run typecheck --prefix cli",
+    "test": "npm run test:release && vitest run packages && npm test --prefix cli",
+    "test:release": "node --test scripts/validate-agent-adapters-release.test.mjs scripts/validate-local-execution-release.test.mjs scripts/validate-runtime-release.test.mjs scripts/runtime-tag.test.mjs scripts/publish-runtime-index.test.mjs",
+    "release:validate": "node scripts/validate-agent-adapters-release.mjs",
+    "test:package": "npm run build && node scripts/test-package.mjs && node scripts/test-local-package.mjs && node scripts/test-cli-package.mjs",
+    "check": "npm run build && npm run typecheck && npm test && node scripts/test-package.mjs && node scripts/test-local-package.mjs && node scripts/test-cli-package.mjs",
+    "release:validate:local": "node scripts/validate-local-execution-release.mjs",
+    "release:validate:runtime": "node scripts/validate-runtime-release.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.43",
+    "typescript": "5.9.3",
+    "vitest": "3.2.6"
+  }
+}

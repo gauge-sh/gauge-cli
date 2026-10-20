@@ -1,0 +1,42 @@
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import test from "node:test";
+
+test("packaged local profile commands manage references without an account", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "gauge-profile-cli-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const cli = fileURLToPath(new URL("../../dist/index.js", import.meta.url));
+  const invoke = (...args: string[]) => {
+    const r = spawnSync(process.execPath, [cli, ...args, "-o", "json"], { encoding: "utf8", env: { ...process.env, XDG_CONFIG_HOME: root, GAUGE_API_TOKEN: "", GAUGE_TELEMETRY: "0", TEST_KEY: "private-test-key" }, timeout: 15_000 });
+    assert.ok(!`${r.stdout}${r.stderr}`.includes("private-test-key"));
+    return r;
+  };
+  const args = ["local", "profiles", "set", "work", "--agent", "CODEX_CLI", "--provider", "openai", "--auth", "api_key", "--env", "TEST_KEY"];
+  assert.equal(invoke(...args).status, 0);
+  assert.notEqual(invoke(...args).status, 0);
+  assert.equal(invoke(...args, "--replace").status, 0);
+  assert.equal(invoke("local", "profiles", "use", "work").status, 0);
+  const listed = JSON.parse(invoke("local", "profiles", "list").stdout);
+  assert.equal(listed[0].active, true);
+  const inspection = invoke("local", "profiles", "inspect", "work", "--model", "gpt-custom");
+  assert.equal(inspection.status, 0, inspection.stderr);
+  assert.equal(JSON.parse(inspection.stdout).profile.source, "env:TEST_KEY");
+  assert.equal(JSON.parse(inspection.stdout).model, "gpt-custom");
+  assert.equal(invoke("local", "profiles", "set", "router", "--agent", "PI", "--provider", "openrouter", "--auth", "api_key", "--env", "TEST_KEY").status, 0);
+  const needsModel = invoke("local", "profiles", "inspect", "router");
+  assert.notEqual(needsModel.status, 0);
+  assert.match(needsModel.stderr, /Specify --model openrouter/);
+  assert.equal(invoke("local", "profiles", "inspect", "router", "--model", "openrouter/example/model").status, 0);
+  assert.equal(invoke("local", "profiles", "remove", "router").status, 0);
+  const hosted = invoke("run", "--hosted", "--profile", "work", "--dry-run");
+  assert.notEqual(hosted.status, 0);
+  assert.match(hosted.stderr, /only to local/);
+  const removal = invoke("local", "profiles", "remove", "work");
+  assert.equal(removal.status, 0);
+  assert.deepEqual(JSON.parse(removal.stdout).clearedDefaults, ["CODEX_CLI"]);
+  assert.deepEqual(JSON.parse(readFileSync(join(root, "gauge/local-profiles.json"), "utf8")).profiles, {});
+});

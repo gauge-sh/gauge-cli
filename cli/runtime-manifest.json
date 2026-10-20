@@ -1,0 +1,11 @@
+{
+  "version": "0.1.1",
+  "repository": "ghcr.io/gauge-sh/gauge-runtime",
+  "digest": "sha256:9ec2f9303b216f38abf3d8e9d021e09ced3a11d0bae613c4b2d20ea0d63c5bbd",
+  "contract": "1",
+  "platforms": [
+    "linux/amd64",
+    "linux/arm64"
+  ],
+  "revision": "4eab2011a7c2df4c1b909cb0dc05b31475f2b63e"
+}
