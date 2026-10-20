@@ -9,6 +9,10 @@
   `gauge.json` and cases.
 - A files glob into `.gauge/` (or another excluded directory) names the
   exclusion. A glob with no match says "No files match", not "No committed files".
+- A local run that fails because the agent exits shows the agent's last stderr
+  line and prints the path to `agent.stderr.log`.
+- A local run stopped because the agent asked a question says so. Before, it
+  showed `canceled` with no reason.
 - `gauge run` rejects a repeated `--eval` or `--preference`. Before, it kept
   only the last id.
 

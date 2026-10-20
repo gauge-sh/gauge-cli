@@ -60,6 +60,17 @@ export async function localSessions(gaugeDir: string) {
   return sessions;
 }
 
+async function resultDetail(directory: string): Promise<string | undefined> {
+  try {
+    const result = JSON.parse(
+      await readFile(join(directory, "..", "result.json"), "utf8"),
+    );
+    return typeof result.detail === "string" ? result.detail : undefined;
+  } catch {
+    return;
+  }
+}
+
 function stderrLog(directory: string, state: string): string | undefined {
   if (state !== "failed") return;
   const path = join(directory, "agent.stderr.log");
@@ -89,7 +100,7 @@ export async function localStatus(
           state: status.state,
           turns: status.turn,
           cleanupPending: status.cleanupPending ?? false,
-          detail: status.detail,
+          detail: status.detail ?? (await resultDetail(session.directory)),
           stderrLog: stderrLog(session.directory, status.state),
         };
       } catch (error) {

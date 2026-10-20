@@ -52,5 +52,15 @@ test("discovery ignores linked runs and malformed records; failed preparation st
     (await localStatus(root))[0].stderrLog,
     join(attempt, "session/agent.stderr.log"),
   );
+  await writeFile(
+    join(attempt, "session/session.json"),
+    JSON.stringify({ version: 1, socketPath: join(root, "absent.sock") }),
+  );
+  await writeFile(
+    join(attempt, "session/status.json"),
+    JSON.stringify({ state: "canceled", turn: 1 }),
+  );
+  assert.equal((await localStatus(root))[0].detail, "no credentials");
+  await rm(join(attempt, "session"), { recursive: true });
   assert.deepEqual(await cleanupLocal(root), []);
 });

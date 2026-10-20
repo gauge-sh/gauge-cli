@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- A session that fails because the agent exits names the agent's last stderr
+  line: `agent connection exited (1): <line>`.
+
 - Authenticate Codex's app-server with the mounted OpenAI API key before starting
   a local session.
 
