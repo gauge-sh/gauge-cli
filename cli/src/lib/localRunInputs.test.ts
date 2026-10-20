@@ -78,6 +78,8 @@ test("submits current definitions and an uploaded skill without Git or a GitHub 
     source: "override",
     path: join(root, "built"),
     gaugeArchive: { sha256: first.sha256, bytes: first.bytes },
+    files: ["SKILL.md"],
+    fileCount: 1,
   }]);
   await writeFile(join(root, "built", "SKILL.md"), "changed");
   const changed = await loadLocalRunDefinition([], ["product=./built"], root);
@@ -191,6 +193,8 @@ test("both backends snapshot dirty manifests, changed and untracked cases, and s
       source: "working-tree",
       path: root,
       gaugeArchive: { sha256: loaded.uploads[0].sha256, bytes: loaded.uploads[0].bytes },
+      files: ["docs/guide.md", "docs/new.md"],
+      fileCount: 2,
     }]);
     assert.deepEqual(await archiveContents(loaded.uploads[0].path), {
       "docs/guide.md": "Edited guide",
@@ -434,6 +438,7 @@ test("an unused website input does not block a local case selecting project file
   const loaded = await loadLocalRunDefinition([], [], root, { local: true });
   t.after(loaded.cleanup);
   assert.deepEqual(loaded.definition.resources.map((input) => input.name), ["product"]);
+  assert.deepEqual(loaded.unattachedInputs, ["website"]);
   assert.deepEqual(Object.keys(await archiveContents(loaded.uploads[0].path)), ["built/SKILL.md"]);
 });
 
@@ -455,6 +460,8 @@ test("snapshot provenance identifies repacked bytes at the same npm input path",
         source: "working-tree",
         path,
         gaugeArchive: { sha256: loaded.uploads[0].sha256, bytes: loaded.uploads[0].bytes },
+        files: ["product-1.0.0.tgz"],
+        fileCount: 1,
       }]);
       assert.deepEqual(await archiveContents(loaded.uploads[0].path), {
         "product-1.0.0.tgz": content,

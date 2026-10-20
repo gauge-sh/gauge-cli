@@ -282,9 +282,11 @@ working-tree definitions in either backend, including uncommitted edits. Selecte
 filesystem inputs are packaged for local execution or hosted upload; explicit remote
 artifacts retain their declared source. GitHub checks fetch committed definitions.
 Content digests identify the exact bytes separately from Git provenance.
-Preview `inputSnapshots` includes the selected source `path` and
-`gaugeArchive: { sha256, bytes }`. Those values describe Gauge's delivery archive,
-which contains the selected files. For npm inputs it contains the `.tgz`; the raw
+Preview `inputSnapshots` includes the selected source `path`,
+`gaugeArchive: { sha256, bytes }`, and the archived `files` (the first 100) with
+`fileCount`. Those values describe Gauge's delivery archive, which contains the
+selected files. `unattachedInputs` names the `gauge.json` inputs that the launch
+leaves out. For npm inputs it contains the `.tgz`; the raw
 tarball has a different hash and size. Each launch takes a fresh snapshot.
 Each case owns its agents, models, consumer repository/ref, Persona and criteria.
 The optional `config.inputs` selects named inputs; all attach by default.

@@ -469,6 +469,7 @@ async function loadWorkingTree(
   definition: runDefinitions.RunDefinitionSubmission;
   org: string;
   inputSnapshots: InputSnapshot[];
+  unattachedInputs: string[];
 }> {
   const loaded = await loadLocalRunDefinition(
     opts.files ?? [],
@@ -484,6 +485,7 @@ async function loadWorkingTree(
       definition: loaded.definition,
       org,
       inputSnapshots: loaded.inputSnapshots,
+      unattachedInputs: loaded.unattachedInputs,
     };
   } finally {
     await loaded.cleanup();
@@ -493,6 +495,7 @@ async function loadWorkingTree(
 function printPlan(
   result: runDefinitions.RunDefinitionPlanResponse & {
     inputSnapshots: InputSnapshot[];
+    unattachedInputs: string[];
   },
 ): void {
   console.log(
@@ -532,6 +535,7 @@ function printPlan(
       console.log("Resolve the input errors before launching.");
   }
   printInputSnapshots(result.inputSnapshots);
+  printUnattachedInputs(result.unattachedInputs, false);
 }
 
 function printInputSnapshots(snapshots: InputSnapshot[]): void {
@@ -540,6 +544,10 @@ function printInputSnapshots(snapshots: InputSnapshot[]): void {
       `  ${input.name}: ${input.source === "working-tree" ? "working-tree snapshot" : "local path override snapshot"}`,
     );
     console.log(`    Source path: ${input.path}`);
+    const shown = input.files.slice(0, 10);
+    console.log(
+      `    Files (${input.fileCount}): ${shown.join(", ")}${input.fileCount > shown.length ? `, and ${input.fileCount - shown.length} more` : ""}`,
+    );
     console.log(`    Gauge archive digest: ${input.gaugeArchive.sha256}`);
     console.log(`    Gauge archive bytes: ${input.gaugeArchive.bytes}`);
   }
@@ -547,6 +555,18 @@ function printInputSnapshots(snapshots: InputSnapshot[]): void {
     console.log(
       "Gauge archive hashes identify delivery archives containing the selected files. For npm inputs, the archive contains the .tgz; its hash and size differ from the .tgz itself. Launching again snapshots current files.",
     );
+}
+
+function unattachedNote(names: string[], saved: boolean): string {
+  return `Not attached: ${names.join(", ")}. ${
+    saved
+      ? `Saved measurements attach only inputs passed at launch; add ${names.map((name) => `--input ${name}`).join(" ")} to attach.`
+      : `The selected cases do not use ${names.length === 1 ? "it" : "them"}.`
+  }`;
+}
+
+function printUnattachedInputs(names: string[], saved: boolean): void {
+  if (names.length) console.log(unattachedNote(names, saved));
 }
 
 async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
@@ -690,7 +710,8 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
     await runLocalCases(cmd, opts, spec);
     return;
   }
-  const { definition, org, inputSnapshots } = await loadWorkingTree(
+  const { definition, org, inputSnapshots, unattachedInputs } =
+    await loadWorkingTree(
     cmd,
     opts,
     !opts.dryRun,
@@ -703,7 +724,7 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
         `${orgPath}/plan`,
         definition,
       );
-    const preview = { ...result, inputSnapshots };
+    const preview = { ...result, inputSnapshots, unattachedInputs };
     if (resolveOutput(cmd) === "json") printJson(preview);
     else printPlan(preview);
     return;
@@ -746,6 +767,8 @@ async function runLocalCases(
     { local: true, spec },
   );
   const json = resolveOutput(cmd) === "json";
+  if (measurement && local.unattachedInputs.length && !opts.dryRun)
+    console.error(`note: ${unattachedNote(local.unattachedInputs, true)}`);
   if (opts.dryRun) {
     try {
       const plan = {
@@ -754,9 +777,10 @@ async function runLocalCases(
           runtimeImage: opts.runtimeImage,
         })),
         inputSnapshots: local.inputSnapshots,
+        unattachedInputs: local.unattachedInputs,
       };
       if (json) printJson(plan);
-      else printLocalPlan(plan);
+      else printLocalPlan(plan, measurement !== undefined);
     } finally {
       await local.cleanup();
     }
@@ -829,7 +853,11 @@ async function runLocalCases(
 }
 
 function printLocalPlan(
-  plan: LocalPlan & { inputSnapshots: InputSnapshot[] },
+  plan: LocalPlan & {
+    inputSnapshots: InputSnapshot[];
+    unattachedInputs: string[];
+  },
+  saved: boolean,
 ): void {
   console.log(
     `Local plan: ${plan.expectedSessions} session${plan.expectedSessions === 1 ? "" : "s"} in local Docker. Nothing started.`,
@@ -845,6 +873,7 @@ function printLocalPlan(
     `Inputs: ${plan.inputs.map((i) => `${i.name} (${i.use})`).join(", ") || "none"}`,
   );
   printInputSnapshots(plan.inputSnapshots);
+  printUnattachedInputs(plan.unattachedInputs, saved);
   for (const warning of plan.warnings) console.log(`Warning: ${warning}`);
   console.log("Run it: the same command without --dry-run.");
 }

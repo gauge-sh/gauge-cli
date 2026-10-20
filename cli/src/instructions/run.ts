@@ -1,4 +1,4 @@
-const SNAPSHOTS = `Preview JSON separates the source \`path\` from \`gaugeArchive\` hash/bytes in \`inputSnapshots\`. The Gauge delivery archive contains the selected files; for npm it contains the .tgz, so its hash/size differ from the raw .tgz. Launch takes a fresh snapshot; preview does not reserve bytes or prove an eval passed.`;
+const SNAPSHOTS = `Preview JSON separates the source \`path\` from \`gaugeArchive\` hash/bytes in \`inputSnapshots\`, and lists the archived \`files\` (first 100) with \`fileCount\`; check them before launching. \`unattachedInputs\` names gauge.json inputs this launch leaves out. The Gauge delivery archive contains the selected files; for npm it contains the .tgz, so its hash/size differ from the raw .tgz. Launch takes a fresh snapshot; preview does not reserve bytes or prove an eval passed.`;
 
 export const RUN = `---
 name: gauge-run

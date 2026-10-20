@@ -19,6 +19,14 @@
 - An `--input` path inside `.gauge/` or another excluded directory is rejected,
   as configured globs already were.
 
+### Added
+
+- Previews list each input's archived files: `files` (the first 100) and
+  `fileCount` in `inputSnapshots`, and up to 10 names in text output.
+- Previews name the `gauge.json` inputs a launch leaves out (`unattachedInputs`).
+  A saved eval or preference launch notes them and shows the `--input` flags
+  that attach them.
+
 ### Fixed
 
 - Input directories skip symlinks and special files instead of failing on them.

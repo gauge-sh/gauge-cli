@@ -54,7 +54,12 @@ export type InputSnapshot = {
   source: "working-tree" | "override";
   path: string;
   gaugeArchive: { sha256: string; bytes: number };
+  /** Archive paths, capped at SNAPSHOT_FILES; fileCount is the full count. */
+  files: string[];
+  fileCount: number;
 };
+
+const SNAPSHOT_FILES = 100;
 
 /** Maps each `--input name[=path]` to its override path, or undefined to use gauge.json. */
 export function parseInputBindings(
@@ -241,7 +246,11 @@ export async function packLocalInput(
   supplied: string,
   output: string,
   { override = false }: { override?: boolean } = {},
-): Promise<{ use: RunPlanResource["use"]; upload: LocalUpload }> {
+): Promise<{
+  use: RunPlanResource["use"];
+  upload: LocalUpload;
+  files: string[];
+}> {
   if (resource.use.type === "website")
     throw new CliError(
       "usage",
@@ -304,6 +313,7 @@ export async function packLocalInput(
   return {
     use,
     upload: { path: output, bytes, sha256: `sha256:${hash.digest("hex")}` },
+    files,
   };
 }
 
@@ -421,6 +431,9 @@ export async function loadLocalRunDefinition(
       origin && uncredentialedRepoUrlSchema.safeParse(origin).success
         ? origin
         : null;
+    const unattachedInputs = Object.keys(config.inputs).filter(
+      (name) => !selected.has(name),
+    );
     const resources: RunPlanResource[] = [];
     const uploads: LocalUpload[] = [];
     const inputSnapshots: InputSnapshot[] = [];
@@ -447,7 +460,7 @@ export async function loadLocalRunDefinition(
           ? workingTreeInput(root, name, input)
           : undefined);
       if (supplied !== undefined) {
-        const { use, upload } = await packLocalInput(
+        const { use, upload, files } = await packLocalInput(
           original,
           resolve(cwd, supplied),
           join(directory, `${name}.tar.gz`),
@@ -459,6 +472,8 @@ export async function loadLocalRunDefinition(
           source: override !== undefined ? "override" : "working-tree",
           path: resolve(cwd, supplied),
           gaugeArchive: { sha256: upload.sha256, bytes: upload.bytes },
+          files: files.slice(0, SNAPSHOT_FILES),
+          fileCount: files.length,
         });
         resources.push({
           ...original,
@@ -502,6 +517,7 @@ export async function loadLocalRunDefinition(
         }),
         uploads,
         inputSnapshots,
+        unattachedInputs,
         cleanup,
       };
     const definition: RunDefinitionSubmission = {
@@ -516,7 +532,14 @@ export async function loadLocalRunDefinition(
       cases: parsed,
     };
     if (!local) runDefinitionSubmissionSchema.parse(definition);
-    return { definition, org: config.org, uploads, inputSnapshots, cleanup };
+    return {
+      definition,
+      org: config.org,
+      uploads,
+      inputSnapshots,
+      unattachedInputs,
+      cleanup,
+    };
   } catch (error) {
     await cleanup();
     if (error instanceof CliError || !(error instanceof Error)) throw error;
