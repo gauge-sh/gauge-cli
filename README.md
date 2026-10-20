@@ -25,6 +25,21 @@ API keys. **No Gauge account required.**
 [npm](https://www.npmjs.com/package/@withgauge/cli) ·
 [Changelog](cli/CHANGELOG.md)
 
+## What does Gauge find?
+
+Gauge runs and analyzes coding sessions to find the issues that coding agents run into.
+
+Common findings include:
+
+- An interactive command blocks a coding agent
+- An agent reaches for deprecated commands or outdated API patterns
+- A Skill goes unused even when it should help with the task
+- An agent confidently claims a limitation that does not exist
+- An agent cannot figure out the intended workflow across multiple commands
+
+The right fix might change error messages, Skill content, help text, code,
+or documentation. The Gauge CLI lets you validate proposed fixes before release.
+
 ## Quickstart
 
 Gauge is designed to be used by your coding agent. Point it at this repository
@@ -97,19 +112,6 @@ artifacts in the test sessions, so you can validate a fix before publishing it.
 
 The CLI handles execution and evidence collection. In local mode, your coding agent authors
 the changes and analyzes the local results.
-
-## What can Gauge find?
-
-Common findings include:
-
-- An interactive command blocks a coding agent
-- An agent reaches for deprecated commands or outdated API patterns
-- A Skill goes unused even when it should help with the task
-- An agent confidently claims a limitation that does not exist
-- An agent cannot figure out the intended workflow across multiple commands
-
-The right fix might be code, command behavior, error messages, Skill discovery,
-or documentation. The Gauge CLI lets you validate proposed fixes before release.
 
 ## A closer look at an eval
 
