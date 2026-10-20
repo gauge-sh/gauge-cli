@@ -261,6 +261,26 @@ test("case discovery uses the nearest manifest in a nested Git workspace", async
   assert.equal(loaded.definition.source.commit, null);
 });
 
+test("reads a workspace inside a Git-ignored directory", async (t) => {
+  const root = await fixture(t);
+  const nested = join(root, ".gauge", "docs-test");
+  await mkdir(join(nested, "gauge-cases"), { recursive: true });
+  await writeFile(
+    join(nested, "gauge.json"),
+    JSON.stringify({ version: 2, org: "ignored-org", inputs: {} }),
+  );
+  await writeFile(join(nested, "gauge-cases", "nested.md"), prompt);
+  await writeFile(join(root, ".gitignore"), ".gauge/\n");
+  execFileSync("git", ["init", "-q"], { cwd: root });
+  const loaded = await loadLocalRunDefinition([], [], nested);
+  t.after(loaded.cleanup);
+  assert.equal(loaded.org, "ignored-org");
+  assert.deepEqual(
+    loaded.definition.cases.map((item) => item.path),
+    ["gauge-cases/nested.md"],
+  );
+});
+
 test("accepts standalone and symlinked workspace case globs in deterministic order", async (t) => {
   const root = await fixture(t);
   await rm(join(root, "gauge.json"));
@@ -472,9 +492,36 @@ test("selects files relative to the supplied directory without credentials, depe
   });
   assert.deepEqual(paths, ["@literal", "SKILL.md"]);
   await symlink(join(root, "gauge.json"), join(dir, "link"));
+  const linked = await packLocalInput(
+    { ...resource, use: { type: "files", paths: ["SKILL.md"] } },
+    dir,
+    join(root, "linked.tar.gz"),
+  );
+  const linkedPaths: string[] = [];
+  await list({
+    file: linked.upload.path,
+    onReadEntry: (entry) => {
+      linkedPaths.push(entry.path.replace(/^\.\//, ""));
+    },
+  });
+  assert.deepEqual(linkedPaths, ["SKILL.md"]);
+  await mkdir(join(dir, ".gauge", "docs"), { recursive: true });
+  await writeFile(join(dir, ".gauge", "docs", "draft.md"), "draft");
   await assert.rejects(
-    packLocalInput(resource, dir, join(root, "bad.tar.gz")),
-    /link or special file/,
+    packLocalInput(
+      { ...resource, use: { type: "files", paths: [".gauge/docs/*.md"] } },
+      dir,
+      join(root, "gauge.tar.gz"),
+    ),
+    /\.gauge\/docs\/\*\.md is inside \.gauge, which inputs never include/,
+  );
+  await assert.rejects(
+    packLocalInput(
+      { ...resource, use: { type: "files", paths: ["missing/*.md"] } },
+      dir,
+      join(root, "missing.tar.gz"),
+    ),
+    /^CliError: Input product: No files match missing\/\*\.md$/,
   );
 });
 

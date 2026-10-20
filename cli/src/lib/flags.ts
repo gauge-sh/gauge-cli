@@ -14,6 +14,14 @@ export function collect(value: string, previous: string[]): string[] {
   return [...previous, value];
 }
 
+export function once(flag: string) {
+  return (value: string, previous?: string): string => {
+    if (previous !== undefined)
+      throw new CliError("usage", `${flag} takes one id; start one run per id`);
+    return value;
+  };
+}
+
 export function tagsFrom(opts: { tag: string[]; clear?: boolean }): string[] {
   if (opts.tag.length > 0 && opts.clear)
     throw new CliError("usage", "--tag and --clear conflict");

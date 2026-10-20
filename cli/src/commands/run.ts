@@ -55,7 +55,7 @@ import {
   resolveOutput,
 } from "../lib/context";
 import { runEvalSet } from "../lib/evalSets";
-import { collect, parseAgents } from "../lib/flags";
+import { collect, once, parseAgents } from "../lib/flags";
 import { gaugeState } from "../lib/gaugeState";
 import {
   type InputSnapshot,
@@ -972,8 +972,16 @@ export function register(program: Command): void {
     )
     .argument("[command]")
     .usage("[options] [command]")
-    .option("--eval <id>", "run a saved eval set (see `gauge eval`)")
-    .option("--preference <id>", "run a saved preference prompt")
+    .option(
+      "--eval <id>",
+      "run a saved eval set (see `gauge eval`)",
+      once("--eval"),
+    )
+    .option(
+      "--preference <id>",
+      "run a saved preference prompt",
+      once("--preference"),
+    )
     .option(
       "--scenario <scenarioId>",
       "with --preference: run only this scenario (repeatable)",

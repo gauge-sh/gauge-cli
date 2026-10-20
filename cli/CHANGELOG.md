@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Fixed
+
+- Input directories skip symlinks and special files instead of failing on them.
+- A workspace inside a Git-ignored directory, such as `.gauge/`, reads its own
+  `gauge.json` and cases.
+- A files glob into `.gauge/` (or another excluded directory) names the
+  exclusion. A glob with no match says "No files match", not "No committed files".
+- `gauge run` rejects a repeated `--eval` or `--preference`. Before, it kept
+  only the last id.
+
 ## 0.22.0 — 2026-10-20
 
 ### Removed

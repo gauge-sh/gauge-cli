@@ -39,6 +39,7 @@ import { type CaseSpec, caseSpecCases, caseSpecDigest } from "./caseSpec";
 import { type ApiClient, CliError } from "./client";
 import { noCasesError } from "./docs";
 import {
+  message,
   read,
   rootDirectory,
   skippedInputEntry,
@@ -114,13 +115,12 @@ export async function packLocalInput(
     for (const entry of await readdir(join(root, directory), {
       withFileTypes: true,
     })) {
-      if (skippedInputEntry(entry.name)) continue;
+      if (
+        skippedInputEntry(entry.name) ||
+        (!entry.isFile() && !entry.isDirectory())
+      )
+        continue;
       const next = directory ? `${directory}/${entry.name}` : entry.name;
-      if (entry.isSymbolicLink() || (!entry.isFile() && !entry.isDirectory()))
-        throw new CliError(
-          "usage",
-          `Input contains a link or special file: ${next}`,
-        );
       if (entry.isDirectory()) await walk(next);
       else paths.push(next);
       if (paths.length > 20_000)
@@ -129,10 +129,28 @@ export async function packLocalInput(
   };
   if (info.isDirectory()) await walk("");
   else paths.push(basename(path));
-  const selected =
+  const patterns =
     (use.type === "files" || use.type === "binary") && use.paths
-      ? matchInputPaths(paths, use.paths)
-      : paths.sort();
+      ? use.paths
+      : undefined;
+  for (const pattern of patterns ?? []) {
+    const skipped = pattern.split("/").find(skippedInputEntry);
+    if (skipped)
+      throw new CliError(
+        "usage",
+        `Input ${resource.name}: ${pattern} is inside ${skipped}, which inputs never include`,
+        { hint: `Move the files outside ${skipped} and update the glob.` },
+      );
+  }
+  let selected: string[];
+  try {
+    selected = patterns ? matchInputPaths(paths, patterns) : paths.sort();
+  } catch (error) {
+    throw new CliError(
+      "usage",
+      `Input ${resource.name}: ${message(error).replace("committed files", "files")}`,
+    );
+  }
   if (!selected.length)
     throw new CliError("usage", "Input contains no selected files");
   if (
