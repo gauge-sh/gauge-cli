@@ -140,7 +140,7 @@ export async function packLocalInput(
         "usage",
         `Input ${resource.name}: ${pattern} is inside .gauge/. Inputs never include .gauge/, because it holds run results and local config.`,
         {
-          hint: "Put private draft docs in another gitignored directory, then update the glob.",
+          hint: "Move the files outside .gauge/ and update the glob.",
         },
       );
     if (skipped)
