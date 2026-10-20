@@ -519,7 +519,7 @@ Canonical-site preview routing requires hosted execution. Local runs reject
 website inputs, including `--input` overrides, before checking Docker or credentials.
 For local content-only testing, supply docs as a `files` input or put a reachable
 preview URL directly in the prompt. Inputs never include `.gauge/`, so keep
-private draft docs in another gitignored directory, such as `gauge-drafts/`. Confirm that the preview contains the edits
+private draft docs in another gitignored directory. Confirm that the preview contains the edits
 and is reachable from the agent's environment; the host's localhost is not
 automatically reachable from a container. These alternatives change exposure and
 do not test discovery of the canonical docs. Static verification validates
