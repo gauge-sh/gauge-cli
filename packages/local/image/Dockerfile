@@ -8,6 +8,7 @@ RUN npm install -g \
       opencode-ai@1.18.30 \
       @earendil-works/pi-coding-agent@1.1.0 \
  && npm cache clean --force
+ENV NPM_CONFIG_PREFIX="/gauge/session/npm"
 ENV PATH="/gauge/session/npm/bin:${PATH}"
 COPY --chmod=0644 gauge-path.sh /etc/profile.d/gauge-path.sh
 RUN mkdir -p /gauge/session && chown node:node /gauge/session
