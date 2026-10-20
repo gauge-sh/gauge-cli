@@ -53,12 +53,6 @@ export function register(program: Command): void {
       .command("create")
       .description("Create an eval set")
       .requiredOption("--name <name>", "name")
-      .option(
-        "--input <name>",
-        "local: select a named project input (repeatable)",
-        collect,
-        [] as string[],
-      )
       .option("--text <text>", "prompt text inline")
       .option("--file <path>", 'prompt text from a file ("-" for stdin)')
       .option(
@@ -95,13 +89,6 @@ export function register(program: Command): void {
         "Update an eval set. Omitted flags keep their value. A criteria list REPLACES the whole set (use --criteria-file with ids to edit in place).",
       )
       .option("--name <name>", "rename it")
-      .option(
-        "--input <name>",
-        "local: replace selected project inputs (repeatable)",
-        collect,
-        [] as string[],
-      )
-      .option("--clear-inputs", "local: remove all project inputs")
       .option("--text <text>", "replace the prompt text inline")
       .option(
         "--file <path>",

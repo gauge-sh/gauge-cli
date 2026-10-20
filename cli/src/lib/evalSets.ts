@@ -158,7 +158,6 @@ export type EvalSetCreateOpts = OwnedConfigCreateOpts & {
   criterion: string[];
   criteriaFile?: string;
   tag: string[];
-  input?: string[];
 };
 
 export async function createEvalSet(
@@ -182,13 +181,8 @@ export async function createEvalSet(
     console.error(
       "note: no --repo — this eval set will run against the default Gauge scaffold, NOT your repository. Use `gauge eval edit <id> --repo <url>` to retarget.",
     );
-  if (!isLocal(cmd) && opts.input?.length)
-    throw new CliError(
-      "usage",
-      "Named project inputs on saved measurements are local-only; use a hosted case file for project inputs.",
-    );
   const created = isLocal(cmd)
-    ? createLocalMeasurement(cmd, "eval", { ...body, inputs: opts.input ?? [] })
+    ? createLocalMeasurement(cmd, "eval", body)
     : await createClient().post<EvalSet>(evalSetsPath(resolveOrg(cmd)), body);
   if (resolveOutput(cmd) === "json") printJson(created);
   else console.log(`Created eval set ${created.id}`);
@@ -202,8 +196,6 @@ export type EvalSetEditOpts = OwnedConfigEditOpts & {
   criteriaFile?: string;
   tag: string[];
   clearTags?: boolean;
-  input?: string[];
-  clearInputs?: boolean;
 };
 
 export async function editEvalSet(
@@ -224,24 +216,10 @@ export async function editEvalSet(
   if (opts.clearTags) body.tags = [];
   else if (opts.tag.length > 0) body.tags = opts.tag;
 
-  if (
-    Object.keys(body).length === 0 &&
-    !opts.input?.length &&
-    !opts.clearInputs
-  )
+  if (Object.keys(body).length === 0)
     throw new CliError("usage", "nothing to change");
-  const inputPatch = opts.clearInputs
-    ? { inputs: [] }
-    : opts.input?.length
-      ? { inputs: opts.input }
-      : {};
-  if (!isLocal(cmd) && (opts.clearInputs || opts.input?.length))
-    throw new CliError(
-      "usage",
-      "Named project inputs on saved measurements are local-only",
-    );
   const updated = isLocal(cmd)
-    ? editLocalMeasurement(cmd, "eval", id, { ...body, ...inputPatch })
+    ? editLocalMeasurement(cmd, "eval", id, body)
     : await createClient().patch<EvalSet>(
         evalSetPath(resolveOrg(cmd), id),
         body,

@@ -17,7 +17,7 @@ import { ApiClient } from "./client";
 import {
   loadLocalRunDefinition,
   packLocalInput,
-  parseInputOverrides,
+  parseInputBindings,
   uploadLocalInputs,
 } from "./localRunInputs";
 
@@ -525,17 +525,105 @@ test("selects files relative to the supplied directory without credentials, depe
   );
 });
 
+test("an override replaces configured files with a directory, file, or glob", async (t) => {
+  const root = await fixture(t);
+  const docs = { ...resource, use: { type: "files" as const, paths: ["docs/**/*.md"] } };
+  await mkdir(join(root, "draft", "nested"), { recursive: true });
+  await mkdir(join(root, "draft", ".gauge"));
+  await writeFile(join(root, "draft", "a.md"), "A");
+  await writeFile(join(root, "draft", "notes.txt"), "Notes");
+  await writeFile(join(root, "draft", "nested", "b.md"), "B");
+  await writeFile(join(root, "draft", ".gauge", "c.md"), "C");
+  for (const [supplied, expected] of [
+    ["draft", ["a.md", "nested/b.md", "notes.txt"]],
+    ["draft/a.md", ["a.md"]],
+    ["draft/*.md", ["a.md"]],
+    ["draft/**/*.md", ["a.md", "nested/b.md"]],
+  ] as const) {
+    const packed = await packLocalInput(
+      docs,
+      join(root, supplied),
+      join(root, "output.tar.gz"),
+      { override: true },
+    );
+    assert.deepEqual(packed.use, { type: "files" });
+    assert.deepEqual(Object.keys(await archiveContents(packed.upload.path)), expected);
+  }
+  await assert.rejects(
+    packLocalInput(docs, join(root, "draft", "*.json"), join(root, "o.tar.gz"), { override: true }),
+    /^CliError: Input product: No files match \*\.json$/,
+  );
+  await assert.rejects(
+    packLocalInput(docs, join(root, "draft"), join(root, "o.tar.gz")),
+    /No files match docs\/\*\*\/\*\.md/,
+  );
+});
+
+test("override globs select one npm package and reject Skill globs", async (t) => {
+  const root = await fixture(t);
+  const npm = { ...resource, use: { type: "npm-package" as const, package: "x.tgz", install: "environment" as const } };
+  await mkdir(join(root, "dist"));
+  await writeFile(join(root, "dist", "acme-1.0.0.tgz"), "first");
+  const packed = await packLocalInput(npm, join(root, "dist", "*.tgz"), join(root, "o.tar.gz"), { override: true });
+  assert.deepEqual(packed.use, { ...npm.use, package: "acme-1.0.0.tgz" });
+  assert.deepEqual(await archiveContents(packed.upload.path), { "acme-1.0.0.tgz": "first" });
+  await writeFile(join(root, "dist", "acme-1.0.1.tgz"), "second");
+  await assert.rejects(
+    packLocalInput(npm, join(root, "dist", "*.tgz"), join(root, "o.tar.gz"), { override: true }),
+    /matches 2 files; keep one/,
+  );
+  await assert.rejects(
+    packLocalInput(resource, join(root, "*"), join(root, "o.tar.gz"), { override: true }),
+    /Skill inputs take an explicit directory or archive, not a glob/,
+  );
+});
+
+test("a binary override keeps commands, resolved relative to the supplied path", async (t) => {
+  const root = await fixture(t);
+  const binary = {
+    ...resource,
+    use: {
+      type: "binary" as const,
+      paths: ["target/release/**"],
+      platform: "linux-x64" as const,
+      commands: { acme: "bin/acme" },
+    },
+  };
+  await mkdir(join(root, "out", "bin"), { recursive: true });
+  await writeFile(join(root, "out", "bin", "acme"), "ELF");
+  const packed = await packLocalInput(binary, join(root, "out"), join(root, "o.tar.gz"), { override: true });
+  assert.deepEqual(packed.use, { ...binary.use, paths: ["**"] });
+  assert.deepEqual(Object.keys(await archiveContents(packed.upload.path)), ["bin/acme"]);
+  await assert.rejects(
+    packLocalInput(binary, join(root, "out", "bin"), join(root, "o.tar.gz"), { override: true }),
+    /binary command acme target is missing: bin\/acme/,
+  );
+});
+
 test("rejects duplicate and unknown overrides, escaped case paths, and missing local inputs", async (t) => {
   const root = await fixture(t);
   assert.throws(
-    () => parseInputOverrides(["product=a", "product=b"]),
+    () => parseInputBindings(["product=a", "product"]),
     /Duplicate/,
   );
-  assert.throws(() => parseInputOverrides(["product"]), /name=path/);
+  assert.deepEqual(
+    [...parseInputBindings(["product", "docs=a/*.md"])],
+    [
+      ["product", undefined],
+      ["docs", "a/*.md"],
+    ],
+  );
+  assert.throws(() => parseInputBindings(["product="]), /name or name=path/);
   await assert.rejects(
     loadLocalRunDefinition([], ["unknown=./built"], root),
     /Unknown input/,
   );
+  await mkdir(join(root, "built", ".gauge"));
+  for (const override of ["product=built/.gauge", "product=built/.gauge/*.md"])
+    await assert.rejects(
+      loadLocalRunDefinition([], [override], root),
+      /is inside \.gauge\/\. Inputs never include \.gauge\//,
+    );
   await assert.rejects(
     loadLocalRunDefinition(["../outside.md"], ["product=./built"], root),
     /inside the definition/,

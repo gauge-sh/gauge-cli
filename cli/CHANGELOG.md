@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Changed
+
+- Saved evals and preference prompts no longer store project inputs. Attach
+  them at launch: `gauge run --eval <id> --local --input <name>` uses the
+  input as configured in `gauge.json`. `gauge eval`/`gauge preference` `create`
+  and `edit` drop `--input` and `--clear-inputs`. A launch of a measurement with
+  previously saved inputs prints a note and attaches none.
+- `--input <name>=<path>` replaces the input's configured files entirely; only
+  its type and settings carry over. Before, a files or binary override applied
+  the configured `paths` globs inside the supplied directory. Files inputs also
+  accept a single file.
+- `--input <name>=<glob>` accepts a glob, with the same syntax as `gauge.json`.
+  Files are archived relative to the glob's directory before its first
+  wildcard; an npm glob must match exactly one `.tgz`. Skill globs are rejected.
+- An `--input` path inside `.gauge/` or another excluded directory is rejected,
+  as configured globs already were.
+
 ### Fixed
 
 - Input directories skip symlinks and special files instead of failing on them.

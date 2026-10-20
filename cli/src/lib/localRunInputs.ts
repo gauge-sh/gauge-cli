@@ -56,40 +56,145 @@ export type InputSnapshot = {
   gaugeArchive: { sha256: string; bytes: number };
 };
 
-export function parseInputOverrides(values: string[]): Map<string, string> {
-  const overrides = new Map<string, string>();
+/** Maps each `--input name[=path]` to its override path, or undefined to use gauge.json. */
+export function parseInputBindings(
+  values: string[],
+): Map<string, string | undefined> {
+  const bindings = new Map<string, string | undefined>();
   for (const value of values) {
     const split = value.indexOf("=");
-    const name = value.slice(0, split);
-    const path = value.slice(split + 1);
-    if (split < 1 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name) || !path)
-      throw new CliError("usage", "--input expects name=path");
-    if (overrides.has(name))
+    const name = split < 0 ? value : value.slice(0, split);
+    const path = split < 0 ? undefined : value.slice(split + 1);
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name) || path === "")
+      throw new CliError("usage", "--input expects name or name=path");
+    if (bindings.has(name))
       throw new CliError("usage", `Duplicate --input: ${name}`);
-    overrides.set(name, path);
+    bindings.set(name, path);
   }
-  return overrides;
+  return bindings;
 }
 
-export async function packLocalInput(
-  resource: RunPlanResource,
-  supplied: string,
-  output: string,
-): Promise<{ use: RunPlanResource["use"]; upload: LocalUpload }> {
-  if (resource.use.type === "website")
+const isGlob = (path: string) => /[*?[\]{}]/.test(path);
+
+function rejectSkippedPatterns(name: string, patterns: string[]) {
+  for (const pattern of patterns) {
+    const skipped = pattern.split("/").find(skippedInputEntry);
+    if (skipped === ".gauge")
+      throw new CliError(
+        "usage",
+        `Input ${name}: ${pattern} is inside .gauge/. Inputs never include .gauge/, because it holds run results and local config.`,
+        {
+          hint: "Move the files outside .gauge/ and update the glob.",
+        },
+      );
+    if (skipped)
+      throw new CliError(
+        "usage",
+        `Input ${name}: ${pattern} is inside ${skipped}, which inputs never include`,
+        { hint: `Move the files outside ${skipped} and update the glob.` },
+      );
+  }
+}
+
+async function walkInput(root: string, depth = Infinity): Promise<string[]> {
+  const paths: string[] = [];
+  const walk = async (directory: string, level: number) => {
+    for (const entry of await readdir(join(root, directory), {
+      withFileTypes: true,
+    })) {
+      if (
+        skippedInputEntry(entry.name) ||
+        (!entry.isFile() && !entry.isDirectory())
+      )
+        continue;
+      const next = directory ? `${directory}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        if (level < depth) await walk(next, level + 1);
+      } else paths.push(next);
+      if (paths.length > 20_000)
+        throw new CliError("usage", "Input exceeds 20,000 files");
+    }
+  };
+  await walk("", 1);
+  return paths.sort();
+}
+
+function selectPaths(name: string, paths: string[], patterns: string[]) {
+  rejectSkippedPatterns(name, patterns);
+  try {
+    return matchInputPaths(paths, patterns);
+  } catch (error) {
     throw new CliError(
       "usage",
-      `Input ${resource.name}: website inputs cannot be supplied through --input.`,
-      {
-        hint: "Use the configured public preview with --hosted. For content-only alternatives and their discovery limits, read `gauge instructions hillclimb`.",
-      },
+      `Input ${name}: ${message(error).replace("committed files", "files")}`,
     );
-  const path = resolve(supplied);
-  const info = await lstat(path).catch(() => {
+  }
+}
+
+/** Splits an absolute glob into the directory before its first wildcard and the rest. */
+async function expandOverrideGlob(name: string, glob: string) {
+  const segments = glob.split(sep);
+  const first = segments.findIndex(isGlob);
+  const root = segments.slice(0, first).join(sep) || sep;
+  const pattern = segments.slice(first).join("/");
+  const info = await stat(root).catch(() => undefined);
+  if (!info?.isDirectory())
+    throw new CliError("usage", `Input ${name}: ${root} is not a directory`);
+  const depth = pattern.includes("**")
+    ? Infinity
+    : pattern.split("/").length;
+  return {
+    root,
+    pattern,
+    files: selectPaths(name, await walkInput(root, depth), [pattern]),
+  };
+}
+
+type Selection = {
+  use: RunPlanResource["use"];
+  root: string;
+  files: string[];
+  skillDirectory: boolean;
+};
+
+async function selectLocalInput(
+  resource: RunPlanResource,
+  supplied: string,
+  override: boolean,
+): Promise<Selection> {
+  let path = resolve(supplied);
+  let info = await lstat(path).catch(() => undefined);
+  if (!info && override && isGlob(path)) {
+    if (resource.use.type === "skill")
+      throw new CliError(
+        "usage",
+        `Input ${resource.name}: Skill inputs take an explicit directory or archive, not a glob`,
+      );
+    const { root, pattern, files } = await expandOverrideGlob(
+      resource.name,
+      path,
+    );
+    if (resource.use.type === "files")
+      return { use: { type: "files" }, root, files, skillDirectory: false };
+    if (resource.use.type === "binary")
+      return {
+        use: { ...resource.use, paths: [pattern] },
+        root,
+        files,
+        skillDirectory: false,
+      };
+    if (files.length !== 1)
+      throw new CliError(
+        "usage",
+        `Input ${resource.name}: ${supplied} matches ${files.length} files; keep one`,
+      );
+    path = join(root, files[0]);
+    info = await lstat(path);
+  }
+  if (!info)
     throw new CliError("usage", `Input path does not exist: ${supplied}`, {
       hint: "Pass --input <name>=<path>, or fix the input's path in gauge.json.",
     });
-  });
   if (!info.isFile() && !info.isDirectory())
     throw new CliError(
       "usage",
@@ -107,71 +212,68 @@ export async function packLocalInput(
     if (!info.isFile() || !path.endsWith(".tgz"))
       throw new CliError("usage", "Supply the packed npm .tgz file");
     use = { ...use, package: basename(path) };
-  } else if (!info.isDirectory())
-    throw new CliError("usage", "Files and binary inputs require a directory");
+  } else if (override && use.type === "files") use = { type: "files" };
+  else if (override && use.type === "binary")
+    use = { ...use, paths: [info.isDirectory() ? "**" : basename(path)] };
   const root = info.isDirectory() ? path : dirname(path);
-  const paths: string[] = [];
-  const walk = async (directory: string) => {
-    for (const entry of await readdir(join(root, directory), {
-      withFileTypes: true,
-    })) {
-      if (
-        skippedInputEntry(entry.name) ||
-        (!entry.isFile() && !entry.isDirectory())
-      )
-        continue;
-      const next = directory ? `${directory}/${entry.name}` : entry.name;
-      if (entry.isDirectory()) await walk(next);
-      else paths.push(next);
-      if (paths.length > 20_000)
-        throw new CliError("usage", "Input exceeds 20,000 files");
-    }
-  };
-  if (info.isDirectory()) await walk("");
-  else paths.push(basename(path));
+  const paths = info.isDirectory() ? await walkInput(root) : [basename(path)];
   const patterns =
-    (use.type === "files" || use.type === "binary") && use.paths
+    !override && (use.type === "files" || use.type === "binary")
       ? use.paths
       : undefined;
-  for (const pattern of patterns ?? []) {
-    const skipped = pattern.split("/").find(skippedInputEntry);
-    if (skipped === ".gauge")
-      throw new CliError(
-        "usage",
-        `Input ${resource.name}: ${pattern} is inside .gauge/. Inputs never include .gauge/, because it holds run results and local config.`,
-        {
-          hint: "Move the files outside .gauge/ and update the glob.",
-        },
-      );
-    if (skipped)
-      throw new CliError(
-        "usage",
-        `Input ${resource.name}: ${pattern} is inside ${skipped}, which inputs never include`,
-        { hint: `Move the files outside ${skipped} and update the glob.` },
-      );
-  }
-  let selected: string[];
-  try {
-    selected = patterns ? matchInputPaths(paths, patterns) : paths.sort();
-  } catch (error) {
+  return {
+    use,
+    root,
+    files: patterns ? selectPaths(resource.name, paths, patterns) : paths,
+    skillDirectory: use.type === "skill" && info.isDirectory(),
+  };
+}
+
+/**
+ * Packs an input for delivery. Without `override`, `supplied` is the
+ * working-tree default and the configured globs select within it. With
+ * `override`, `supplied` (a file, directory, or glob) replaces the configured
+ * files entirely; only the input's type and settings such as binary commands
+ * carry over.
+ */
+export async function packLocalInput(
+  resource: RunPlanResource,
+  supplied: string,
+  output: string,
+  { override = false }: { override?: boolean } = {},
+): Promise<{ use: RunPlanResource["use"]; upload: LocalUpload }> {
+  if (resource.use.type === "website")
     throw new CliError(
       "usage",
-      `Input ${resource.name}: ${message(error).replace("committed files", "files")}`,
+      `Input ${resource.name}: website inputs cannot be supplied through --input.`,
+      {
+        hint: "Use the configured public preview with --hosted. For content-only alternatives and their discovery limits, read `gauge instructions hillclimb`.",
+      },
     );
-  }
-  if (!selected.length)
+  const { use, root, files, skillDirectory } = await selectLocalInput(
+    resource,
+    supplied,
+    override,
+  );
+  if (!files.length)
     throw new CliError("usage", "Input contains no selected files");
-  if (
-    use.type === "skill" &&
-    info.isDirectory() &&
-    !selected.includes("SKILL.md")
-  )
+  if (use.type === "binary")
+    for (const [command, target] of Object.entries(use.commands))
+      if (!files.includes(target))
+        throw new CliError(
+          "usage",
+          `Input ${resource.name}: binary command ${command} target is missing: ${target}`,
+          override
+            ? { hint: "Command targets are relative to the supplied path." }
+            : undefined,
+        );
+  if (skillDirectory && !files.includes("SKILL.md"))
     throw new CliError(
       "usage",
       "Skill directory must contain SKILL.md at its root",
     );
   let total = 0;
-  for (const file of selected) {
+  for (const file of files) {
     inputPathSchema.parse(file);
     const entry = await lstat(join(root, file));
     if (!entry.isFile())
@@ -192,7 +294,7 @@ export async function packLocalInput(
       follow: false,
       noDirRecurse: true,
     },
-    selected.map((file) => `./${file}`),
+    files.map((file) => `./${file}`),
   );
   const bytes = (await stat(output)).size;
   if (bytes > LIMIT)
@@ -273,6 +375,12 @@ export async function loadLocalRunDefinition(
         `Hosted cases need criteria or preference: ${unmeasured.map((item) => item.path).join(", ")}`,
         { hint: "Add criteria, or run locally with --local." },
       );
+    const bindings = parseInputBindings(values);
+    for (const name of bindings.keys())
+      if (!(name in config.inputs))
+        throw new CliError("usage", `Unknown input: ${name}`, {
+          hint: `gauge.json defines: ${Object.keys(config.inputs).join(", ") || "none"}`,
+        });
     for (const item of parsed)
       for (const name of item.config.inputs ?? [])
         if (!(name in config.inputs))
@@ -285,15 +393,16 @@ export async function loadLocalRunDefinition(
         (item) => item.config.inputs ?? Object.keys(config.inputs),
       ),
     );
-    const overrides = parseInputOverrides(values);
-    for (const name of overrides.keys()) {
-      if (!(name in config.inputs))
-        throw new CliError("usage", `Unknown input: ${name}`);
+    for (const [name, override] of bindings) {
       if (!selected.has(name))
         throw new CliError(
           "usage",
           `Input is not used by the selected cases: ${name}`,
         );
+      if (override !== undefined)
+        rejectSkippedPatterns(name, [
+          relative(root, resolve(cwd, override)).split(sep).join("/"),
+        ]);
     }
     const git = (args: string[]) => {
       try {
@@ -331,8 +440,9 @@ export async function loadLocalRunDefinition(
         repoUrl ?? "",
         commit ?? "",
       );
+      const override = bindings.get(name);
       const supplied =
-        overrides.get(name) ??
+        override ??
         (original.source.type === "git"
           ? workingTreeInput(root, name, input)
           : undefined);
@@ -341,11 +451,12 @@ export async function loadLocalRunDefinition(
           original,
           resolve(cwd, supplied),
           join(directory, `${name}.tar.gz`),
+          { override: override !== undefined },
         );
         uploads.push(upload);
         inputSnapshots.push({
           name,
-          source: overrides.has(name) ? "override" : "working-tree",
+          source: override !== undefined ? "override" : "working-tree",
           path: resolve(cwd, supplied),
           gaugeArchive: { sha256: upload.sha256, bytes: upload.bytes },
         });

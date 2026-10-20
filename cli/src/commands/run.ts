@@ -60,6 +60,7 @@ import { gaugeState } from "../lib/gaugeState";
 import {
   type InputSnapshot,
   loadLocalRunDefinition,
+  parseInputBindings,
   uploadLocalInputs,
 } from "../lib/localRunInputs";
 import { listLocalRuns, type LocalRun, parseSince } from "../lib/localRuns";
@@ -618,11 +619,13 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
     );
   if (
     opts.input.length > 0 &&
-    (opts.eval !== undefined || opts.preference !== undefined)
+    (opts.eval !== undefined || opts.preference !== undefined) &&
+    gaugeState(cmd).mode !== "local"
   )
     throw new CliError(
       "usage",
-      `--input applies to this repo's eval cases or a case spec; drop ${source}`,
+      `Hosted saved measurements do not take project inputs; drop --input or pass --local`,
+      { hint: "For hosted project inputs, use eval case files or a case spec." },
     );
   if (opts.requireExperiment !== undefined && !opts.apply)
     throw new CliError("usage", "--require-experiment applies with --apply");
@@ -662,7 +665,7 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
       cmd,
       opts.eval ? "eval" : "preference",
       (opts.eval ?? opts.preference)!,
-      opts,
+      { ...opts, inputs: [...parseInputBindings(opts.input).keys()] },
     );
     await runLocalCases(cmd, opts, saved.spec, saved.measurement);
     return;
@@ -1010,8 +1013,8 @@ export function register(program: Command): void {
       "eval case Markdown paths or globs (default gauge-cases/**/*.md)",
     )
     .option(
-      "--input <name=path>",
-      "supply a local input and use current eval files (repeatable)",
+      "--input <name[=path]>",
+      "attach a gauge.json input; =path or =glob replaces its configured files (repeatable)",
       collect,
       [] as string[],
     )

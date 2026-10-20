@@ -143,6 +143,46 @@ test("workspace CLI creates, edits, tags, plans and queries saved measurements w
     assert.equal(evalPlan.mode, "local");
     assert.equal(evalPlan.expectedSessions, 1);
     assert.equal(evalPlan.cases[0].criteria, 1);
+    assert.deepEqual(evalPlan.inputSnapshots, []);
+    writeFileSync(
+      join(root, "gauge.json"),
+      JSON.stringify({
+        version: 2,
+        inputs: { docs: { type: "files", paths: ["docs/**/*.md"] } },
+      }),
+    );
+    mkdirSync(join(root, "docs"));
+    writeFileSync(join(root, "docs", "guide.md"), "Guide");
+    mkdirSync(join(root, "draft"));
+    writeFileSync(join(root, "draft", "a.md"), "A");
+    writeFileSync(join(root, "draft", "notes.txt"), "Notes");
+    for (const [binding, source, path] of [
+      ["docs", "working-tree", root],
+      ["docs=draft", "override", join(root, "draft")],
+      ["docs=draft/*.md", "override", join(root, "draft", "*.md")],
+    ]) {
+      const plan = await run(
+        "run",
+        "--eval",
+        evaluation.id,
+        "--input",
+        binding,
+        "--dry-run",
+      );
+      assert.deepEqual(
+        plan.inputSnapshots.map((s: any) => [s.name, s.source, s.path]),
+        [["docs", source, path]],
+      );
+    }
+    await assert.rejects(
+      () =>
+        run("run", "--eval", evaluation.id, "--input", "other", "--dry-run"),
+      /^CliError: Unknown input: other$/,
+    );
+    await assert.rejects(
+      () => run("eval", "edit", evaluation.id, "--input", "docs"),
+      /unknown option '--input'/,
+    );
 
     const preference = await run(
       "preference",
@@ -301,6 +341,7 @@ test("workspace CLI creates, edits, tags, plans and queries saved measurements w
     assert.equal((await run("eval", "get", evaluation.id)).revision, 3);
     const frozen = localMeasurementSpec(program(), "eval", evaluation.id, {
       agent: [],
+      inputs: [],
     });
     assert.deepEqual(frozen.measurement.criterionIds, [criterion]);
     await run("eval", "rm", evaluation.id);
