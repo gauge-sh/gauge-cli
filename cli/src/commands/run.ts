@@ -16,7 +16,7 @@ import {
   cancelLocal,
   localStatus,
 } from "../lib/localLifecycle";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import {
   type CancelRunResponse,
   type InsightPass,
@@ -958,10 +958,13 @@ function printLocalStatus(
     console.log(
       `Batch ${batch.batchId}: ${batch.state}; ${batch.finishedSessions ?? 0}/${batch.expectedSessions} finished`,
     );
-  for (const run of runs)
+  for (const run of runs) {
     console.log(
       `${run.id}: ${run.state}${run.cleanupPending ? " (cleanup pending)" : ""}${run.detail ? ` (${run.detail})` : ""}`,
     );
+    if (run.stderrLog)
+      console.log(`  agent stderr: ${relative(process.cwd(), run.stderrLog)}`);
+  }
 }
 
 export function register(program: Command): void {

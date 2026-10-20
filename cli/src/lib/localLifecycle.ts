@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { lstat, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { getSessionStatus, stopSession } from "@withgauge/local-execution";
@@ -60,6 +60,16 @@ export async function localSessions(gaugeDir: string) {
   return sessions;
 }
 
+function stderrLog(directory: string, state: string): string | undefined {
+  if (state !== "failed") return;
+  const path = join(directory, "agent.stderr.log");
+  try {
+    return statSync(path).size ? path : undefined;
+  } catch {
+    return;
+  }
+}
+
 export async function localStatus(
   gaugeDir: string,
   filter: { id?: string; batch?: string } = {},
@@ -80,6 +90,7 @@ export async function localStatus(
           turns: status.turn,
           cleanupPending: status.cleanupPending ?? false,
           detail: status.detail,
+          stderrLog: stderrLog(session.directory, status.state),
         };
       } catch (error) {
         if (!existsSync(join(session.directory, "session.json"))) {
@@ -96,6 +107,7 @@ export async function localStatus(
               state: result.outcome,
               turns: result.turns,
               detail: result.detail,
+              stderrLog: stderrLog(session.directory, result.outcome),
             };
           } catch {
           }
@@ -105,6 +117,7 @@ export async function localStatus(
           batchId: session.batchId,
           state: "unavailable",
           detail: String(error),
+          stderrLog: undefined,
         };
       }
     }),

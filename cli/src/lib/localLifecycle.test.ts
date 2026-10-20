@@ -45,5 +45,12 @@ test("discovery ignores linked runs and malformed records; failed preparation st
   await writeFile(join(bad, "spec.json"), "{");
   assert.equal((await localSessions(root)).length, 1);
   assert.equal((await localStatus(root))[0].state, "failed");
+  assert.equal((await localStatus(root))[0].stderrLog, undefined);
+  await mkdir(join(attempt, "session"));
+  await writeFile(join(attempt, "session/agent.stderr.log"), "refused as root\n");
+  assert.equal(
+    (await localStatus(root))[0].stderrLog,
+    join(attempt, "session/agent.stderr.log"),
+  );
   assert.deepEqual(await cleanupLocal(root), []);
 });
