@@ -54,7 +54,6 @@ function normalize(
   raw: Record<string, unknown>,
   previous?: LocalMeasurement,
 ): Record<string, unknown> & { name: string; promptText: string } {
-  // Inputs bind at launch; drop names that older CLIs stored on the measurement.
   const { inputs: _inputs, ...definition } = raw;
   const scenarioInputs = Array.isArray(definition.scenarios)
     ? (definition.scenarios as Record<string, unknown>[])

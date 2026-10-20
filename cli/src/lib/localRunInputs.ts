@@ -54,14 +54,12 @@ export type InputSnapshot = {
   source: "working-tree" | "override";
   path: string;
   gaugeArchive: { sha256: string; bytes: number };
-  /** Archive paths, capped at SNAPSHOT_FILES; fileCount is the full count. */
   files: string[];
   fileCount: number;
 };
 
 const SNAPSHOT_FILES = 100;
 
-/** Maps each `--input name[=path]` to its override path, or undefined to use gauge.json. */
 export function parseInputBindings(
   values: string[],
 ): Map<string, string | undefined> {
@@ -136,7 +134,6 @@ function selectPaths(name: string, paths: string[], patterns: string[]) {
   }
 }
 
-/** Splits an absolute glob into the directory before its first wildcard and the rest. */
 async function expandOverrideGlob(name: string, glob: string) {
   const segments = glob.split(sep);
   const first = segments.findIndex(isGlob);
@@ -234,13 +231,6 @@ async function selectLocalInput(
   };
 }
 
-/**
- * Packs an input for delivery. Without `override`, `supplied` is the
- * working-tree default and the configured globs select within it. With
- * `override`, `supplied` (a file, directory, or glob) replaces the configured
- * files entirely; only the input's type and settings such as binary commands
- * carry over.
- */
 export async function packLocalInput(
   resource: RunPlanResource,
   supplied: string,
