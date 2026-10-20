@@ -150,7 +150,6 @@ export type PreferenceCreateOpts = RunSettingsCreateOpts & {
   persona?: string;
   market?: string;
   tag: string[];
-  input?: string[];
 };
 
 export async function createPreferencePrompt(
@@ -185,16 +184,8 @@ export async function createPreferencePrompt(
         ]
       : [],
   };
-  if (!isLocal(cmd) && opts.input?.length)
-    throw new CliError(
-      "usage",
-      "Named project inputs on saved measurements are local-only; use a hosted case file for project inputs.",
-    );
   const created = isLocal(cmd)
-    ? createLocalMeasurement(cmd, "preference", {
-        ...body,
-        inputs: opts.input ?? [],
-      })
+    ? createLocalMeasurement(cmd, "preference", body)
     : await createClient().post<VisibilityPrompt>(
         visibilityPath(resolveOrg(cmd)),
         body,
@@ -214,9 +205,7 @@ export type PreferenceEditOpts = RunSettingsEditOpts & {
   market?: string;
   clearMarket?: boolean;
   tag: string[];
-  input?: string[];
   clearTags?: boolean;
-  clearInputs?: boolean;
 };
 
 export async function editPreferencePrompt(
@@ -248,24 +237,10 @@ export async function editPreferencePrompt(
   if (opts.clearTags) body.tags = [];
   else if (opts.tag.length > 0) body.tags = opts.tag;
 
-  if (
-    Object.keys(body).length === 0 &&
-    !opts.input?.length &&
-    !opts.clearInputs
-  )
+  if (Object.keys(body).length === 0)
     throw new CliError("usage", "nothing to change");
-  const inputPatch = opts.clearInputs
-    ? { inputs: [] }
-    : opts.input?.length
-      ? { inputs: opts.input }
-      : {};
-  if (!isLocal(cmd) && (opts.clearInputs || opts.input?.length))
-    throw new CliError(
-      "usage",
-      "Named project inputs on saved measurements are local-only",
-    );
   const updated = isLocal(cmd)
-    ? editLocalMeasurement(cmd, "preference", id, { ...body, ...inputPatch })
+    ? editLocalMeasurement(cmd, "preference", id, body)
     : await createClient().patch<VisibilityPrompt>(
         promptPath(resolveOrg(cmd), id),
         body,

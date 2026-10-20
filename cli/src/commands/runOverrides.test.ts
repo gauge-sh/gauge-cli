@@ -94,6 +94,16 @@ it("rejects a repeated --eval instead of dropping ids", async (t) => {
   assert.equal(requests.length, 0);
 });
 
+it("rejects project inputs on a hosted saved eval", async (t) => {
+  const { requests, error } = await gauge(
+    t,
+    ["run", "--eval", "e1", "--input", "docs", "--yes"],
+    {},
+  );
+  assert.match(String(error), /Hosted saved measurements do not take project inputs/);
+  assert.equal(requests.length, 0);
+});
+
 it("rejects --samples without a saved eval set or preference prompt", async (t) => {
   const { requests, error } = await gauge(
     t,

@@ -54,7 +54,7 @@ function normalize(
   raw: Record<string, unknown>,
   previous?: LocalMeasurement,
 ): Record<string, unknown> & { name: string; promptText: string } {
-  const { inputs, ...definition } = raw;
+  const { inputs: _inputs, ...definition } = raw;
   const scenarioInputs = Array.isArray(definition.scenarios)
     ? (definition.scenarios as Record<string, unknown>[])
     : undefined;
@@ -92,15 +92,6 @@ function normalize(
       "Local measurements do not support scheduled start times. Use --hosted.",
     );
   assertLocalCapabilities(value);
-  if (
-    inputs !== undefined &&
-    (!Array.isArray(inputs) || inputs.some((x) => typeof x !== "string" || !x))
-  )
-    throw new CliError(
-      "usage",
-      "inputs must be an array of project input names",
-    );
-  value.inputs = [...new Set((inputs as string[] | undefined) ?? [])];
   value.tags = [
     ...new Set(
       ((value.tags as string[] | undefined) ?? [])
@@ -376,7 +367,12 @@ export function localMeasurementSpec(
   command: Command,
   kind: MeasurementKind,
   id: string,
-  opts: { agent: string[]; samples?: string; scenario?: string[] },
+  opts: {
+    agent: string[];
+    samples?: string;
+    scenario?: string[];
+    inputs: string[];
+  },
 ): {
   spec: CaseSpec;
   measurement: {
@@ -387,6 +383,11 @@ export function localMeasurementSpec(
   };
 } {
   const row = getLocalMeasurement(command, kind, id);
+  const stored = row.inputs as string[] | undefined;
+  if (stored?.length && !opts.inputs.length)
+    console.error(
+      `note: saved inputs are no longer attached (${stored.join(", ")}). Pass --input <name> at launch.`,
+    );
   const settings: Record<string, unknown> = {
     ...row,
     ...runOverridesFromOpts(opts),
@@ -448,7 +449,7 @@ export function localMeasurementSpec(
       sampleCount: Number(settings.sampleCount ?? 1),
       repoUrl: scenario.repoUrl,
       repoRef: scenario.repoRef,
-      inputs: settings.inputs as string[],
+      inputs: opts.inputs,
     },
   }));
   return {

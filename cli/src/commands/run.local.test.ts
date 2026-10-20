@@ -207,6 +207,8 @@ test("CLI uploads a local candidate, launches without Git, and returns failed re
     source: "override",
     path: join(root, "built"),
     gaugeArchive: { sha256: declared.sha256, bytes: declared.bytes },
+    files: ["SKILL.md"],
+    fileCount: 1,
   }]);
   assert.deepEqual(failures, []);
   assert.equal(calls.filter((call) => call === `POST ${runPath}`).length, 1);
