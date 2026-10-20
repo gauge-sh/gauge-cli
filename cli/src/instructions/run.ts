@@ -116,7 +116,7 @@ It does not see this repo, this conversation, or the user. Write each prompt for
 | SDK | \`npm-package\`, \`install: workspace\` | greenfield app in the SDK's language | yes |
 | Docs | \`files\`, \`paths\` globs | docs given to the agent as files | yes |
 
-Binary, website preview routing, and MCP inputs are hosted only. Supplied docs files test content use; they do not replace the canonical site or test its discovery. A reachable preview URL in the prompt is another content-only option, with the same discovery limitation. Choose the surface the user wants to test rather than adding a Skill to an existing CLI or SDK.
+Binary, website preview routing, and MCP inputs are hosted only. Supplied docs files test content use; they do not replace the canonical site or test its discovery. A reachable preview URL in the prompt is another content-only option, with the same discovery limitation. Inputs never include \`.gauge/\`; keep private draft docs in another gitignored directory, such as \`gauge-drafts/\`. Choose the surface the user wants to test rather than adding a Skill to an existing CLI or SDK.
 
 Add one \`inputs\` entry in gauge.json per surface or skill; keep every other key. An \`npm-package\` \`path\` is a glob that must match one packed .tgz. \`gauge run\` does not pack it: run \`npm pack\` after every change, and delete old .tgz files.
 

@@ -513,7 +513,7 @@ test("selects files relative to the supplied directory without credentials, depe
       dir,
       join(root, "gauge.tar.gz"),
     ),
-    /\.gauge\/docs\/\*\.md is inside \.gauge, which inputs never include/,
+    /\.gauge\/docs\/\*\.md is inside \.gauge\/\. Inputs never include \.gauge\//,
   );
   await assert.rejects(
     packLocalInput(
