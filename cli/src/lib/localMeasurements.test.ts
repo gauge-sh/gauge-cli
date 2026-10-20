@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -21,7 +22,7 @@ import { saveLocalAnalysis } from "./localAnalysis";
 import { localMeasurementSpec } from "./localMeasurements";
 
 test("workspace CLI creates, edits, tags, plans and queries saved measurements without Git", async () => {
-  const root = mkdtempSync(join(tmpdir(), "gauge-measurement-cli-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "gauge-measurement-cli-")));
   const cwd = process.cwd();
   const original = { ...process.env };
   const log = console.log;
@@ -156,11 +157,14 @@ test("workspace CLI creates, edits, tags, plans and queries saved measurements w
     mkdirSync(join(root, "draft"));
     writeFileSync(join(root, "draft", "a.md"), "A");
     writeFileSync(join(root, "draft", "notes.txt"), "Notes");
-    for (const [binding, source, path] of [
-      ["docs", "working-tree", root],
-      ["docs=draft", "override", join(root, "draft")],
-      ["docs=draft/*.md", "override", join(root, "draft", "*.md")],
-    ]) {
+    const unbound = await run("run", "--eval", evaluation.id, "--dry-run");
+    assert.deepEqual(unbound.inputSnapshots, []);
+    assert.deepEqual(unbound.unattachedInputs, ["docs"]);
+    for (const [binding, source, path, files] of [
+      ["docs", "working-tree", root, ["docs/guide.md"]],
+      ["docs=draft", "override", join(root, "draft"), ["a.md", "notes.txt"]],
+      ["docs=draft/*.md", "override", join(root, "draft", "*.md"), ["a.md"]],
+    ] as const) {
       const plan = await run(
         "run",
         "--eval",
@@ -170,9 +174,10 @@ test("workspace CLI creates, edits, tags, plans and queries saved measurements w
         "--dry-run",
       );
       assert.deepEqual(
-        plan.inputSnapshots.map((s: any) => [s.name, s.source, s.path]),
-        [["docs", source, path]],
+        plan.inputSnapshots.map((s: any) => [s.name, s.source, s.path, s.files]),
+        [["docs", source, path, files]],
       );
+      assert.deepEqual(plan.unattachedInputs, []);
     }
     await assert.rejects(
       () =>
