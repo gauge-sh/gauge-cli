@@ -3,7 +3,13 @@ import type { CreateOrgResponse } from "@withgauge/api-schemas/orgs";
 import { deviceLogin } from "../commands/auth";
 import { ApiClient, CliError } from "./client";
 import { readConfig, updateConfig } from "./config";
-import { credentialsPath, resolveToken, saveToken } from "./credentials";
+import {
+  credentialsPath,
+  resolveToken,
+  saveCredentials,
+  saveToken,
+  withCredentialLock,
+} from "./credentials";
 
 export type AccountOptions = {
   email?: string;
@@ -71,9 +77,14 @@ export async function ensureAccount(
     log(`Already signed in as ${me.user.email ?? me.user.id}.`);
   } else {
     const login = await deviceLogin({ email: opts.email });
-    saveToken(login.token);
-    me = login.me;
-    client = new ApiClient({ token: login.token });
+    await withCredentialLock(async () => {
+      if (login.credentials) saveCredentials(login.credentials);
+      else saveToken(login.token);
+    });
+    client = new ApiClient();
+    // Chat membership does not imply an Agents workspace exists or has the same slug.
+    // Keep the successful shared login even if Agents onboarding is unavailable.
+    me = await client.get<MeResponse>("/api/v1/me");
     log(
       `\nSigned in as ${me.user.email ?? me.user.id} — token saved to ${credentialsPath()}.`,
     );

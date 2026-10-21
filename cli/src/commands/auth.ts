@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { hostname } from "node:os";
 import { createInterface } from "node:readline";
@@ -22,6 +22,7 @@ import {
   ApiClient,
   CliError,
   createClient,
+  createChatClient,
   resolveBaseUrl,
   USER_AGENT,
 } from "../lib/client";
@@ -29,6 +30,10 @@ import { readConfig, updateConfig } from "../lib/config";
 import { hostedOnly, resolveOutput } from "../lib/context";
 import {
   clearToken,
+  readCredentials,
+  saveCredentials,
+  type SharedCredentials,
+  withCredentialLock,
   credentialsPath,
   resolveToken,
   saveToken,
@@ -36,6 +41,12 @@ import {
 import type { OutputFormat } from "../lib/output";
 import { printItems, printJson } from "../lib/output";
 import { fetchAllPages } from "../lib/paginate";
+
+import {
+  resolveAuthUrl,
+  sharedLoginEnabled,
+  sharedTokenSchema,
+} from "../lib/sharedAuth";
 
 const LOGIN_TIMEOUT_MS = 2 * 60 * 1000;
 const TOKEN_PREFIX = "gauge_";
@@ -47,8 +58,44 @@ function tokenSource(): TokenSource {
   return resolveToken() ? "file" : "none";
 }
 
-async function fetchMe(client: ApiClient): Promise<MeResponse> {
-  return client.get<MeResponse>("/api/v1/me");
+export type ChatMeResponse = {
+  user: { id: string; email: string | null; name: string };
+  orgs: Array<{ id: string; slug: string; name: string }>;
+};
+type IdentityResponse = ChatMeResponse | MeResponse;
+async function fetchMe(
+  client: ApiClient,
+  shared = false,
+): Promise<IdentityResponse> {
+  return shared
+    ? client.get<ChatMeResponse>("/api/cli/me")
+    : client.get<MeResponse>("/api/v1/me");
+}
+function identityClient(): { client: ApiClient; shared: boolean } {
+  const shared = resolveToken()?.startsWith("gauge_cli_") ?? false;
+  return { client: shared ? createChatClient() : createClient(), shared };
+}
+function authBase(): string {
+  return sharedLoginEnabled() ? resolveAuthUrl() : resolveBaseUrl();
+}
+function sessionCredentials(raw: unknown): SharedCredentials {
+  return {
+    version: 1,
+    sessionId: randomUUID(),
+    ...sharedTokenSchema.parse(raw),
+    authUrl: resolveAuthUrl(),
+    apiUrl: resolveBaseUrl(),
+  };
+}
+async function verifyIssuedToken(token: string): Promise<IdentityResponse> {
+  const shared = token.startsWith("gauge_cli_");
+  return fetchMe(
+    new ApiClient({
+      token,
+      baseUrl: shared ? resolveAuthUrl() : resolveBaseUrl(),
+    }),
+    shared,
+  );
 }
 
 export function parseLoopbackCallback(
@@ -57,20 +104,30 @@ export function parseLoopbackCallback(
 ): string | null {
   const url = new URL(rawUrl ?? "/", "http://127.0.0.1");
   if (url.pathname !== "/callback") return null;
+  if (
+    url.searchParams.get("state") === expectedState &&
+    url.searchParams.get("error") === "access_denied"
+  ) {
+    throw new CliError(
+      "unauthorized",
+      "Authorization was denied in the browser.",
+    );
+  }
   const code = url.searchParams.get("code");
   if (url.searchParams.get("state") !== expectedState || !code) return null;
   return code;
 }
 
-function printIdentity(me: MeResponse): void {
+function printIdentity(me: IdentityResponse): void {
   const orgs = me.orgs.map((o) => o.slug).join(", ") || "(none)";
   console.log(`Logged in as ${me.user.email ?? me.user.id}`);
   console.log(`Orgs: ${orgs}`);
   console.log(`API URL: ${resolveBaseUrl()}`);
 }
 
-export function useOnlyOrg(me: MeResponse): void {
-  const only = me.orgs.length === 1 ? me.orgs[0].slug : undefined;
+export function useOnlyOrg(me: IdentityResponse, shared = false): void {
+  const org = me.orgs.length === 1 ? me.orgs[0] : undefined;
+  const only = org ? (shared && "id" in org ? org.id : org.slug) : undefined;
   if (!only || readConfig().defaultOrg) return;
   updateConfig({ defaultOrg: only });
   console.log(`Default org set to ${only}.`);
@@ -88,14 +145,12 @@ function openBrowser(url: string): void {
       stdio: "ignore",
       detached: true,
     });
-    child.on("error", () => {
-    });
+    child.on("error", () => {});
     child.unref();
-  } catch {
-  }
+  } catch {}
 }
 
-async function browserLogin(): Promise<void> {
+export async function browserLogin(): Promise<void> {
   const state = randomBytes(16).toString("base64url");
   const codeVerifier = randomBytes(32).toString("base64url");
   const codeChallenge = createHash("sha256")
@@ -114,7 +169,16 @@ async function browserLogin(): Promise<void> {
         res.writeHead(405, { allow: "GET" }).end();
         return;
       }
-      const code = parseLoopbackCallback(req.url, state);
+      let code: string | null;
+      try {
+        code = parseLoopbackCallback(req.url, state);
+      } catch (error) {
+        res
+          .writeHead(200, { "content-type": "text/plain" })
+          .end("Authorization denied. Return to your terminal.");
+        reject(error);
+        return;
+      }
       if (!code) {
         res.writeHead(400, {
           "content-type": "text/plain; charset=utf-8",
@@ -142,7 +206,7 @@ async function browserLogin(): Promise<void> {
     throw new CliError("internal", "Could not determine the listener port");
   }
 
-  const base = resolveBaseUrl().replace(/\/+$/, "");
+  const base = authBase().replace(/\/+$/, "");
   const authorizeUrl = new URL(`${base}/cli/authorize`);
   authorizeUrl.searchParams.set("port", String(address.port));
   authorizeUrl.searchParams.set("state", state);
@@ -178,11 +242,18 @@ async function browserLogin(): Promise<void> {
       }),
     ]);
 
-    const raw = await bootstrapPost<unknown>("/api/v1/cli/token", {
-      code,
-      codeVerifier,
-    });
-    const parsed = cliAuthorizationTokenResponseSchema.safeParse(raw);
+    const raw = await bootstrapPost<unknown>(
+      sharedLoginEnabled() ? "/api/cli/token" : "/api/v1/cli/token",
+      {
+        code,
+        codeVerifier,
+      },
+    );
+    const parsed = (
+      sharedLoginEnabled()
+        ? sharedTokenSchema
+        : cliAuthorizationTokenResponseSchema
+    ).safeParse(raw);
     if (!parsed.success) {
       throw new CliError(
         "internal",
@@ -192,11 +263,14 @@ async function browserLogin(): Promise<void> {
     const exchange: CliAuthorizationTokenResponse = parsed.data;
     const token = exchange.accessToken;
 
-    const me = await fetchMe(new ApiClient({ token }));
-    saveToken(token);
+    const me = await verifyIssuedToken(token);
+    await withCredentialLock(async () => {
+      if (sharedLoginEnabled()) saveCredentials(sessionCredentials(raw));
+      else saveToken(token);
+    });
     console.log(`Token saved to ${credentialsPath()}`);
     printIdentity(me);
-    useOnlyOrg(me);
+    useOnlyOrg(me, token.startsWith("gauge_cli_"));
   } finally {
     if (timer) clearTimeout(timer);
     server.close();
@@ -204,14 +278,18 @@ async function browserLogin(): Promise<void> {
   }
 }
 
-const DEVICE_ENDPOINT = "/api/v1/device";
+function deviceEndpoint(): string {
+  return sharedLoginEnabled() ? "/api/cli/device" : "/api/v1/device";
+}
 
 async function bootstrapPost<T>(path: string, body: unknown): Promise<T> {
-  const base = resolveBaseUrl().replace(/\/+$/, "");
+  const base = authBase().replace(/\/+$/, "");
   let res: Response;
   try {
     res = await fetch(`${base}${path}`, {
       method: "POST",
+      redirect: "error",
+      signal: AbortSignal.timeout(15_000),
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
@@ -243,11 +321,13 @@ async function bootstrapPost<T>(path: string, body: unknown): Promise<T> {
   return JSON.parse(text) as T;
 }
 
-export async function deviceLogin(opts: {
-  email?: string;
-}): Promise<{ token: string; me: MeResponse }> {
+export async function deviceLogin(opts: { email?: string }): Promise<{
+  token: string;
+  me: IdentityResponse;
+  credentials?: SharedCredentials;
+}> {
   const start = await bootstrapPost<DeviceAuthorizeResponse>(
-    `${DEVICE_ENDPOINT}/authorize`,
+    `${deviceEndpoint()}/authorize`,
     { deviceName: hostname() || "this device", email: opts.email },
   );
 
@@ -269,7 +349,7 @@ export async function deviceLogin(opts: {
 
     let raw: unknown;
     try {
-      raw = await bootstrapPost<unknown>(`${DEVICE_ENDPOINT}/token`, {
+      raw = await bootstrapPost<unknown>(`${deviceEndpoint()}/token`, {
         deviceCode: start.deviceCode,
       });
     } catch (e) {
@@ -311,8 +391,11 @@ export async function deviceLogin(opts: {
       case "approved": {
         const token = result.accessToken;
         try {
-          const me = await fetchMe(new ApiClient({ token }));
-          return { token, me };
+          const credentials = sharedLoginEnabled()
+            ? sessionCredentials(raw)
+            : undefined;
+          const me = await verifyIssuedToken(token);
+          return { token, me, credentials };
         } catch (e) {
           throw new CliError(
             "network",
@@ -362,11 +445,21 @@ async function withTokenLogin(): Promise<void> {
       `Expected a token starting with ${TOKEN_PREFIX} on stdin`,
     );
   }
-  const me = await fetchMe(new ApiClient({ token }));
-  saveToken(token);
+  const me = await verifyIssuedToken(token);
+  await withCredentialLock(async () => {
+    if (token.startsWith("gauge_cli_"))
+      saveCredentials({
+        version: 1,
+        sessionId: randomUUID(),
+        accessToken: token,
+        authUrl: resolveAuthUrl(),
+        apiUrl: resolveBaseUrl(),
+      });
+    else saveToken(token);
+  });
   console.log(`Token saved to ${credentialsPath()}`);
   printIdentity(me);
-  useOnlyOrg(me);
+  useOnlyOrg(me, token.startsWith("gauge_cli_"));
 }
 
 const TOKENS_PATH = "/api/v1/tokens";
@@ -411,7 +504,8 @@ function parseExpiresIn(raw: string): string | undefined {
 }
 
 async function whoami(output: OutputFormat): Promise<void> {
-  const me = await fetchMe(createClient());
+  const identity = identityClient();
+  const me = await fetchMe(identity.client, identity.shared);
   if (output === "json") {
     printJson({ apiUrl: resolveBaseUrl(), ...me });
     return;
@@ -419,9 +513,34 @@ async function whoami(output: OutputFormat): Promise<void> {
   printIdentity(me);
 }
 
+export async function logout(): Promise<void> {
+  await withCredentialLock(async () => {
+    const stored = readCredentials();
+    try {
+      if (stored && typeof stored !== "string" && stored.refreshToken) {
+        const response = await fetch(`${stored.authUrl}/api/cli/revoke`, {
+          method: "POST",
+          redirect: "error",
+          signal: AbortSignal.timeout(15_000),
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refreshToken: stored.refreshToken }),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      }
+    } catch (error) {
+      console.error(
+        `Warning: local credentials removed, but server revocation failed (${error instanceof Error ? error.message : String(error)}). The server grant may remain active.`,
+      );
+    } finally {
+      clearToken();
+    }
+  });
+}
+
 export function register(program: Command): void {
-  const auth = hostedOnly(program.command("auth"), { account: true })
-    .description("Authenticate the CLI (personal access tokens)");
+  const auth = hostedOnly(program.command("auth"), {
+    account: true,
+  }).description("Authenticate the CLI");
 
   auth
     .command("login")
@@ -451,11 +570,16 @@ export function register(program: Command): void {
           throw new CliError("usage", "--email requires --device.");
         }
         if (opts.device) {
-          const { token, me } = await deviceLogin({ email: opts.email });
-          saveToken(token);
+          const { token, me, credentials } = await deviceLogin({
+            email: opts.email,
+          });
+          await withCredentialLock(async () => {
+            if (credentials) saveCredentials(credentials);
+            else saveToken(token);
+          });
           console.log(`Token saved to ${credentialsPath()}`);
           printIdentity(me);
-          useOnlyOrg(me);
+          useOnlyOrg(me, token.startsWith("gauge_cli_"));
         } else if (opts.withToken) {
           await withTokenLogin();
         } else {
@@ -467,8 +591,8 @@ export function register(program: Command): void {
   auth
     .command("logout")
     .description("Remove the stored token")
-    .action(() => {
-      clearToken();
+    .action(async () => {
+      await logout();
       console.log(`Removed ${credentialsPath()}`);
       if (process.env.GAUGE_API_TOKEN?.trim()) {
         console.error(
@@ -489,9 +613,10 @@ export function register(program: Command): void {
           "Not logged in. Run `gauge auth login` or set GAUGE_API_TOKEN.",
         );
       }
-      let me: MeResponse;
+      let me: IdentityResponse;
       try {
-        me = await fetchMe(createClient());
+        const identity = identityClient();
+        me = await fetchMe(identity.client, identity.shared);
       } catch (e) {
         if (e instanceof CliError && e.code === "unauthorized") {
           throw new CliError(
@@ -516,7 +641,9 @@ export function register(program: Command): void {
       );
     });
 
-  const tokens = auth.command("tokens").description("Manage API tokens");
+  const tokens = auth
+    .command("tokens")
+    .description("Manage legacy Agents API tokens");
 
   tokens
     .command("list")
@@ -538,6 +665,11 @@ export function register(program: Command): void {
     .action(
       async (name: string, opts: { expiresIn: string }, command: Command) => {
         const output = resolveOutput(command);
+        if (resolveToken()?.startsWith("gauge_cli_"))
+          throw new CliError(
+            "forbidden",
+            "Shared CLI sessions cannot create legacy Agents tokens. Use an existing Agents credential to manage automation tokens.",
+          );
         const expiresAt = parseExpiresIn(opts.expiresIn);
         const created = await createClient().post<CreateTokenResponse>(
           TOKENS_PATH,

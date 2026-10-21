@@ -246,6 +246,10 @@ over time.
 
 ## Local or hosted
 
+Shared Chat/Agents login is available through an explicit auth URL after server
+rollout. See [shared CLI authentication](docs/shared-cli-auth.md) for activation,
+refresh, and compatibility details.
+
 | | Local | Hosted Gauge |
 | --- | --- | --- |
 | Execution | Docker on your machine, using your agent credentials | Managed compute; sessions keep running when you close your laptop |

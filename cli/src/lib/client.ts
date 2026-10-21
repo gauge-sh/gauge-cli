@@ -2,6 +2,13 @@ import { type ErrorCode, errorEnvelopeSchema } from "@withgauge/api-schemas";
 import { CLI_VERSION } from "../version";
 import { readConfig } from "./config";
 import { resolveToken } from "./credentials";
+import {
+  assertTrustedOrigin,
+  RefreshError,
+  refreshCredentials,
+  resolveAuthUrl,
+  storedSharedCredentials,
+} from "./sharedAuth";
 
 export const DEFAULT_API_URL = "https://agents.withgauge.com";
 
@@ -68,13 +75,17 @@ export function resolveBaseUrl(): string {
 
 export class ApiClient {
   readonly baseUrl: string;
-  private readonly token: string | null;
+  private token: string | null;
+  private shared: ReturnType<typeof storedSharedCredentials>;
   private readonly authOptional: boolean;
 
   constructor(options: ApiClientOptions = {}) {
     this.baseUrl = (options.baseUrl ?? resolveBaseUrl()).replace(/\/+$/, "");
     this.token = options.token !== undefined ? options.token : resolveToken();
     this.authOptional = options.authOptional ?? false;
+    this.shared =
+      options.token === undefined ? storedSharedCredentials() : null;
+    if (this.shared) assertTrustedOrigin(this.baseUrl, this.shared);
   }
 
   get signedIn(): boolean {
@@ -110,7 +121,7 @@ export class ApiClient {
       onComment?: () => void;
     } = {},
   ): Promise<void> {
-    const res = await this.fetch(this.url(path, options.query), {
+    const res = await this.authenticatedFetch(this.url(path, options.query), {
       method: "GET",
       headers: this.headers({ Accept: "text/event-stream" }),
       signal: options.signal,
@@ -168,6 +179,59 @@ export class ApiClient {
     };
   }
 
+  private async authenticatedFetch(
+    url: URL,
+    init: RequestInit,
+  ): Promise<Response> {
+    let renewalFailed = false;
+    if (this.shared?.refreshToken) {
+      try {
+        const next = await refreshCredentials(this.shared);
+        assertTrustedOrigin(this.baseUrl, next);
+        this.shared = next;
+        this.token = this.shared.accessToken;
+      } catch (error) {
+        if (error instanceof RefreshError && error.unauthorized)
+          throw new CliError("unauthorized", messageOf(error));
+        if (
+          !(error instanceof RefreshError) ||
+          !(Date.parse(this.shared.expiresAt ?? "") > Date.now())
+        )
+          throw new CliError("network", messageOf(error));
+        renewalFailed = true;
+        // A transient renewal failure does not invalidate a still-live access token.
+      }
+    }
+    const send = () =>
+      this.fetch(url, {
+        ...init,
+        redirect: "error",
+        headers: {
+          ...init.headers,
+          ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+        },
+      });
+    const response = await send();
+    // Retry only a definite authentication rejection, never an ambiguous network failure.
+    if (response.status !== 401 || !this.shared?.refreshToken || renewalFailed)
+      return response;
+    await response.body?.cancel();
+    try {
+      const next = await refreshCredentials(this.shared, true);
+      assertTrustedOrigin(this.baseUrl, next);
+      this.shared = next;
+      this.token = this.shared.accessToken;
+    } catch (error) {
+      throw new CliError(
+        error instanceof RefreshError && error.unauthorized
+          ? "unauthorized"
+          : "network",
+        messageOf(error),
+      );
+    }
+    return send();
+  }
+
   private async fetch(url: URL, init: RequestInit): Promise<Response> {
     try {
       return await fetch(url, init);
@@ -190,7 +254,7 @@ export class ApiClient {
         ? undefined
         : { "Content-Type": "application/json" },
     );
-    const res = await this.fetch(this.url(path, options.query), {
+    const res = await this.authenticatedFetch(this.url(path, options.query), {
       method,
       headers,
       body:
@@ -218,8 +282,7 @@ export class ApiClient {
           hint,
         });
       }
-    } catch {
-    }
+    } catch {}
     const what =
       res.status === 429
         ? "Rate limited by the Gauge API"
@@ -232,6 +295,13 @@ export class ApiClient {
       { hint },
     );
   }
+}
+
+export function createChatClient(options: ApiClientOptions = {}): ApiClient {
+  return new ApiClient({
+    baseUrl: storedSharedCredentials()?.authUrl ?? resolveAuthUrl(),
+    ...options,
+  });
 }
 
 export function createClient(options?: ApiClientOptions): ApiClient {

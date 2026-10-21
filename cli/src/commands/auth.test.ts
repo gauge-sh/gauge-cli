@@ -48,6 +48,26 @@ describe("parseLoopbackCallback", () => {
 });
 
 describe("useOnlyOrg", () => {
+  it("uses canonical IDs for Chat organizations instead of potentially different Agents slugs", (t) => {
+    const dir = mkdtempSync(join(tmpdir(), "gauge-config-"));
+    const saved = process.env.XDG_CONFIG_HOME;
+    process.env.XDG_CONFIG_HOME = dir;
+    t.after(() => {
+      if (saved === undefined) delete process.env.XDG_CONFIG_HOME;
+      else process.env.XDG_CONFIG_HOME = saved;
+      rmSync(dir, { recursive: true, force: true });
+    });
+    t.mock.method(console, "log", () => {});
+    useOnlyOrg(
+      {
+        user: { id: "user", email: "user@test.com", name: "User" },
+        orgs: [{ id: "canonical-id", slug: "chat-slug", name: "Org" }],
+      },
+      true,
+    );
+    assert.equal(readConfig().defaultOrg, "canonical-id");
+  });
+
   it("sets the default org only for a single org and no existing default", (t) => {
     const dir = mkdtempSync(join(tmpdir(), "gauge-config-"));
     const saved = process.env.XDG_CONFIG_HOME;
