@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.23.0 — 2026-10-20
+
 ### Changed
 
 - Saved evals and preference prompts no longer store project inputs. Attach
@@ -25,7 +27,6 @@
   `--agent antigravity:<model>` or `ANTIGRAVITY` in case configuration. Discover
   available models with `gauge models list --hosted`. Local execution remains
   unsupported.
-
 - Previews list each input's archived files: `files` (the first 100) and
   `fileCount` in `inputSnapshots`, and up to 10 names in text output.
 - Previews name the `gauge.json` inputs a launch leaves out (`unattachedInputs`).
