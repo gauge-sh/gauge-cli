@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Cancelling a session that is already shutting down is accepted and waits for
+  it to finish, instead of failing with `session is closing`. Concurrent
+  cancellations, such as `gauge run cancel --batch` racing the detached batch's
+  own cancellation, no longer report stopped runs as pending.
+
 - A session that fails because the agent exits names the agent's last stderr
   line: `agent connection exited (1): <line>`.
 

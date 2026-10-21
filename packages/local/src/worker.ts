@@ -89,6 +89,12 @@ export async function runHostSession(directory: string): Promise<void> {
   };
 
   const handle = async (command: SessionCommand) => {
+    // Cancel is idempotent: a session already shutting down is what a second
+    // canceller wants, and it keeps the outcome that shutdown already chose.
+    if (command.action === "cancel") {
+      if (!closing && !finish && !fatal) finish = "canceled";
+      return;
+    }
     if (closing || finish || fatal) throw new Error("session is closing");
     switch (command.action) {
       case "prompt":
@@ -111,7 +117,6 @@ export async function runHostSession(directory: string): Promise<void> {
         if (status.state !== "waiting") throw new Error("finish requires an idle agent; use stop to cancel active work");
         if (command.turn !== undefined && command.turn !== status.turn) throw new Error("session is not waiting at the expected turn");
         finish = "completed"; break;
-      case "cancel": finish = "canceled"; break;
       default: throw new Error("unknown command");
     }
   };
