@@ -49,7 +49,7 @@ For open-ended setup, read \`gauge instructions hillclimb\`: identify inputs, pi
 Create a measurement before previewing: \`gauge eval create\` for task success or
 \`gauge preference create\` for product choice, then \`gauge run --eval <id>\` or
 \`--preference <id>\`. Read \`gauge instructions eval\` or \`gauge instructions preference\`.
-Local saved launches support \`--dry-run\` and named project inputs. Hosted project
+Local saved launches support \`--dry-run\` and \`--input <name>\`. Hosted project
 inputs and previews use case files/specs; read \`gauge instructions run\`.
 
 Gauge recommends the gauge-agents skill for future sessions:

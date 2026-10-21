@@ -32,9 +32,10 @@ Read \`gauge instructions session-analysis\` to analyze the sessions.
   require hosted execution:
   \`gauge preference scenarios add <id> --repo <url>\`.
   \`gauge preference markets\` lists the markets a prompt can measure.
-- Select named project inputs locally with repeated --input <name>; preview with
-  \`gauge run --preference <id> --local --dry-run\`. Hosted saved prompts support neither
-  named project inputs nor --dry-run; use hosted case files/specs for input snapshots and previews.
+- Attach gauge.json inputs at launch, not on the prompt: \`gauge run --preference <id> --local
+  --input <name>\` uses the configured files, and \`--input <name>=<path or glob>\` replaces
+  them. Repeat per input; preview with --dry-run. Hosted saved prompts support neither
+  project inputs nor --dry-run; use hosted case files/specs for input snapshots and previews.
 - --agent belongs to the prompt. Hosted --skill, --mcp, and --connection
   references require hosted execution.
   Read \`gauge instructions run\` to choose models.

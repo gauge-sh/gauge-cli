@@ -46,7 +46,7 @@ const record = (value: unknown): RecordValue =>
   value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as RecordValue)
     : {};
-const message = (error: unknown) =>
+export const message = (error: unknown) =>
   oneLine(
     error instanceof CliError && error.hint
       ? `${error.message} ${error.hint}`
@@ -109,9 +109,19 @@ export function read(root: string, path: string): Buffer {
   return readFileSync(join(root, path));
 }
 
+function ignoredByGit(root: string): boolean {
+  try {
+    git(root, ["check-ignore", "-q", "."]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function workingFiles(root: string): string[] {
   let paths: string[];
   try {
+    if (ignoredByGit(root)) throw new Error("workspace is ignored by Git");
     paths = git(root, [
       "ls-files",
       "--cached",

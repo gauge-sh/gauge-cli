@@ -17,7 +17,7 @@ import { ApiClient } from "./client";
 import {
   loadLocalRunDefinition,
   packLocalInput,
-  parseInputOverrides,
+  parseInputBindings,
   uploadLocalInputs,
 } from "./localRunInputs";
 
@@ -78,6 +78,8 @@ test("submits current definitions and an uploaded skill without Git or a GitHub 
     source: "override",
     path: join(root, "built"),
     gaugeArchive: { sha256: first.sha256, bytes: first.bytes },
+    files: ["SKILL.md"],
+    fileCount: 1,
   }]);
   await writeFile(join(root, "built", "SKILL.md"), "changed");
   const changed = await loadLocalRunDefinition([], ["product=./built"], root);
@@ -191,6 +193,8 @@ test("both backends snapshot dirty manifests, changed and untracked cases, and s
       source: "working-tree",
       path: root,
       gaugeArchive: { sha256: loaded.uploads[0].sha256, bytes: loaded.uploads[0].bytes },
+      files: ["docs/guide.md", "docs/new.md"],
+      fileCount: 2,
     }]);
     assert.deepEqual(await archiveContents(loaded.uploads[0].path), {
       "docs/guide.md": "Edited guide",
@@ -259,6 +263,26 @@ test("case discovery uses the nearest manifest in a nested Git workspace", async
     ["gauge-cases/nested.md"],
   );
   assert.equal(loaded.definition.source.commit, null);
+});
+
+test("reads a workspace inside a Git-ignored directory", async (t) => {
+  const root = await fixture(t);
+  const nested = join(root, ".gauge", "docs-test");
+  await mkdir(join(nested, "gauge-cases"), { recursive: true });
+  await writeFile(
+    join(nested, "gauge.json"),
+    JSON.stringify({ version: 2, org: "ignored-org", inputs: {} }),
+  );
+  await writeFile(join(nested, "gauge-cases", "nested.md"), prompt);
+  await writeFile(join(root, ".gitignore"), ".gauge/\n");
+  execFileSync("git", ["init", "-q"], { cwd: root });
+  const loaded = await loadLocalRunDefinition([], [], nested);
+  t.after(loaded.cleanup);
+  assert.equal(loaded.org, "ignored-org");
+  assert.deepEqual(
+    loaded.definition.cases.map((item) => item.path),
+    ["gauge-cases/nested.md"],
+  );
 });
 
 test("accepts standalone and symlinked workspace case globs in deterministic order", async (t) => {
@@ -414,6 +438,7 @@ test("an unused website input does not block a local case selecting project file
   const loaded = await loadLocalRunDefinition([], [], root, { local: true });
   t.after(loaded.cleanup);
   assert.deepEqual(loaded.definition.resources.map((input) => input.name), ["product"]);
+  assert.deepEqual(loaded.unattachedInputs, ["website"]);
   assert.deepEqual(Object.keys(await archiveContents(loaded.uploads[0].path)), ["built/SKILL.md"]);
 });
 
@@ -435,6 +460,8 @@ test("snapshot provenance identifies repacked bytes at the same npm input path",
         source: "working-tree",
         path,
         gaugeArchive: { sha256: loaded.uploads[0].sha256, bytes: loaded.uploads[0].bytes },
+        files: ["product-1.0.0.tgz"],
+        fileCount: 1,
       }]);
       assert.deepEqual(await archiveContents(loaded.uploads[0].path), {
         "product-1.0.0.tgz": content,
@@ -472,23 +499,138 @@ test("selects files relative to the supplied directory without credentials, depe
   });
   assert.deepEqual(paths, ["@literal", "SKILL.md"]);
   await symlink(join(root, "gauge.json"), join(dir, "link"));
+  const linked = await packLocalInput(
+    { ...resource, use: { type: "files", paths: ["SKILL.md"] } },
+    dir,
+    join(root, "linked.tar.gz"),
+  );
+  const linkedPaths: string[] = [];
+  await list({
+    file: linked.upload.path,
+    onReadEntry: (entry) => {
+      linkedPaths.push(entry.path.replace(/^\.\//, ""));
+    },
+  });
+  assert.deepEqual(linkedPaths, ["SKILL.md"]);
+  await mkdir(join(dir, ".gauge", "docs"), { recursive: true });
+  await writeFile(join(dir, ".gauge", "docs", "draft.md"), "draft");
   await assert.rejects(
-    packLocalInput(resource, dir, join(root, "bad.tar.gz")),
-    /link or special file/,
+    packLocalInput(
+      { ...resource, use: { type: "files", paths: [".gauge/docs/*.md"] } },
+      dir,
+      join(root, "gauge.tar.gz"),
+    ),
+    /\.gauge\/docs\/\*\.md is inside \.gauge\/\. Inputs never include \.gauge\//,
+  );
+  await assert.rejects(
+    packLocalInput(
+      { ...resource, use: { type: "files", paths: ["missing/*.md"] } },
+      dir,
+      join(root, "missing.tar.gz"),
+    ),
+    /^CliError: Input product: No files match missing\/\*\.md$/,
+  );
+});
+
+test("an override replaces configured files with a directory, file, or glob", async (t) => {
+  const root = await fixture(t);
+  const docs = { ...resource, use: { type: "files" as const, paths: ["docs/**/*.md"] } };
+  await mkdir(join(root, "draft", "nested"), { recursive: true });
+  await mkdir(join(root, "draft", ".gauge"));
+  await writeFile(join(root, "draft", "a.md"), "A");
+  await writeFile(join(root, "draft", "notes.txt"), "Notes");
+  await writeFile(join(root, "draft", "nested", "b.md"), "B");
+  await writeFile(join(root, "draft", ".gauge", "c.md"), "C");
+  for (const [supplied, expected] of [
+    ["draft", ["a.md", "nested/b.md", "notes.txt"]],
+    ["draft/a.md", ["a.md"]],
+    ["draft/*.md", ["a.md"]],
+    ["draft/**/*.md", ["a.md", "nested/b.md"]],
+  ] as const) {
+    const packed = await packLocalInput(
+      docs,
+      join(root, supplied),
+      join(root, "output.tar.gz"),
+      { override: true },
+    );
+    assert.deepEqual(packed.use, { type: "files" });
+    assert.deepEqual(Object.keys(await archiveContents(packed.upload.path)), expected);
+  }
+  await assert.rejects(
+    packLocalInput(docs, join(root, "draft", "*.json"), join(root, "o.tar.gz"), { override: true }),
+    /^CliError: Input product: No files match \*\.json$/,
+  );
+  await assert.rejects(
+    packLocalInput(docs, join(root, "draft"), join(root, "o.tar.gz")),
+    /No files match docs\/\*\*\/\*\.md/,
+  );
+});
+
+test("override globs select one npm package and reject Skill globs", async (t) => {
+  const root = await fixture(t);
+  const npm = { ...resource, use: { type: "npm-package" as const, package: "x.tgz", install: "environment" as const } };
+  await mkdir(join(root, "dist"));
+  await writeFile(join(root, "dist", "acme-1.0.0.tgz"), "first");
+  const packed = await packLocalInput(npm, join(root, "dist", "*.tgz"), join(root, "o.tar.gz"), { override: true });
+  assert.deepEqual(packed.use, { ...npm.use, package: "acme-1.0.0.tgz" });
+  assert.deepEqual(await archiveContents(packed.upload.path), { "acme-1.0.0.tgz": "first" });
+  await writeFile(join(root, "dist", "acme-1.0.1.tgz"), "second");
+  await assert.rejects(
+    packLocalInput(npm, join(root, "dist", "*.tgz"), join(root, "o.tar.gz"), { override: true }),
+    /matches 2 files; keep one/,
+  );
+  await assert.rejects(
+    packLocalInput(resource, join(root, "*"), join(root, "o.tar.gz"), { override: true }),
+    /Skill inputs take an explicit directory or archive, not a glob/,
+  );
+});
+
+test("a binary override keeps commands, resolved relative to the supplied path", async (t) => {
+  const root = await fixture(t);
+  const binary = {
+    ...resource,
+    use: {
+      type: "binary" as const,
+      paths: ["target/release/**"],
+      platform: "linux-x64" as const,
+      commands: { acme: "bin/acme" },
+    },
+  };
+  await mkdir(join(root, "out", "bin"), { recursive: true });
+  await writeFile(join(root, "out", "bin", "acme"), "ELF");
+  const packed = await packLocalInput(binary, join(root, "out"), join(root, "o.tar.gz"), { override: true });
+  assert.deepEqual(packed.use, { ...binary.use, paths: ["**"] });
+  assert.deepEqual(Object.keys(await archiveContents(packed.upload.path)), ["bin/acme"]);
+  await assert.rejects(
+    packLocalInput(binary, join(root, "out", "bin"), join(root, "o.tar.gz"), { override: true }),
+    /binary command acme target is missing: bin\/acme/,
   );
 });
 
 test("rejects duplicate and unknown overrides, escaped case paths, and missing local inputs", async (t) => {
   const root = await fixture(t);
   assert.throws(
-    () => parseInputOverrides(["product=a", "product=b"]),
+    () => parseInputBindings(["product=a", "product"]),
     /Duplicate/,
   );
-  assert.throws(() => parseInputOverrides(["product"]), /name=path/);
+  assert.deepEqual(
+    [...parseInputBindings(["product", "docs=a/*.md"])],
+    [
+      ["product", undefined],
+      ["docs", "a/*.md"],
+    ],
+  );
+  assert.throws(() => parseInputBindings(["product="]), /name or name=path/);
   await assert.rejects(
     loadLocalRunDefinition([], ["unknown=./built"], root),
     /Unknown input/,
   );
+  await mkdir(join(root, "built", ".gauge"));
+  for (const override of ["product=built/.gauge", "product=built/.gauge/*.md"])
+    await assert.rejects(
+      loadLocalRunDefinition([], [override], root),
+      /is inside \.gauge\/\. Inputs never include \.gauge\//,
+    );
   await assert.rejects(
     loadLocalRunDefinition(["../outside.md"], ["product=./built"], root),
     /inside the definition/,

@@ -25,7 +25,7 @@ const MODES = `## Local or hosted
 | \`run\`, \`run list\`, \`run compare\`, \`models list\`, \`cleanup\`, \`feedback\` | yes | yes |
 | Binary, website preview routing, and MCP inputs | no | yes |
 | Saved eval sets and preference prompts | yes | yes |
-| Named project inputs and previews on saved measurements | yes | use case files/specs |
+| Project inputs and previews on saved measurement launches | yes | use case files/specs |
 | Structured findings and queries | yes, supported fields | yes |
 | Personas, recurring schedules, PR checks | no | yes |
 | Optimizations (managed docs rewriting) | no | yes |

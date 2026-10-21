@@ -174,7 +174,7 @@ contains the execution preference. Git is optional for workspace initialization.
 | `run`, `run list`, `run compare --local`, `models list`, `cleanup`, `feedback` | yes | yes |
 | Binary, website, and MCP inputs | no | yes |
 | Saved eval sets and preference prompts | yes | yes |
-| Named project inputs and previews on saved measurements | yes | use case files/specs |
+| Project inputs and previews on saved measurement launches | yes | use case files/specs |
 | Findings and summary queries | yes, supported fields | yes |
 | Personas, recurring schedules, PR checks | no | yes |
 | Optimizations (managed docs rewriting) | no | yes |
@@ -282,9 +282,11 @@ working-tree definitions in either backend, including uncommitted edits. Selecte
 filesystem inputs are packaged for local execution or hosted upload; explicit remote
 artifacts retain their declared source. GitHub checks fetch committed definitions.
 Content digests identify the exact bytes separately from Git provenance.
-Preview `inputSnapshots` includes the selected source `path` and
-`gaugeArchive: { sha256, bytes }`. Those values describe Gauge's delivery archive,
-which contains the selected files. For npm inputs it contains the `.tgz`; the raw
+Preview `inputSnapshots` includes the selected source `path`,
+`gaugeArchive: { sha256, bytes }`, and the archived `files` (the first 100) with
+`fileCount`. Those values describe Gauge's delivery archive, which contains the
+selected files. `unattachedInputs` names the `gauge.json` inputs that the launch
+leaves out. For npm inputs it contains the `.tgz`; the raw
 tarball has a different hash and size. Each launch takes a fresh snapshot.
 Each case owns its agents, models, consumer repository/ref, Persona and criteria.
 The optional `config.inputs` selects named inputs; all attach by default.
@@ -478,9 +480,14 @@ it, `run wait` exits 0 once the request settles, whatever the verdict.
 Set `GAUGE_API_TOKEN` as a CI secret and replace `my-org` with your workspace slug.
 This can run immediately after your build in the same CI job.
 
-Repeat `--input name=path` for each input. Skills accept a directory containing
-`SKILL.md` or a ZIP/tar.gz archive; npm inputs accept a packed `.tgz`. Files and
-binary inputs accept a directory, with configured paths relative to that directory.
+Repeat `--input name=path` for each input. The path replaces the input's
+configured files entirely; only its type and settings carry over. It may be a
+glob, using the same syntax as `gauge.json`; quote it so the shell passes it
+through. Skills accept a directory containing `SKILL.md` or a ZIP/tar.gz archive;
+npm inputs accept a packed `.tgz` or a glob matching exactly one. Files inputs
+accept a directory, a single file, or a glob; archive paths are relative to the
+directory, or to the glob's directory before its first wildcard. Binary inputs
+accept a directory or glob, with `commands` relative to it.
 Use a dedicated build directory: links are rejected, and common credential files
 and `node_modules` are excluded. Each input is limited to 512 MiB and 20,000 files.
 
@@ -518,7 +525,7 @@ They are fetched live rather than snapshotted.
 Canonical-site preview routing requires hosted execution. Local runs reject
 website inputs, including `--input` overrides, before checking Docker or credentials.
 For local content-only testing, supply docs as a `files` input or put a reachable
-preview URL directly in the prompt. Confirm that the preview contains the edits
+preview URL directly in the prompt. Inputs never include `.gauge/`. Confirm that the preview contains the edits
 and is reachable from the agent's environment; the host's localhost is not
 automatically reachable from a container. These alternatives change exposure and
 do not test discovery of the canonical docs. Static verification validates
@@ -540,8 +547,10 @@ plus editable templates and defaults. Local records live in workspace SQLite;
 hosted records live in your organization. Launches freeze identity, revision, and
 effective settings. Renaming or editing a measurement preserves its history.
 Local measurements run on demand; recurring schedules, personas, markets, and
-hosted resource references require hosted execution. Select named project inputs
-for a local measurement with repeated `--input <name>` on create or edit.
+hosted resource references require hosted execution. Measurements do not store
+project inputs: attach them to a local launch with
+`gauge run --eval <id> --input <name>`, or `--input <name>=<path>` to replace the
+configured files.
 
 An **eval** is one prompt against one configuration. This hosted example uses
 registered skills and recurring scheduling; omit those hosted features locally:

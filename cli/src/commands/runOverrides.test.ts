@@ -84,6 +84,26 @@ it("sends one-launch overrides with --eval", async (t) => {
   });
 });
 
+it("rejects a repeated --eval instead of dropping ids", async (t) => {
+  const { requests, error } = await gauge(
+    t,
+    ["run", "--eval", "e1", "--eval", "e2", "--yes"],
+    {},
+  );
+  assert.match(String(error), /--eval takes one id/);
+  assert.equal(requests.length, 0);
+});
+
+it("rejects project inputs on a hosted saved eval", async (t) => {
+  const { requests, error } = await gauge(
+    t,
+    ["run", "--eval", "e1", "--input", "docs", "--yes"],
+    {},
+  );
+  assert.match(String(error), /Hosted saved measurements do not take project inputs/);
+  assert.equal(requests.length, 0);
+});
+
 it("rejects --samples without a saved eval set or preference prompt", async (t) => {
   const { requests, error } = await gauge(
     t,

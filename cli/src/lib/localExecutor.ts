@@ -685,30 +685,38 @@ function persistSession(gaugeDir: string, session: LocalSessionSummary): void {
   }
 }
 
-async function drive(
+export async function drive(
   directory: string,
   summary: (status: SessionStatus, endedBy: string) => LocalRunSummary,
   canceled: () => boolean,
+  session = { getSessionStatus, stopSession, finishSession },
 ): Promise<LocalRunSummary> {
   let endedBy = "session";
+  let stopDetail: string | undefined;
   for (;;) {
     if (canceled() && endedBy !== "user_cancel") {
       endedBy = "user_cancel";
-      await stopSession(directory);
+      await session.stopSession(directory);
     }
-    const status = await getSessionStatus(directory);
+    const status = await session.getSessionStatus(directory);
     if (status.state === "waiting" && endedBy === "session") {
       endedBy = "supervisor_finish";
-      await finishSession(directory, status.turn);
+      await session.finishSession(directory, status.turn);
     } else if (status.state === "blocked" && endedBy === "session") {
       endedBy = "supervisor_stop";
-      await stopSession(directory);
+      stopDetail =
+        "Stopped: the agent asked a question, and local runs have no user to answer it";
+      await session.stopSession(directory);
     } else if (
       ["completed", "failed", "canceled", "interrupted"].includes(status.state)
     ) {
       if (status.cleanupPending || status.state === "interrupted")
-        await stopSession(directory);
-      return summary(await getSessionStatus(directory), endedBy);
+        await session.stopSession(directory);
+      const final = await session.getSessionStatus(directory);
+      return summary(
+        stopDetail ? { ...final, detail: stopDetail } : final,
+        endedBy,
+      );
     }
     await delay(POLL_MS);
   }

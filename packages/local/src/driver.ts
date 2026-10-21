@@ -51,6 +51,12 @@ export function codexRecord(record: Json): Json | undefined {
   return { type: "item.completed", item };
 }
 
+export function exitError(status: number | string | null, stderr: string): Error {
+  const last = stderr.split("\n").map((l) => l.trim()).filter(Boolean).at(-1);
+  const reason = last && last.length > 300 ? `${last.slice(0, 300)}…` : last;
+  return new Error(`agent connection exited (${status})${reason ? `: ${reason}` : ""}`);
+}
+
 export interface DriverCallbacks {
   record(raw: string, decoded?: string): void;
   question(question: Question): void;
@@ -86,7 +92,7 @@ export class AgentDriver {
   private async launch(): Promise<void> {
     const child = this.child = spawn("docker", ["start", "--attach", "--interactive", this.containerName], { stdio: "pipe" });
     child.on("error", (e) => this.fail(e));
-    child.on("exit", (code, signal) => this.fail(new Error(`agent connection exited (${code ?? signal})`)));
+    child.on("close", (code, signal) => this.fail(exitError(code ?? signal, this.stderrTail)));
     child.stdin.on("error", (e) => this.fail(e));
     const diagnostic = (chunk: Buffer) => {
       this.callbacks.stderr(chunk);

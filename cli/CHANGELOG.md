@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+### Changed
+
+- Saved evals and preference prompts no longer store project inputs. Attach
+  them at launch: `gauge run --eval <id> --local --input <name>` uses the
+  input as configured in `gauge.json`. `gauge eval`/`gauge preference` `create`
+  and `edit` drop `--input` and `--clear-inputs`. A launch of a measurement with
+  previously saved inputs prints a note and attaches none.
+- `--input <name>=<path>` replaces the input's configured files entirely; only
+  its type and settings carry over. Before, a files or binary override applied
+  the configured `paths` globs inside the supplied directory. Files inputs also
+  accept a single file.
+- `--input <name>=<glob>` accepts a glob, with the same syntax as `gauge.json`.
+  Files are archived relative to the glob's directory before its first
+  wildcard; an npm glob must match exactly one `.tgz`. Skill globs are rejected.
+- An `--input` path inside `.gauge/` or another excluded directory is rejected,
+  as configured globs already were.
+
+### Added
+
+- Previews list each input's archived files: `files` (the first 100) and
+  `fileCount` in `inputSnapshots`, and up to 10 names in text output.
+- Previews name the `gauge.json` inputs a launch leaves out (`unattachedInputs`).
+  A saved eval or preference launch notes them and shows the `--input` flags
+  that attach them.
+
+### Fixed
+
+- Input directories skip symlinks and special files instead of failing on them.
+- A workspace inside a Git-ignored directory, such as `.gauge/`, reads its own
+  `gauge.json` and cases.
+- A files glob into `.gauge/` (or another excluded directory) names the
+  exclusion. For `.gauge/`, it says why. A glob with no match says "No files match", not "No committed files".
+- A local run that fails because the agent exits shows the agent's last stderr
+  line and prints the path to `agent.stderr.log`.
+- A local run stopped because the agent asked a question says so. Before, it
+  showed `canceled` with no reason.
+- `gauge run` rejects a repeated `--eval` or `--preference`. Before, it kept
+  only the last id.
+
 ## 0.22.0 — 2026-10-20
 
 ### Removed

@@ -27,9 +27,10 @@ eval set.
 - Criteria JSON is [{"name":"...","rubric":"..."}]. Add "id" to edit a
   criterion in place; a list without ids replaces the whole set.
 - Without --repo, local sessions start in an empty workspace; hosted uses the Gauge scaffold.
-- Select named project inputs locally with repeated --input <name>; preview with
-  \`gauge run --eval <id> --local --dry-run\`. Hosted saved evals support neither
-  named project inputs nor --dry-run; use hosted case files/specs for input snapshots and previews.
+- Attach gauge.json inputs at launch, not on the eval: \`gauge run --eval <id> --local
+  --input <name>\` uses the configured files, and \`--input <name>=<path or glob>\` replaces
+  them. Repeat per input; preview with --dry-run. Hosted saved evals support neither
+  project inputs nor --dry-run; use hosted case files/specs for input snapshots and previews.
 - --agent belongs to the eval set. Hosted --skill, --mcp, and --connection
   references require hosted execution. Read
   \`gauge instructions run\` to choose models.

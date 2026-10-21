@@ -155,7 +155,7 @@ Save the task and criteria:
 
 ```sh
 gauge eval create --local --name "Release notes" \
-  --input release-notes --agent codex --samples 1 \
+  --agent codex --samples 1 \
   --text "Write the release notes for version 1.2.0. We added dark mode and fixed a login crash." \
   --criterion "Team format: RELEASE-NOTES.md has a version 1.2.0 title, dark mode under Added, and the login crash fix under Fixed."
 ```
@@ -163,8 +163,8 @@ gauge eval create --local --name "Release notes" \
 Use the returned eval ID to preview, then launch when ready:
 
 ```sh
-gauge run --eval <eval-id> --local --dry-run
-gauge run --eval <eval-id> --local
+gauge run --eval <eval-id> --local --input release-notes --dry-run
+gauge run --eval <eval-id> --local --input release-notes
 gauge instructions session-analysis --local
 ```
 
@@ -175,7 +175,7 @@ the baseline remains intact. Keep the task, criteria, and model pin fixed,
 analyze both batches, then compare:
 
 ```sh
-gauge run --eval <eval-id> --local
+gauge run --eval <eval-id> --local --input release-notes
 gauge run compare --local --baseline batch=<before-id> --candidate batch=<after-id>
 ```
 
@@ -260,7 +260,7 @@ Hosted Gauge's gateway brokers credentials and can rewrite responses separately
 for each session. This lets you test changes to content an agent encounters,
 such as a docs response, without publishing those changes first.
 
-Named project inputs on saved evals/preferences, and `--dry-run` for those saved
+Project inputs on saved eval/preference launches, and `--dry-run` for those saved
 measurements, are currently local-only. For hosted working-tree input snapshots
 and previews, use case files or a case spec with `gauge run --hosted`.
 For example, the shared case above supports `gauge run --hosted --dry-run`;

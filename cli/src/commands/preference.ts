@@ -50,12 +50,6 @@ export function register(program: Command): void {
       .command("create")
       .description("Create a preference prompt")
       .requiredOption("--name <name>", "name")
-      .option(
-        "--input <name>",
-        "local: select a named project input (repeatable)",
-        collect,
-        [] as string[],
-      )
       .option("--text <text>", "prompt text inline")
       .option("--file <path>", 'prompt text from a file ("-" for stdin)')
       .option(
@@ -90,13 +84,6 @@ export function register(program: Command): void {
         "Update a preference prompt. Omitted flags keep their value.",
       )
       .option("--name <name>", "rename it")
-      .option(
-        "--input <name>",
-        "local: replace selected project inputs (repeatable)",
-        collect,
-        [] as string[],
-      )
-      .option("--clear-inputs", "local: remove all project inputs")
       .option("--text <text>", "replace the prompt text inline")
       .option(
         "--file <path>",

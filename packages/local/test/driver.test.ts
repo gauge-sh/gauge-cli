@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { NativeSession } from "@withgauge/agent-adapters";
-import { AgentDriver, codexRecord, readLines } from "../src/driver.js";
+import { AgentDriver, codexRecord, exitError, readLines } from "../src/driver.js";
 import type { Question, SessionSpec } from "../src/types.js";
 import { validateSpec } from "../src/session.js";
 import { harnessCommand, shellQuote } from "../src/scripts.js";
@@ -32,6 +32,12 @@ describe("stock persistent transports", () => {
     async function* chunks() { for (const b of bytes) yield Buffer.from([b]); }
     await readLines(chunks(), (line) => lines.push(line));
     expect(lines).toEqual([expected]);
+  });
+  it("names the agent's last stderr line when the connection exits", () => {
+    const stderr = "starting\n--dangerously-skip-permissions cannot be used with root/sudo privileges for security reasons\n\n";
+    expect(exitError(1, stderr).message).toBe("agent connection exited (1): --dangerously-skip-permissions cannot be used with root/sudo privileges for security reasons");
+    expect(exitError("SIGKILL", "").message).toBe("agent connection exited (SIGKILL)");
+    expect(exitError(1, "x".repeat(400)).message).toHaveLength("agent connection exited (1): ".length + 301);
   });
   it("rejects incomplete and oversized records", async () => {
     async function* partial() { yield Buffer.from('{"hello":'); }
