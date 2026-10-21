@@ -10,6 +10,14 @@ export const SCHEDULABLE_AGENTS = [
 export const schedulableAgentSchema = z.enum(SCHEDULABLE_AGENTS);
 export type SchedulableAgent = z.infer<typeof schedulableAgentSchema>;
 
+// The wire contract includes enrolled harnesses; the server checks org access.
+export const ROSTERABLE_AGENTS = [
+  ...SCHEDULABLE_AGENTS,
+  "ANTIGRAVITY",
+] as const;
+export const rosterableAgentSchema = z.enum(ROSTERABLE_AGENTS);
+export type RosterableAgent = z.infer<typeof rosterableAgentSchema>;
+
 export const agentConfigSchema = z.object({
   agent: runAgentSchema,
   models: z.array(z.string().min(1)),
@@ -17,7 +25,7 @@ export const agentConfigSchema = z.object({
 export type AgentConfig = z.infer<typeof agentConfigSchema>;
 
 export const agentConfigInputSchema = z.object({
-  agent: schedulableAgentSchema,
+  agent: rosterableAgentSchema,
   models: z.array(z.string().min(1)).default([]),
 });
 export type AgentConfigInput = z.input<typeof agentConfigInputSchema>;

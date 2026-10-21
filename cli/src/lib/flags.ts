@@ -42,6 +42,7 @@ const AGENT_ALIASES: Record<string, runs.Agent> = {
   opencode: "OPENCODE",
   "open-code": "OPENCODE",
   open_code: "OPENCODE",
+  antigravity: "ANTIGRAVITY",
 };
 
 export function parseAgents(raw: string): runs.Agent[] {
@@ -53,7 +54,7 @@ export function parseAgents(raw: string): runs.Agent[] {
     if (!agent) {
       throw new CliError(
         "usage",
-        `unknown agent "${name}" (expected: claude-code, codex, cursor, pi, opencode)`,
+        `unknown agent "${name}" (expected: claude-code, codex, cursor, pi, opencode, antigravity)`,
       );
     }
     out.push(agent);
@@ -63,7 +64,7 @@ export function parseAgents(raw: string): runs.Agent[] {
 }
 
 export function parseAgentSpec(raw: string): {
-  agent: runConfig.SchedulableAgent;
+  agent: runConfig.RosterableAgent;
   models: string[];
 } {
   const colon = raw.indexOf(":");
@@ -72,13 +73,13 @@ export function parseAgentSpec(raw: string): {
   if (!agent) {
     throw new CliError(
       "usage",
-      `unknown agent "${name}" in --agent "${raw}" (expected: claude-code, codex, pi, or opencode, optionally ":model1,model2")`,
+      `unknown agent "${name}" in --agent "${raw}" (expected: claude-code, codex, pi, opencode, or antigravity, optionally ":model1,model2")`,
     );
   }
   if (agent === "CURSOR") {
     throw new CliError(
       "usage",
-      "cursor is not schedulable — presets may roster claude-code, codex, pi, and opencode",
+      "cursor is not schedulable — presets may roster claude-code, codex, pi, opencode, and hosted antigravity",
     );
   }
   const models =
@@ -100,8 +101,8 @@ export function parseAgentSpec(raw: string): {
 
 export function buildAgentRoster(
   specs: string[],
-): { agent: runConfig.SchedulableAgent; models: string[] }[] {
-  const byAgent = new Map<runConfig.SchedulableAgent, Set<string>>();
+): { agent: runConfig.RosterableAgent; models: string[] }[] {
+  const byAgent = new Map<runConfig.RosterableAgent, Set<string>>();
   for (const raw of specs) {
     const { agent, models } = parseAgentSpec(raw);
     const set = byAgent.get(agent) ?? new Set<string>();

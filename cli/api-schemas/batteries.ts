@@ -7,6 +7,7 @@ export const BATTERY_AGENTS = [
   "CURSOR",
   "PI",
   "OPENCODE",
+  "ANTIGRAVITY",
 ] as const;
 export const BATTERY_CADENCES = ["NONE"] as const;
 
