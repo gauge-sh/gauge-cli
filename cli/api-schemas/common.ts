@@ -68,3 +68,13 @@ export function makeListResponse<T>(
 ): ListResponse<T> {
   return nextCursor === undefined ? { items } : { items, nextCursor };
 }
+
+export const createdBySchema = z
+  .object({
+    userId: z.string().nullable(),
+    email: z.string().nullable(),
+    name: z.string().nullable(),
+  })
+  .nullable()
+  .optional();
+export type CreatedBy = z.infer<typeof createdBySchema>;

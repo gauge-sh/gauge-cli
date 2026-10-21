@@ -10,6 +10,7 @@ import {
   listEvalSets,
   removeEvalSet,
 } from "../lib/evalSets";
+import { filterByCreator } from "../lib/createdBy";
 import { collect } from "../lib/flags";
 import { printItems, printJson } from "../lib/output";
 import {
@@ -30,12 +31,21 @@ export function register(program: Command): void {
     .option("--agents <agents>", "stats for these agents only (csv)")
     .option("--models <models>", "stats for these model slugs only (csv)")
     .option("--since <date>", "stats for runs since this ISO date only")
+    .option("--created-by <email|me>", "only evals created by this user")
     .action(
       async (
-        opts: { agents?: string; models?: string; since?: string },
+        opts: {
+          agents?: string;
+          models?: string;
+          since?: string;
+          createdBy?: string;
+        },
         cmd: Command,
       ) => {
-        const items = await listEvalSets(cmd, opts);
+        const items = await filterByCreator(
+          await listEvalSets(cmd, opts),
+          opts.createdBy,
+        );
         if (resolveOutput(cmd) === "json") printJson(items);
         else printItems(items.map(evalSetRow), "table");
       },

@@ -5,6 +5,8 @@ export * as brands from "./brands";
 export {
   API_VERSION_HEADER,
   ERROR_CODES,
+  type CreatedBy,
+  createdBySchema,
   type ErrorCode,
   type ErrorEnvelope,
   errorCodeSchema,

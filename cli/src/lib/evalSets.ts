@@ -12,6 +12,7 @@ import type { evals } from "@withgauge/api-schemas";
 import type { Command } from "commander";
 import { CliError, createClient } from "./client";
 import { confirmOrAbort } from "./confirm";
+import { creatorLabel } from "./createdBy";
 import { resolveOrg, resolveOutput } from "./context";
 import { parseAgents, readPromptText } from "./flags";
 import { printJson } from "./output";
@@ -95,6 +96,7 @@ export function evalSetRow(e: EvalSetListItem) {
     tags: e.tags.join(", "),
     "pass rate": passRateLabel(e.stats),
     runs: e.stats.runCount,
+    "created by": creatorLabel(e.createdBy),
   };
 }
 
@@ -112,6 +114,7 @@ function printDetail(e: EvalSet): void {
   console.log(`skills:   ${e.skillRefs.join(", ") || "(none)"}`);
   console.log(`mcp:      ${e.mcpRefs.join(", ") || "(none)"}`);
   console.log(`conns:    ${e.connectionIds.join(", ") || "(none)"}`);
+  console.log(`creator:  ${creatorLabel(e.createdBy)}`);
   console.log(`prompt:   ${e.promptText}`);
   console.log("criteria:");
   for (const c of e.criteria) console.log(`  [${c.id}] ${c.name}: ${c.rubric}`);
