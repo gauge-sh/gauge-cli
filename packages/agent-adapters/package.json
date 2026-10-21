@@ -1,6 +1,6 @@
 {
   "name": "@withgauge/agent-adapters",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": false,
   "description": "Portable adapters that translate coding agents' native protocols into consistent events and session state",
   "license": "MIT",
