@@ -2,12 +2,10 @@ import type { CreatedBy } from "@withgauge/api-schemas";
 import type { MeResponse } from "@withgauge/api-schemas/me";
 import { createClient } from "./client";
 
-/** Name, else email, else `--`. Absent (older server) reads as unknown. */
 export function creatorLabel(createdBy: CreatedBy): string {
   return createdBy?.name || createdBy?.email || "--";
 }
 
-/** Client-side `--created-by <email|me>` filter; the server lists are unpaginated. */
 export async function filterByCreator<T extends { createdBy?: CreatedBy }>(
   items: T[],
   createdBy: string | undefined,

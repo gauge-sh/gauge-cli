@@ -69,11 +69,6 @@ export function makeListResponse<T>(
   return nextCursor === undefined ? { items } : { items, nextCursor };
 }
 
-/** Who created an eval or preference prompt. `userId` goes null if that user
- *  is later deleted, while `email` (recorded at creation) survives. Gauge staff
- *  appear as one catch-all: `{ userId: null, email: null, name: "Gauge" }`. The
- *  whole object is null when no creator is known. Servers that predate
- *  attribution omit the field, so it is optional here. */
 export const createdBySchema = z
   .object({
     userId: z.string().nullable(),
