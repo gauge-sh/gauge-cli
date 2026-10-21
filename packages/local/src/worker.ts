@@ -89,8 +89,6 @@ export async function runHostSession(directory: string): Promise<void> {
   };
 
   const handle = async (command: SessionCommand) => {
-    // Cancel is idempotent: a session already shutting down is what a second
-    // canceller wants, and it keeps the outcome that shutdown already chose.
     if (command.action === "cancel") {
       if (!closing && !finish && !fatal) finish = "canceled";
       return;
