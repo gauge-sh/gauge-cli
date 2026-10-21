@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.2.1 — 2026-10-21
+
+- Antigravity: a `result` with status `ERROR` now completes the turn and keeps
+  the error as its terminal reason. agy reports ERROR even after its own retry
+  recovers (exit 0, full response); the process exit code (3) is the failure
+  signal.
+
 ## 0.2.0 — 2026-10-16
 
 - Add Antigravity 1.3.5 stream decoding, conversation identity, tool evidence,
