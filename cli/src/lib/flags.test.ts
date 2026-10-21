@@ -33,6 +33,20 @@ describe("parseAgentSpec", () => {
     assert.deepEqual(parseAgentSpec("codex:m1,m1,m2").models, ["m1", "m2"]);
   });
 
+  it("accepts hosted Antigravity with explicit model pins or no pins", () => {
+    assert.deepEqual(parseAgentSpec("ANTIGRAVITY:gemini-3.1-pro-preview"), {
+      agent: "ANTIGRAVITY",
+      models: ["gemini-3.1-pro-preview"],
+    });
+    assert.deepEqual(parseAgentSpec("antigravity"), {
+      agent: "ANTIGRAVITY",
+      models: [],
+    });
+    assert.deepEqual(parseAgents("antigravity,codex,ANTIGRAVITY"), [
+      "ANTIGRAVITY", "CODEX_CLI",
+    ]);
+  });
+
   it("ignores empty segments between commas", () => {
     assert.deepEqual(parseAgentSpec("codex:m1,,m2,").models, ["m1", "m2"]);
   });

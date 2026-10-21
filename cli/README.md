@@ -505,6 +505,26 @@ JSON is still the only output. Automatic PR checks continue to use configured
 sources; disable those checks in Gauge's GitHub settings if CI owns the trigger.
 Save `results.json` as a CI artifact even when the check fails.
 
+### Antigravity (hosted)
+
+Antigravity is available to organizations enrolled in Antigravity access. Run
+`gauge models list --hosted` to find the available model identifiers, then select
+one with `--agent antigravity:<model>` when creating or launching a saved eval or
+preference prompt. Case files and JSON specs use `agent: ANTIGRAVITY` with the
+model identifier in `models`.
+
+Launch with `--hosted`, for example:
+
+```sh
+gauge run --eval <id> --agent antigravity:<model> --hosted
+```
+
+For case files or a JSON case spec, preview with `gauge run --hosted --dry-run`
+or `gauge run --apply cases.json --hosted --dry-run` before launching.
+Hosted previews contact Gauge and may upload inputs; launches use credits.
+The server checks organization access and model availability. Antigravity cannot
+run locally yet.
+
 ### Authenticated MCP servers
 
 Connect your account in Gauge's MCP setup, completing OAuth in your browser when
@@ -532,8 +552,8 @@ do not test discovery of the canonical docs. Static verification validates
 configuration; it does not prove backend support, delivery, or an eval pass.
 
 Editor schemas are published at
-`https://agents.withgauge.com/schemas/gauge/v2.7.0/gauge.json` and
-`https://agents.withgauge.com/schemas/gauge/v2.7.0/case.json`. Associate them in editor
+`https://agents.withgauge.com/schemas/gauge/v2.8.0/gauge.json` and
+`https://agents.withgauge.com/schemas/gauge/v2.8.0/case.json`. Associate them in editor
 settings; `gauge.json` does not accept a `$schema` field. These release URLs are
 immutable. Cases default to `gauge-cases/`, or use explicit `cases` paths.
 

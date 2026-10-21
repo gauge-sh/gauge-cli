@@ -22,6 +22,7 @@ export const AGENTS = [
   "CURSOR",
   "PI",
   "OPENCODE",
+  "ANTIGRAVITY",
 ] as const;
 export const agentSchema = z.enum(AGENTS);
 export type Agent = z.infer<typeof agentSchema>;

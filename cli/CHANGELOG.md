@@ -21,6 +21,11 @@
 
 ### Added
 
+- Launch Antigravity sessions with `--hosted` for enrolled organizations, using
+  `--agent antigravity:<model>` or `ANTIGRAVITY` in case configuration. Discover
+  available models with `gauge models list --hosted`. Local execution remains
+  unsupported.
+
 - Previews list each input's archived files: `files` (the first 100) and
   `fileCount` in `inputSnapshots`, and up to 10 names in text output.
 - Previews name the `gauge.json` inputs a launch leaves out (`unattachedInputs`).
