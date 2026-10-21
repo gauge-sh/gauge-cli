@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { listResponseSchema } from "./common";
+import { createdBySchema, listResponseSchema } from "./common";
 import {
   ownedConfigurationInputSchema,
   ownedConfigurationPatchShape,
@@ -34,6 +34,7 @@ export const evalSetSchema = z
     name: z.string(),
     promptText: z.string(),
     createdAt: z.string(),
+    createdBy: createdBySchema,
     criteria: z.array(criterionSchema),
     tags: z.array(z.string()),
   })

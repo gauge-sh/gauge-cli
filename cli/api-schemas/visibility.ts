@@ -14,7 +14,7 @@ export type {
   VisibilityScenarioInput,
 } from "./ownedConfigurations";
 
-import { listResponseSchema } from "./common";
+import { createdBySchema, listResponseSchema } from "./common";
 import {
   agentSchema,
   runCreditsChargedSchema,
@@ -38,6 +38,7 @@ export const visibilityPromptSchema = visibilityPromptSettingsSchema.extend({
     .nullable(),
   position: z.number().int(),
   createdAt: z.string(),
+  createdBy: createdBySchema,
   tags: z.array(z.string()),
   runCount: z.number().int(),
   lastRunAt: z.string().nullable(),

@@ -11,6 +11,7 @@ import type { ownedConfigurations, visibility } from "@withgauge/api-schemas";
 import type { Command } from "commander";
 import { CliError, createClient } from "./client";
 import { confirmOrAbort } from "./confirm";
+import { creatorLabel } from "./createdBy";
 import { resolveOrg, resolveOutput } from "./context";
 import { readPromptText } from "./flags";
 import { printItems, printJson } from "./output";
@@ -77,6 +78,7 @@ export function preferencePromptRow(v: VisibilityPrompt) {
     tags: v.tags.join(", "),
     runs: v.runCount,
     "last run": v.lastRunAt ?? "-",
+    "created by": creatorLabel(v.createdBy),
   };
 }
 
@@ -92,6 +94,7 @@ function printDetail(v: VisibilityPrompt): void {
   );
   console.log(`tags:    ${v.tags.join(", ") || "(none)"}`);
   console.log(`runs:    ${v.runCount} (last: ${v.lastRunAt ?? "never"})`);
+  console.log(`creator: ${creatorLabel(v.createdBy)}`);
   console.log(`prompt:  ${v.promptText}`);
   console.log(
     `cadence: ${cadenceLabel(v.cadence)} — ${v.sampleCount} sample(s)`,

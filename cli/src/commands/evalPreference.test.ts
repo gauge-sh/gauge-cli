@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { describe, it, type TestContext } from "node:test";
 import { Command, CommanderError } from "commander";
 import { CliError } from "../lib/client";
+import { evalSetRow } from "../lib/evalSets";
+import { preferencePromptRow } from "../lib/preferencePrompts";
 import { register as registerRun } from "./run";
 import { register as registerEval } from "./eval";
 import { register as registerPreference } from "./preference";
@@ -253,5 +255,78 @@ describe("gauge run", () => {
       program().parseAsync(["run", "get"], { from: "user" }),
       (error) => error instanceof CommanderError && error.exitCode !== 0,
     );
+  });
+});
+
+describe("creator attribution", () => {
+  const creators = {
+    named: { userId: "u1", email: "ann@acme.test", name: "Ann" },
+    emailOnly: { userId: null, email: "gone@acme.test", name: null },
+    gauge: { userId: null, email: null, name: "Gauge" },
+  };
+  const evalItem = (createdBy?: unknown) =>
+    ({
+      id: "e",
+      name: "E",
+      criteria: [],
+      tags: [],
+      stats: { judgedRuns: 0, passedRuns: 0, runCount: 0 },
+      ...(createdBy === undefined ? {} : { createdBy }),
+    }) as unknown as Parameters<typeof evalSetRow>[0];
+  const promptItem = (createdBy?: unknown) =>
+    ({
+      id: "p",
+      name: "P",
+      kind: "RECOMMEND",
+      market: null,
+      tags: [],
+      runCount: 0,
+      lastRunAt: null,
+      ...(createdBy === undefined ? {} : { createdBy }),
+    }) as unknown as Parameters<typeof preferencePromptRow>[0];
+
+  it("shows name, then email, then --, with Gauge as a name", () => {
+    const labels = [
+      creators.named,
+      creators.emailOnly,
+      null,
+      creators.gauge,
+      undefined,
+    ].map((createdBy) => ({
+      eval: evalSetRow(evalItem(createdBy))["created by"],
+      preference: preferencePromptRow(promptItem(createdBy))["created by"],
+    }));
+    assert.deepEqual(
+      labels.map((l) => l.eval),
+      ["Ann", "gone@acme.test", "--", "Gauge", "--"],
+    );
+    assert.deepEqual(
+      labels.map((l) => l.preference),
+      labels.map((l) => l.eval),
+    );
+  });
+
+  it("passes createdBy through --json and filters by email or me", async (t) => {
+    const items = [
+      { ...evalItem(creators.named), id: "mine" },
+      { ...evalItem(creators.emailOnly), id: "other" },
+      { ...evalItem(), id: "old" },
+    ];
+    const requests = useApi(t, {
+      items,
+      user: { id: "u1", email: "ann@acme.test" },
+    });
+    const ids = (): string[] =>
+      JSON.parse(
+        String((console.log as unknown as { mock: { calls: { arguments: unknown[] }[] } }).mock.calls.at(-1)?.arguments[0]),
+      ).map((i: { id: string }) => i.id);
+
+    await gauge(["eval", "list"]);
+    assert.deepEqual(ids(), ["mine", "other", "old"]);
+    await gauge(["eval", "list", "--created-by", "GONE@acme.test"]);
+    assert.deepEqual(ids(), ["other"]);
+    await gauge(["preference", "list", "--created-by", "me"]);
+    assert.deepEqual(ids(), ["mine"]);
+    assert.ok(requests.some((r) => r.url === "/api/v1/me"));
   });
 });

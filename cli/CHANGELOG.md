@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+
+- `gauge eval` and `gauge preference` list and get show who created each item
+  (a "created by" column and `--json` field), and `list` accepts
+  `--created-by <email|me>`. Servers that predate attribution show `--`.
+
 ## 0.23.0 — 2026-10-20
 
 ### Added

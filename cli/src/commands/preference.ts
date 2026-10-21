@@ -1,5 +1,6 @@
 import type { Command } from "commander";
 import { resolveOutput } from "../lib/context";
+import { filterByCreator } from "../lib/createdBy";
 import { collect } from "../lib/flags";
 import { printItems, printJson } from "../lib/output";
 import {
@@ -32,8 +33,12 @@ export function register(program: Command): void {
   preference
     .command("list")
     .description("List preference prompts")
-    .action(async (_opts: unknown, cmd: Command) => {
-      const items = await listPreferencePrompts(cmd);
+    .option("--created-by <email|me>", "only prompts created by this user")
+    .action(async (opts: { createdBy?: string }, cmd: Command) => {
+      const items = await filterByCreator(
+        await listPreferencePrompts(cmd),
+        opts.createdBy,
+      );
       if (resolveOutput(cmd) === "json") printJson(items);
       else printItems(items.map(preferencePromptRow), "table");
     });
