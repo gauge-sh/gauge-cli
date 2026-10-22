@@ -5,10 +5,16 @@ import { join } from "node:path";
 export type CliConfig = {
   defaultOrg?: string;
   apiUrl?: string;
+  authUrl?: string;
   backend?: "local" | "hosted";
 };
 
-export const CONFIG_KEYS = ["defaultOrg", "apiUrl", "backend"] as const;
+export const CONFIG_KEYS = [
+  "defaultOrg",
+  "apiUrl",
+  "authUrl",
+  "backend",
+] as const;
 export type ConfigKey = (typeof CONFIG_KEYS)[number];
 
 export function configDir(): string {

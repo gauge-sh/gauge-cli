@@ -246,6 +246,10 @@ over time.
 
 ## Local or hosted
 
+Shared Chat/Agents login is the default for `gauge auth login` and
+`gauge auth login --device`. See [shared CLI authentication](docs/shared-cli-auth.md)
+for refresh, endpoint overrides, and compatibility details.
+
 | | Local | Hosted Gauge |
 | --- | --- | --- |
 | Execution | Docker on your machine, using your agent credentials | Managed compute; sessions keep running when you close your laptop |
