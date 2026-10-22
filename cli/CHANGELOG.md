@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.24.0 — 2026-10-21
+
 ### Added
 
 - `gauge eval` and `gauge preference` list and get show who created each item
@@ -9,6 +11,17 @@
   `--created-by <email|me>`. Shows `--` when no creator is available.
 - `gauge usage` shows who started the session each ledger entry charges or
   refunds (a "started by" column and `--json` field).
+
+### Changed
+
+- Run skill sets no longer have a 32-skill limit.
+
+### Fixed
+
+- Antigravity runs no longer fail when the agent recovers from a transient API
+  error. Only a run whose process exits with an error is marked as failed.
+- `gauge run cancel --batch` no longer reports stopped runs as pending when a
+  cancel races the batch's own shutdown.
 
 ## 0.23.0 — 2026-10-20
 
