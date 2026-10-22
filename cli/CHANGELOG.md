@@ -7,6 +7,8 @@
 - `gauge eval` and `gauge preference` list and get show who created each item
   (a "created by" column and `--json` field), and `list` accepts
   `--created-by <email|me>`. Shows `--` when no creator is available.
+- `gauge usage` shows who started the session each ledger entry charges or
+  refunds (a "started by" column and `--json` field).
 
 ## 0.23.0 — 2026-10-20
 

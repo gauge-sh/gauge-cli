@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { listQuerySchema, listResponseSchema } from "./common";
+import { runTriggeredBySchema } from "./runs";
 
 export const billingTierSchema = z.object({
   skuId: z.string(),
@@ -80,6 +81,7 @@ export const usageEntrySchema = z.object({
   delta: z.number().int(),
   runId: z.string().nullable(),
   batchId: z.string().nullable(),
+  triggeredBy: runTriggeredBySchema.nullable().optional(),
   createdAt: z.string(),
 });
 export type UsageEntry = z.infer<typeof usageEntrySchema>;

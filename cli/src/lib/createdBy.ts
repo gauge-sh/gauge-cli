@@ -1,9 +1,15 @@
 import type { CreatedBy } from "@withgauge/api-schemas";
 import type { MeResponse } from "@withgauge/api-schemas/me";
+import type { RunTriggeredBy } from "@withgauge/api-schemas/runs";
 import { createClient } from "./client";
 
 export function creatorLabel(createdBy: CreatedBy): string {
   return createdBy?.name || createdBy?.email || "--";
+}
+
+export function triggeredByLabel(t: RunTriggeredBy | null | undefined): string {
+  if (!t) return "";
+  return t.email ? `${t.source} (${t.email})` : t.source;
 }
 
 export async function filterByCreator<T extends { createdBy?: CreatedBy }>(
