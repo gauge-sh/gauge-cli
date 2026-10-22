@@ -7,8 +7,10 @@ import type { ModeSource } from "./gaugeState";
 import { style } from "./output";
 
 export type ErrorReport = {
-  code: CliErrorCode | "internal";
+  // A CLI error code, or the server's more specific code when it sent one.
+  code: CliErrorCode | "internal" | (string & {});
   message: string;
+  details?: Record<string, unknown>;
   hint?: string;
   docs: string;
   feedback?: string;
@@ -60,8 +62,9 @@ function describe(
 ): Omit<ErrorReport, "docs" | "feedback"> & { docs?: string } {
   if (error instanceof CliError)
     return {
-      code: error.code,
+      code: error.apiCode ?? error.code,
       message: readable(error.message),
+      ...(error.details ? { details: error.details } : {}),
       hint: error.hint,
       docs: error.docs,
       exitCode: error.exitCode,
