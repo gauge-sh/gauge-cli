@@ -6,10 +6,6 @@ import { createInterface } from "node:readline";
 import type { Readable } from "node:stream";
 import { setTimeout as sleep } from "node:timers/promises";
 import { errorEnvelopeSchema } from "@withgauge/api-schemas";
-import {
-  type CliAuthorizationTokenResponse,
-  cliAuthorizationTokenResponseSchema,
-} from "@withgauge/api-schemas/cli-auth";
 import type { DeviceAuthorizeResponse } from "@withgauge/api-schemas/device";
 import { deviceTokenResultSchema } from "@withgauge/api-schemas/device";
 import type { MeResponse } from "@withgauge/api-schemas/me";
@@ -42,11 +38,7 @@ import type { OutputFormat } from "../lib/output";
 import { printItems, printJson } from "../lib/output";
 import { fetchAllPages } from "../lib/paginate";
 
-import {
-  resolveAuthUrl,
-  sharedLoginEnabled,
-  sharedTokenSchema,
-} from "../lib/sharedAuth";
+import { resolveAuthUrl, sharedTokenSchema } from "../lib/sharedAuth";
 
 const LOGIN_TIMEOUT_MS = 2 * 60 * 1000;
 const TOKEN_PREFIX = "gauge_";
@@ -74,9 +66,6 @@ async function fetchMe(
 function identityClient(): { client: ApiClient; shared: boolean } {
   const shared = resolveToken()?.startsWith("gauge_cli_") ?? false;
   return { client: shared ? createChatClient() : createClient(), shared };
-}
-function authBase(): string {
-  return sharedLoginEnabled() ? resolveAuthUrl() : resolveBaseUrl();
 }
 function sessionCredentials(raw: unknown): SharedCredentials {
   return {
@@ -206,7 +195,7 @@ export async function browserLogin(): Promise<void> {
     throw new CliError("internal", "Could not determine the listener port");
   }
 
-  const base = authBase().replace(/\/+$/, "");
+  const base = resolveAuthUrl();
   const authorizeUrl = new URL(`${base}/cli/authorize`);
   authorizeUrl.searchParams.set("port", String(address.port));
   authorizeUrl.searchParams.set("state", state);
@@ -242,31 +231,23 @@ export async function browserLogin(): Promise<void> {
       }),
     ]);
 
-    const raw = await bootstrapPost<unknown>(
-      sharedLoginEnabled() ? "/api/cli/token" : "/api/v1/cli/token",
-      {
-        code,
-        codeVerifier,
-      },
-    );
-    const parsed = (
-      sharedLoginEnabled()
-        ? sharedTokenSchema
-        : cliAuthorizationTokenResponseSchema
-    ).safeParse(raw);
+    const raw = await bootstrapPost<unknown>("/api/cli/token", {
+      code,
+      codeVerifier,
+    });
+    const parsed = sharedTokenSchema.safeParse(raw);
     if (!parsed.success) {
       throw new CliError(
         "internal",
         "Unexpected response from the CLI token endpoint.",
       );
     }
-    const exchange: CliAuthorizationTokenResponse = parsed.data;
+    const exchange = parsed.data;
     const token = exchange.accessToken;
 
     const me = await verifyIssuedToken(token);
     await withCredentialLock(async () => {
-      if (sharedLoginEnabled()) saveCredentials(sessionCredentials(raw));
-      else saveToken(token);
+      saveCredentials(sessionCredentials(raw));
     });
     console.log(`Token saved to ${credentialsPath()}`);
     printIdentity(me);
@@ -278,12 +259,8 @@ export async function browserLogin(): Promise<void> {
   }
 }
 
-function deviceEndpoint(): string {
-  return sharedLoginEnabled() ? "/api/cli/device" : "/api/v1/device";
-}
-
 async function bootstrapPost<T>(path: string, body: unknown): Promise<T> {
-  const base = authBase().replace(/\/+$/, "");
+  const base = resolveAuthUrl();
   let res: Response;
   try {
     res = await fetch(`${base}${path}`, {
@@ -324,10 +301,10 @@ async function bootstrapPost<T>(path: string, body: unknown): Promise<T> {
 export async function deviceLogin(opts: { email?: string }): Promise<{
   token: string;
   me: IdentityResponse;
-  credentials?: SharedCredentials;
+  credentials: SharedCredentials;
 }> {
   const start = await bootstrapPost<DeviceAuthorizeResponse>(
-    `${deviceEndpoint()}/authorize`,
+    "/api/cli/device/authorize",
     { deviceName: hostname() || "this device", email: opts.email },
   );
 
@@ -349,7 +326,7 @@ export async function deviceLogin(opts: { email?: string }): Promise<{
 
     let raw: unknown;
     try {
-      raw = await bootstrapPost<unknown>(`${deviceEndpoint()}/token`, {
+      raw = await bootstrapPost<unknown>("/api/cli/device/token", {
         deviceCode: start.deviceCode,
       });
     } catch (e) {
@@ -391,9 +368,7 @@ export async function deviceLogin(opts: { email?: string }): Promise<{
       case "approved": {
         const token = result.accessToken;
         try {
-          const credentials = sharedLoginEnabled()
-            ? sessionCredentials(raw)
-            : undefined;
+          const credentials = sessionCredentials(raw);
           const me = await verifyIssuedToken(token);
           return { token, me, credentials };
         } catch (e) {
@@ -574,8 +549,7 @@ export function register(program: Command): void {
             email: opts.email,
           });
           await withCredentialLock(async () => {
-            if (credentials) saveCredentials(credentials);
-            else saveToken(token);
+            saveCredentials(credentials);
           });
           console.log(`Token saved to ${credentialsPath()}`);
           printIdentity(me);

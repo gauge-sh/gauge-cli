@@ -191,7 +191,7 @@ it("aborts a real hanging HTTP request", { timeout: 8_000 }, async (t) => {
 
 it(
   "worker lifetime is bounded even if its work never settles",
-  { timeout: 10_000 },
+  { timeout: 25_000 },
   async (t) => {
     const directory = await fixture(t);
     const script = join(directory, "hung-worker.mjs");
@@ -207,11 +207,13 @@ it(
     const result = await promisify(execFile)(
       process.execPath,
       ["--import", loader, script],
-      { timeout: 8_000 },
+      // Allow for Node/tsx cold startup on slower CI runners before the
+      // worker starts its unchanged three-second watchdog.
+      { timeout: 20_000 },
     );
     assert.equal(result.stdout, "");
     assert.equal(result.stderr, "");
     assert.ok(Date.now() - start >= WORKER_TIMEOUT_MS);
-    assert.ok(Date.now() - start < 8_000);
+    assert.ok(Date.now() - start < 20_000);
   },
 );

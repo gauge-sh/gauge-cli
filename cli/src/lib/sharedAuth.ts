@@ -7,10 +7,6 @@ import {
   type SharedCredentials,
 } from "./credentials";
 export const DEFAULT_AUTH_URL = "https://app.withgauge.com";
-// Opt in until both services have deployed shared auth.
-export function sharedLoginEnabled(): boolean {
-  return Boolean(process.env.GAUGE_AUTH_URL || readConfig().authUrl);
-}
 export function resolveAuthUrl(): string {
   return (
     process.env.GAUGE_AUTH_URL ||

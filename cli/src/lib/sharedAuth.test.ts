@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
-import { execFile } from "node:child_process";
+import childProcess, { execFile } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { createServer } from "node:http";
+import { Command } from "commander";
 import { promisify } from "node:util";
 import assert from "node:assert/strict";
 import fs, { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
@@ -18,12 +20,19 @@ import {
   saveToken,
   type SharedCredentials,
 } from "./credentials";
-import { refreshCredentials, sharedTokenSchema } from "./sharedAuth";
+import {
+  DEFAULT_AUTH_URL,
+  refreshCredentials,
+  resolveAuthUrl,
+  sharedTokenSchema,
+} from "./sharedAuth";
+import { updateConfig } from "./config";
 import {
   browserLogin,
   deviceLogin,
   logout,
   parseLoopbackCallback,
+  register,
 } from "../commands/auth";
 
 const tokens = (suffix = "new") => ({
@@ -56,11 +65,26 @@ describe("shared CLI credentials", { concurrency: false }, () => {
     delete process.env.GAUGE_API_TOKEN;
     process.env.GAUGE_API_URL = "https://agents.test";
     process.env.GAUGE_AUTH_URL = "https://chat.test";
+    // Browser/device tests must not launch a real browser on the CI runner.
+    mock.method(childProcess, "spawn", () =>
+      Object.assign(new EventEmitter(), { unref() {} }),
+    );
+    syncBuiltinESMExports();
   });
   afterEach(() => {
     mock.restoreAll();
+    syncBuiltinESMExports();
     process.env = saved;
     rmSync(directory, { recursive: true, force: true });
+  });
+
+  it("retains explicit authentication endpoint overrides", () => {
+    delete process.env.GAUGE_AUTH_URL;
+    assert.equal(resolveAuthUrl(), DEFAULT_AUTH_URL);
+    updateConfig({ authUrl: "https://configured.test/" });
+    assert.equal(resolveAuthUrl(), "https://configured.test");
+    process.env.GAUGE_AUTH_URL = "https://environment.test/";
+    assert.equal(resolveAuthUrl(), "https://environment.test");
   });
 
   it("handles browser denial only for the matching login state", () => {
@@ -75,7 +99,8 @@ describe("shared CLI credentials", { concurrency: false }, () => {
     );
   });
 
-  it("uses Chat device endpoints and verifies Chat-only users while retaining refresh metadata", async () => {
+  it("uses Chat device endpoints by default and retains refresh metadata for Chat-only users", async () => {
+    delete process.env.GAUGE_AUTH_URL;
     const seen: string[] = [];
     mock.method(console, "log", () => {});
     mock.method(globalThis, "fetch", async (url: URL | string) => {
@@ -100,9 +125,9 @@ describe("shared CLI credentials", { concurrency: false }, () => {
     assert.equal(result.credentials?.refreshToken, "gauge_refresh_new");
     assert.equal(result.me.orgs.length, 0);
     assert.deepEqual(seen, [
-      "https://chat.test/api/cli/device/authorize",
-      "https://chat.test/api/cli/device/token",
-      "https://chat.test/api/cli/me",
+      `${DEFAULT_AUTH_URL}/api/cli/device/authorize`,
+      `${DEFAULT_AUTH_URL}/api/cli/device/token`,
+      `${DEFAULT_AUTH_URL}/api/cli/me`,
     ]);
   });
 
@@ -141,12 +166,15 @@ describe("shared CLI credentials", { concurrency: false }, () => {
     );
   });
 
-  it("exchanges the browser callback with PKCE at Chat and saves a refreshable session", async () => {
+  it("uses Chat browser login by default with PKCE and saves a refreshable session", async () => {
+    delete process.env.GAUGE_AUTH_URL;
     const originalFetch = globalThis.fetch;
     let authorize: URL | undefined;
     let callback: Promise<Response> | undefined;
     mock.method(console, "log", (message: string) => {
-      const match = message.match(/https:\/\/chat\.test\/cli\/authorize\?\S+/);
+      const match = message.match(
+        /https:\/\/app\.withgauge\.com\/cli\/authorize\?\S+/,
+      );
       if (!match) return;
       authorize = new URL(match[0]);
       callback = originalFetch(
@@ -166,7 +194,7 @@ describe("shared CLI credentials", { concurrency: false }, () => {
           );
           return json(tokens());
         }
-        assert.equal(String(url), "https://chat.test/api/cli/me");
+        assert.equal(String(url), `${DEFAULT_AUTH_URL}/api/cli/me`);
         return json({
           user: { id: "uuid", email: "person@test.com" },
           orgs: [],
@@ -382,6 +410,41 @@ describe("shared CLI credentials", { concurrency: false }, () => {
     saveCredentials(credentials());
     await new ApiClient().get("/me");
     assert.equal(fetchMock.mock.callCount(), 1);
+  });
+
+  it("imports legacy tokens through Agents without opting into an auth endpoint", async () => {
+    delete process.env.GAUGE_AUTH_URL;
+    mock.method(console, "log", () => {});
+    mock.method(process.stdin, Symbol.asyncIterator, async function* () {
+      yield "gauge_legacy_import\n";
+    });
+    const seen: string[] = [];
+    mock.method(
+      globalThis,
+      "fetch",
+      async (url: URL | string, init: RequestInit) => {
+        seen.push(String(url));
+        assert.equal(
+          new Headers(init.headers).get("Authorization"),
+          "Bearer gauge_legacy_import",
+        );
+        return json({
+          user: { id: "agents-user", email: "person@test.com" },
+          orgs: [],
+        });
+      },
+    );
+    const program = new Command();
+    register(program);
+    await program.parseAsync(["auth", "login", "--with-token"], {
+      from: "user",
+    });
+    assert.equal(readCredentials(), "gauge_legacy_import");
+    await new ApiClient().get("/api/v1/me");
+    assert.deepEqual(seen, [
+      "https://agents.test/api/v1/me",
+      "https://agents.test/api/v1/me",
+    ]);
   });
 
   it("retains legacy plaintext credentials and environment precedence", () => {

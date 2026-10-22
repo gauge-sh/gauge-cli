@@ -1,17 +1,16 @@
 # Shared CLI authentication
 
-Shared authentication is initially opt-in, after the Chat and Agents server
-changes have been deployed and enabled:
+Shared authentication is the default for browser and device login:
 
 ```sh
-gauge config set authUrl https://app.withgauge.com
 gauge auth login
 # Remote terminals can use: gauge auth login --device
 ```
 
-`GAUGE_AUTH_URL` overrides `authUrl`. `GAUGE_API_URL` / `apiUrl` still select the
-Agents data API. Without an explicit auth URL, login retains the existing Agents
-flow during rollout. A later release can switch the default after server rollout.
+Login uses `https://app.withgauge.com` without any configuration. For development
+or alternate deployments, `GAUGE_AUTH_URL` overrides `authUrl`.
+`GAUGE_API_URL` / `apiUrl` still select the Agents data API. Deploy and enable
+shared authentication on both Chat and Agents before releasing this CLI version.
 
 Chat handles browser consent, device approval, credential issuance, refresh, and
 revocation. One opaque access token works with both APIs. Agents asks Chat for
@@ -50,4 +49,5 @@ revocation failed. Environment credentials are unchanged. `auth tokens` manages
 legacy Agents tokens; shared sessions cannot mint legacy tokens that would escape
 the shared grant's revocation.
 
-Local execution and existing Agents credentials do not require this opt-in.
+Local execution is unchanged. Existing stored and imported Agents tokens remain
+supported; the next browser or device login creates a shared session.
