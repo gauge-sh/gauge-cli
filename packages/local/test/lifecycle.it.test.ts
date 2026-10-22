@@ -68,6 +68,11 @@ describe.skipIf(!enabled)("host owner lifecycle in real Docker, without inferenc
     await wait(dir, "running"); await stopSession(dir);
     expect(await getSessionStatus(dir)).toMatchObject({ state: "canceled" }); absent(launch);
   }));
+  it("accepts concurrent cancellations of the same session", { timeout: 30_000 }, () => fixture({ prompt: { text: "HANG" } }, async (dir, launch) => {
+    await wait(dir, "running");
+    await Promise.all([stopSession(dir), stopSession(dir)]);
+    expect(await getSessionStatus(dir)).toMatchObject({ state: "canceled" }); absent(launch);
+  }));
   it("reports a lost host owner as interrupted and cleans up without restarting", { timeout: 30_000 }, () => fixture({}, async (dir, launch) => {
     const status = await wait(dir, "waiting");
     const evidence = await readFile(join(dir, "events.ndjson"), "utf8");
