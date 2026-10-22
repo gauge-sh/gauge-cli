@@ -120,24 +120,49 @@ describe("Antigravity 1.3.5", () => {
     expect(value.state.antigravity?.modelSelector).toBe("gemini-3.1-pro-low");
   });
 
-  it("accounts for usage on failed turns and preserves it for recovery", () => {
+  it("accounts for usage on errored turns and preserves it for recovery", () => {
     const session = new NativeSession("antigravity");
     observe(session, init());
     observe(session, result(totals(1)));
     session.beginTurn();
     const record = result(totals(2), "ERROR");
-    const failed = observe(session, {
+    const errored = observe(session, {
       ...record,
       result: { ...record.result, error: "interrupted" },
     });
-    expect(failed.terminal).toEqual({
-      status: "failed",
+    expect(errored.terminal).toEqual({
+      status: "complete",
       reason: "ERROR: interrupted",
     });
-    expect(failed.state.turn.phase).toBe("failed");
-    expect(usages(failed)).toEqual([increment]);
+    expect(errored.state.turn.terminalReason).toBe("ERROR: interrupted");
+    expect(usages(errored)).toEqual([increment]);
     session.beginTurn();
     expect(usages(observe(session, result(totals(3))))).toEqual([increment]);
+  });
+
+  // Real agy 1.3.5 output against an endpoint that resets or 503s the main
+  // model request. A recovered retry and a give-up both report ERROR; only the
+  // process exit (0 vs 3) differs, so neither result record fails the turn.
+  it.each([
+    ["reset-recovered", "PROBE-OK\n"],
+    ["503-recovered", "PROBE-OK\n"],
+    ["reset-exhausted", ""],
+    ["503-exhausted", ""],
+  ])("leaves the %s verdict to the process exit", (name, response) => {
+    const session = new NativeSession("antigravity");
+    let last: ReturnType<NativeSession["observe"]> | undefined;
+    for (const line of readFileSync(
+      new URL(`fixtures/agy-1.3.5-api-error-${name}.jsonl`, import.meta.url),
+      "utf8",
+    )
+      .split("\n")
+      .filter(Boolean))
+      last = session.observe(line, at);
+    expect(last?.terminal?.status).toBe("complete");
+    expect(last?.terminal?.reason).toMatch(/^ERROR: /);
+    expect(
+      last?.payloads.find((p) => p.type === "agent_message")?.text ?? "",
+    ).toBe(response.trim());
   });
 
   it.each([

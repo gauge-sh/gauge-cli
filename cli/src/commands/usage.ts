@@ -1,11 +1,22 @@
 import type { billing, ListResponse } from "@withgauge/api-schemas";
 import type { Command } from "commander";
 import { createClient } from "../lib/client";
+import { triggeredByLabel } from "../lib/createdBy";
 import { hostedOnly, resolveOrg, resolveOutput } from "../lib/context";
 import { parseLimit } from "../lib/flags";
 import { printItems, printJson } from "../lib/output";
 
 type UsageEntry = billing.UsageEntry;
+
+export function usageRow(e: UsageEntry) {
+  return {
+    createdAt: e.createdAt,
+    kind: e.kind,
+    delta: e.delta,
+    "started by": triggeredByLabel(e.triggeredBy),
+    runId: e.runId ?? "",
+  };
+}
 
 export function register(program: Command): void {
   hostedOnly(program.command("usage"))
@@ -27,15 +38,7 @@ export function register(program: Command): void {
           printJson(res);
           return;
         }
-        printItems(
-          res.items.map((e) => ({
-            createdAt: e.createdAt,
-            kind: e.kind,
-            delta: e.delta,
-            runId: e.runId ?? "",
-          })),
-          "table",
-        );
+        printItems(res.items.map(usageRow), "table");
         if (res.items.length === 0 && !opts.cursor) {
           try {
             const status = await createClient().get<billing.BillingStatus>(

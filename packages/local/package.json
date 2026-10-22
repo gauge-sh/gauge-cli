@@ -1,6 +1,6 @@
 {
   "name": "@withgauge/local-execution",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": false,
   "description": "Host-operated agent sessions in a single local Docker container",
   "license": "MIT",
@@ -26,7 +26,7 @@
     "prepublishOnly": "node ../../scripts/validate-local-execution-release.mjs"
   },
   "dependencies": {
-    "@withgauge/agent-adapters": "0.2.0"
+    "@withgauge/agent-adapters": "0.2.1"
   },
   "repository": {
     "type": "git",

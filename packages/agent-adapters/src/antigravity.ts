@@ -88,7 +88,13 @@ export function antigravityResult(
   const status = text(result?.status) ?? "missing_status";
   if (status === "SUCCESS") return { status: "complete", reason: "SUCCESS" };
   const error = text(result?.error);
-  return { status: "failed", reason: error ? `${status}: ${error}` : status };
+  const reason = error ? `${status}: ${error}` : status;
+  // agy 1.3.5 reports ERROR for any API error during the turn, including one
+  // its own retry recovered from, and still exits 0 with the full response.
+  // Only exit 3 (AGY_ERROR on stderr) means it gave up, so the error is a note
+  // and the process exit decides failure.
+  if (status === "ERROR") return { status: "complete", reason };
+  return { status: "failed", reason };
 }
 
 export function reduceAntigravityUsage(

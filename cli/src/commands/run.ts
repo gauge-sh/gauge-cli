@@ -48,6 +48,7 @@ import {
 } from "../lib/caseSpec";
 import { CliError, createClient } from "../lib/client";
 import { confirmOrAbort } from "../lib/confirm";
+import { triggeredByLabel } from "../lib/createdBy";
 import {
   hostedOnly,
   requireHosted,
@@ -103,11 +104,6 @@ function fmtDuration(ms: number | null | undefined): string {
 
 function fmtUsd(v: number | null | undefined): string {
   return v == null ? "" : `$${v.toFixed(2)}`;
-}
-
-function fmtTriggeredBy(t: RunListItem["triggeredBy"]): string {
-  if (!t) return "";
-  return t.email ? `${t.source} (${t.email})` : t.source;
 }
 
 function compact(value: unknown, max = 140): string {
@@ -205,7 +201,7 @@ function detailLines(run: RunDetail): [string, string][] {
     ],
     ["Attempt", String(run.attempt)],
     ["Turns", run.turns == null ? "—" : String(run.turns)],
-    ["Triggered by", fmtTriggeredBy(run.triggeredBy) || "—"],
+    ["Triggered by", triggeredByLabel(run.triggeredBy) || "—"],
     ["Cost", fmtUsd(run.usdCost) || "—"],
     ["Credits", run.creditsCharged == null ? "—" : String(run.creditsCharged)],
     ["Duration", fmtDuration(run.durationMs) || "—"],

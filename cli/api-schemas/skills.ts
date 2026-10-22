@@ -24,14 +24,7 @@ export const skillSetEntrySchema = z.object({
   exposure: z.record(z.string(), z.unknown()).optional(),
 });
 
-export const MAX_SKILL_SET_ENTRIES = 32;
-
-export const skillSetSchema = z
-  .array(skillSetEntrySchema)
-  .max(
-    MAX_SKILL_SET_ENTRIES,
-    `a run may stage at most ${MAX_SKILL_SET_ENTRIES} skills`,
-  );
+export const skillSetSchema = z.array(skillSetEntrySchema);
 
 export type SkillSetEntry = z.infer<typeof skillSetEntrySchema>;
 export type SkillSet = z.infer<typeof skillSetSchema>;
