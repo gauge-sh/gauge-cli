@@ -771,6 +771,32 @@ Every read supports `-o json` for scripting. `GAUGE_API_TOKEN` overrides
 stored credentials (useful in CI). Exit codes: `0` ok · `1` error ·
 `2` usage · `3` billing-blocked · `4` needs your input (`optimizations watch`).
 
+## Gauge Chat
+
+`gauge chat` manages tracked AI-visibility prompts and reads Gauge Chat data
+through the Chat API. Sign in with `gauge auth login` (shared credentials) or set
+`GAUGE_API_TOKEN` to a personal access token (`gauge_pat_…`). Commands take
+`--org` and `--category` (slug or id); `gauge chat orgs use <org>` and
+`gauge chat categories use <category>` save defaults (`chatOrg`,
+`chatCategory`), and an only org or category is picked automatically.
+
+```sh
+gauge chat topics create "Pricing" --if-exists
+gauge chat prompts add --file prompts.txt --topic pricing --dry-run -o json
+gauge chat query --dataset answers -d brand -m visibility,shareOfVoice --last-days 30
+gauge chat query fields --dataset citations
+gauge chat answers list --since 2026-10-01 --all --max 500 -o json
+gauge chat exports create --since 2026-09-01 --until 2026-09-30 --download ./export
+```
+
+`prompts add` reads arguments or a file of lines, JSON Lines, or a JSON array,
+sends batches of 500 (previewing every batch before a multi-batch write), and
+reports `created`, `already_exists`, or `would_create` per prompt. List commands
+return `{data, nextCursor}` with `-o json`; `--all` follows cursors up to `--max`.
+Errors carry the API code (`insufficient_scope`, `limit_exceeded`,
+`incompatible_dimension`, `rate_limited`…) and details such as `retryAfter`.
+Invalid requests exit 2 and plan limits exit 3.
+
 ## Support
 
 Questions or problems: [support@withgauge.com](mailto:support@withgauge.com).

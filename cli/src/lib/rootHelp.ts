@@ -52,6 +52,12 @@ const GROUPS: [string, Record<string, string>][] = [
     },
   ],
   [
+    "Gauge Chat (AI visibility)",
+    {
+      chat: "Prompts, topics, answers, citations, queries, exports",
+    },
+  ],
+  [
     "Organization (Gauge account)",
     {
       orgs: "List and switch organizations",
