@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.0 — 2026-10-21
+
 - Cancelling a session that is already shutting down is accepted and waits for
   it to finish, instead of failing with `session is closing`. Concurrent
   cancellations, such as `gauge run cancel --batch` racing the detached batch's
@@ -13,8 +15,8 @@
 - Authenticate Codex's app-server with the mounted OpenAI API key before starting
   a local session.
 
-- Align the workspace dependency with agent-adapters 0.2.0. Antigravity process
-  support and publication of a new local-execution version remain separate work.
+- Depend on agent-adapters 0.2.1, which adds Antigravity stream decoding and
+  completes turns that report a recovered API error.
 
 - Accept `workspace: null` to start the agent in an empty Git repository.
 - Claude Code `access_token` auth reuses the host's Claude Code login (macOS
