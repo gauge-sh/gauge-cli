@@ -27,9 +27,15 @@ no refresh credential and therefore must be replaced when they expire.
 
 Refresh runs before expiry and once after an HTTP 401, including event-stream
 handshakes. A permission denial or service outage is not treated as a reason to
-refresh. A failed early renewal leaves a still-valid token usable. Requests with
-ambiguous network failures are not replayed. If a refresh response is lost after
-server-side rotation, sign in again: replaying the old refresh token revokes its
+refresh. A rate-limited early renewal leaves a still-valid token usable. Before sending
+a refresh, the CLI persists a pending marker under its credential lock. Only a
+confirmed rotation saved to disk or a definite pre-rotation rate-limit rejection
+clears that marker. Network/server errors, malformed responses, process death,
+and credential-save failures require another login; later commands cannot
+automatically replay the old refresh token. Logout retains access to the old
+refresh secret for revocation. A dead process may also leave a lock file: remove
+it only after confirming no Gauge process is running. Removing the lock does
+not remove the pending marker. Replaying a consumed refresh token revokes its
 grant. Concurrent CLI processes serialize rotation through a lock file. If a
 process crashes while holding the lock, the error names the file to remove after
 confirming no Gauge process is running.

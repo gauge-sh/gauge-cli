@@ -17,6 +17,8 @@ export type SharedCredentials = {
   refreshToken?: string;
   expiresAt?: string;
   refreshExpiresAt?: string;
+  // Written before dispatch; only a confirmed, saved rotation clears it.
+  refreshPending?: boolean;
   authUrl: string;
   apiUrl: string;
 };

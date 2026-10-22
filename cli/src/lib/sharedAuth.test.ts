@@ -3,7 +3,8 @@ import { execFile } from "node:child_process";
 import { createServer } from "node:http";
 import { promisify } from "node:util";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import fs, { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, afterEach, describe, it, mock } from "node:test";
@@ -17,7 +18,7 @@ import {
   saveToken,
   type SharedCredentials,
 } from "./credentials";
-import { sharedTokenSchema } from "./sharedAuth";
+import { refreshCredentials, sharedTokenSchema } from "./sharedAuth";
 import {
   browserLogin,
   deviceLogin,
@@ -224,6 +225,165 @@ describe("shared CLI credentials", { concurrency: false }, () => {
     }
   });
 
+  it("does not replay a lost refresh response across independent processes", async () => {
+    let refreshes = 0;
+    let apiCalls = 0;
+    const server = createServer((req, res) => {
+      if (req.url === "/api/cli/refresh") {
+        refreshes++;
+        assert.equal(
+          (readCredentials() as SharedCredentials).refreshPending,
+          true,
+        );
+        req.socket.destroy();
+      } else {
+        apiCalls++;
+        res.end(JSON.stringify({ ok: true }));
+      }
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    const origin = `http://127.0.0.1:${address.port}`;
+    saveCredentials({
+      ...credentials(),
+      authUrl: origin,
+      apiUrl: origin,
+      expiresAt: new Date(Date.now() + 30_000).toISOString(),
+    });
+    const script = `import { ApiClient } from './src/lib/client.ts';
+      try { await new ApiClient().get('/me'); process.exitCode = 2; }
+      catch (e) { console.log(e.message); }`;
+    try {
+      for (let i = 0; i < 2; i++) {
+        const result = await promisify(execFile)(
+          process.execPath,
+          ["--import", "tsx", "--input-type=module", "-e", script],
+          {
+            cwd: process.cwd(),
+            env: {
+              ...process.env,
+              GAUGE_API_URL: origin,
+              GAUGE_AUTH_URL: origin,
+            },
+          },
+        );
+        assert.match(result.stdout, /outcome is uncertain.*gauge auth login/);
+      }
+      assert.equal(refreshes, 1);
+      assert.equal(apiCalls, 0);
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("retains uncertainty when rotated credentials cannot be saved", async () => {
+    const original = credentials(true);
+    saveCredentials(original);
+    const fetchMock = mock.method(globalThis, "fetch", async () => {
+      mock.method(fs, "renameSync", () => {
+        throw new Error("disk write failed");
+      });
+      syncBuiltinESMExports();
+      return json(tokens());
+    });
+    try {
+      await assert.rejects(
+        refreshCredentials(original),
+        /outcome is uncertain/,
+      );
+    } finally {
+      mock.restoreAll();
+      syncBuiltinESMExports();
+    }
+    assert.deepEqual(readCredentials(), { ...original, refreshPending: true });
+    await assert.rejects(new ApiClient().get("/me"), /gauge auth login/);
+    assert.equal(fetchMock.mock.callCount(), 1);
+  });
+
+  it("does not dispatch refresh when its pending marker cannot be saved", async () => {
+    const original = credentials(true);
+    saveCredentials(original);
+    const fetchMock = mock.method(globalThis, "fetch", async () =>
+      json(tokens()),
+    );
+    mock.method(fs, "renameSync", () => {
+      throw new Error("disk write failed");
+    });
+    syncBuiltinESMExports();
+    try {
+      await assert.rejects(refreshCredentials(original), /disk write failed/);
+    } finally {
+      mock.restoreAll();
+      syncBuiltinESMExports();
+    }
+    assert.deepEqual(readCredentials(), original);
+    assert.equal(fetchMock.mock.callCount(), 0);
+  });
+
+  it("does not retry refresh after an unreadable successful response", async () => {
+    saveCredentials(credentials(true));
+    const fetchMock = mock.method(globalThis, "fetch", async () => json({}));
+    await assert.rejects(new ApiClient().get("/me"), /outcome is uncertain/);
+    await assert.rejects(new ApiClient().get("/me"), /outcome is uncertain/);
+    assert.equal(fetchMock.mock.callCount(), 1);
+  });
+
+  it("blocks replay after a process dies with the rotation response received", async () => {
+    let refreshes = 0;
+    const server = createServer((_req, res) => {
+      refreshes++;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(tokens()));
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    saveCredentials({
+      ...credentials(true),
+      authUrl: `http://127.0.0.1:${address.port}`,
+    });
+    const script = `import { readCredentials } from './src/lib/credentials.ts';
+      import { refreshCredentials } from './src/lib/sharedAuth.ts';
+      const realFetch = globalThis.fetch;
+      globalThis.fetch = async (...args) => { await realFetch(...args); process.exit(17); };
+      await refreshCredentials(readCredentials());`;
+    try {
+      await assert.rejects(
+        promisify(execFile)(
+          process.execPath,
+          ["--import", "tsx", "--input-type=module", "-e", script],
+          { cwd: process.cwd(), env: process.env },
+        ),
+        (error: unknown) => (error as { code: number }).code === 17,
+      );
+      assert.equal(refreshes, 1);
+      assert.equal(
+        (readCredentials() as SharedCredentials).refreshPending,
+        true,
+      );
+      // Simulate the documented manual removal after confirming process death.
+      rmSync(`${credentialsPath()}.lock`);
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+    const fetchMock = mock.method(globalThis, "fetch", async () =>
+      json(tokens()),
+    );
+    await assert.rejects(new ApiClient().get("/me"), /outcome is uncertain/);
+    assert.equal(fetchMock.mock.callCount(), 0);
+    // A fresh login replaces the marker; logout can still use the old secret.
+    saveCredentials(credentials());
+    await new ApiClient().get("/me");
+    assert.equal(fetchMock.mock.callCount(), 1);
+  });
+
   it("retains legacy plaintext credentials and environment precedence", () => {
     saveToken("gauge_legacy");
     assert.equal(resolveToken(), "gauge_legacy");
@@ -321,8 +481,11 @@ describe("shared CLI credentials", { concurrency: false }, () => {
       calls++;
       throw new Error("unavailable");
     });
-    await assert.rejects(new ApiClient().post("/mutate", {}), /unavailable/);
-    assert.deepEqual(readCredentials(), original);
+    await assert.rejects(
+      new ApiClient().post("/mutate", {}),
+      /outcome is uncertain/,
+    );
+    assert.deepEqual(readCredentials(), { ...original, refreshPending: true });
     assert.equal(calls, 1);
     saveCredentials(credentials());
     calls = 0;
@@ -330,27 +493,40 @@ describe("shared CLI credentials", { concurrency: false }, () => {
     assert.equal(calls, 1);
   });
 
-  it("distinguishes refresh outages from invalid credentials after a 401", async () => {
+  it("requires login after an uncertain server error during refresh", async () => {
     saveCredentials(credentials());
     mock.method(globalThis, "fetch", async (url: URL | string) =>
       json({}, String(url).endsWith("/refresh") ? 503 : 401),
     );
     await assert.rejects(new ApiClient().get("/me"), (error: unknown) => {
-      assert.equal((error as { code: string }).code, "network");
+      assert.equal((error as { code: string }).code, "unauthorized");
       return true;
     });
     assert.equal(resolveToken(), "gauge_cli_old");
   });
 
-  it("keeps using an unexpired access token during a proactive refresh outage", async () => {
+  it("keeps using an unexpired access token after a definite rate-limit rejection", async () => {
     saveCredentials({
       ...credentials(),
       expiresAt: new Date(Date.now() + 30_000).toISOString(),
     });
     mock.method(globalThis, "fetch", async (url: URL | string) =>
-      String(url).endsWith("/refresh") ? json({}, 503) : json({ ok: true }),
+      String(url).endsWith("/refresh") ? json({}, 429) : json({ ok: true }),
     );
     assert.deepEqual(await new ApiClient().get("/me"), { ok: true });
+    assert.equal(
+      (readCredentials() as SharedCredentials).refreshPending,
+      undefined,
+    );
+    mock.restoreAll();
+    mock.method(globalThis, "fetch", async (url: URL | string) =>
+      String(url).endsWith("/refresh") ? json(tokens()) : json({ ok: true }),
+    );
+    await new ApiClient().get("/me");
+    assert.equal(
+      (readCredentials() as SharedCredentials).refreshToken,
+      "gauge_refresh_new",
+    );
   });
 
   it("does not repeat an ambiguous refresh after the old token receives a 401", async () => {
@@ -410,7 +586,7 @@ describe("shared CLI credentials", { concurrency: false }, () => {
   });
 
   it("revokes the stored grant on logout and preserves environment credentials", async () => {
-    saveCredentials(credentials());
+    saveCredentials({ ...credentials(), refreshPending: true });
     process.env.GAUGE_API_TOKEN = "gauge_env";
     mock.method(globalThis, "fetch", async (url: string, init: RequestInit) => {
       assert.equal(url, "https://chat.test/api/cli/revoke");
