@@ -559,6 +559,16 @@ describe("gauge chat", { concurrency: false }, () => {
     assert.ok(!unknownReport.message.includes("<"), "no HTML in the message");
   });
 
+  it("keeps the staff-only --explain out of query help", () => {
+    const program = new Command();
+    register(program);
+    const query = program.commands
+      .find((c) => c.name() === "chat")
+      ?.commands.find((c) => c.name() === "query");
+    assert.ok(query, "chat query is registered");
+    assert.ok(!query.helpInformation().includes("--explain"));
+  });
+
   it("reports that --explain is staff-only", async () => {
     process.env.GAUGE_API_TOKEN = "gauge_cli_session";
     handler = () =>

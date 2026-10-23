@@ -797,7 +797,7 @@ return `{data, nextCursor}` with `-o json`; `--all` follows cursors up to `--max
 Errors carry the API code (`insufficient_scope`, `limit_exceeded`,
 `incompatible_dimension`, `rate_limited`…) and details such as `retryAfter`.
 Invalid requests exit 2 and plan limits exit 3. Query rate metrics are 0-1
-fractions, as in `gauge query`; `query --explain` is for Gauge staff only.
+fractions, as in `gauge query`.
 Requesting the same export range returns the same export, and `--wait` and
 `--download` poll it without re-requesting. Exports don't retry on their own:
 if one is still pending 2 hours after it was created (or last retried), request

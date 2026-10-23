@@ -1,4 +1,4 @@
-import type { Command } from "commander";
+import { type Command, Option } from "commander";
 import { CliError } from "../lib/client";
 import {
   chatPath,
@@ -286,7 +286,10 @@ export function registerQuery(chat: Command): void {
       "--granularity <g>",
       "date bucket: hour (aiTraffic only, ≤ 14 days) | day | week | month (default day)",
     )
-    .option("--explain", "Gauge staff only: print the compiled SQL to stderr")
+    // Gauge staff only (the API rejects it for everyone else), so hidden from help.
+    .addOption(
+      new Option("--explain", "print the compiled SQL to stderr").hideHelp(),
+    )
     .option("--brand <ids>", "comma-separated brd_ ids")
     .option("--model <models>", "comma-separated models")
     .option("--topic <ids>", "comma-separated top_ ids")
