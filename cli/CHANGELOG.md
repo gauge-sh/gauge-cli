@@ -2,9 +2,46 @@
 
 ## Unreleased
 
-- Add portable `web-fixture` inputs for exact web responses, scoped missing-page blocking, and HTTPS origin proxying through the existing local/hosted run surface.
-- Add a per-session local mitmproxy gateway, public CA distribution, fixture evidence, and worker-owned startup/cleanup. Runtime inspect/pull now covers the gateway image.
-- Require a qualified, digest-pinned public gateway image before releasing the CLI.
+## 0.25.0 — 2026-10-26
+
+### Added
+
+- Shared Gauge login for Chat and Agents, with automatic credential refresh
+  before expiry and after an authentication rejection, including event streams.
+- `GAUGE_AUTH_URL` and the `authUrl` setting select an alternate authentication
+  service for development or other deployments.
+- `web-fixture` inputs serve exact HTTPS pages, block missing pages under a
+  scope, or route a site's origin to a preview, in both local and hosted runs.
+  Declare one in `gauge.json`, select it with `config.inputs`, and override it
+  with `--input name=path.json`. See [web fixture inputs](../docs/local-web-fixtures.md).
+- Local runs that select a web fixture start a gateway container alongside the
+  agent. The agent image needs no changes or proxy settings. `gauge local
+  runtime inspect` and `pull` now cover the gateway image, and
+  `--gateway-image` selects a custom build.
+
+### Changed
+
+- Browser and device login use shared authentication at `app.withgauge.com` by
+  default. Existing Agents tokens remain supported, and `GAUGE_API_TOKEN` and
+  explicitly supplied tokens keep their precedence without automatic refresh.
+- `gauge auth status` and `gauge whoami` use Chat identity for shared
+  credentials, including users without an Agents workspace.
+- `gauge auth logout` revokes the shared session and clears local credentials.
+  If remote revocation fails, it still clears local credentials and reports it.
+- Credentials are saved atomically with owner-only permissions. Concurrent
+  commands serialize refreshes, and an uncertain refresh requires another login
+  to avoid reusing a possibly consumed token. Stored shared credentials are
+  restricted to the API origins selected at login.
+- Shared sessions cannot create legacy Agents tokens with
+  `gauge auth tokens create`; use an existing Agents credential to manage
+  automation tokens.
+
+### Release requirements
+
+- Deploy and enable shared authentication in both Chat and Agents before
+  publishing this CLI version. See [shared CLI authentication](../docs/shared-cli-auth.md).
+- Deploy hosted support for `web-fixture` inputs before publishing this CLI
+  version; earlier hosted versions reject them.
 
 ## 0.24.0 — 2026-10-21
 
