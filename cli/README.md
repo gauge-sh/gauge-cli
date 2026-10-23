@@ -527,9 +527,35 @@ run locally yet.
 
 ### Authenticated MCP servers
 
-Connect your account in Gauge's MCP setup, completing OAuth in your browser when
-required. Add the server's versioned reference to each case's `config.mcpRefs`.
-Gauge manages credentials for the session; keep tokens out of prompts and Git.
+Add an authenticated remote MCP from the CLI:
+
+```sh
+gauge mcp add --hosted --org <org> --name gauge --url https://app.withgauge.com/mcp --oauth --label v1
+```
+
+The command opens browser consent, waits for completion, then saves `gauge@v1`
+bound to the new connection. Gauge stores and refreshes OAuth credentials; the
+CLI receives only the connection ID. Use `--no-browser` in a remote terminal:
+the URL is printed to stderr and the command still waits. `--oauth-timeout`
+sets a shorter wait (default and maximum 600 seconds).
+
+To reuse an existing connection, run `gauge connections list --hosted`, then
+use `--connection <id>` instead of `--oauth`. Only connections belonging to the
+organization and permitting the MCP host can be bound. A connection binding is
+part of the saved version: include it when appending an authenticated version.
+`gauge mcp get <name> --hosted` shows each version's connection ID.
+
+If the server requires manual client registration, the command prints the
+callback URL. Retry with `--oauth-client-id <id>` and, if needed,
+`--oauth-client-secret-env <ENV_VAR_NAME>`. The variable's value goes only to
+Gauge's OAuth service, never into the saved MCP spec or command output.
+`--header Authorization` declares a name; it does not configure authentication.
+
+After setup, attach the version with `gauge eval edit <id> --hosted --mcp gauge@v1`
+or each case's `config.mcpRefs`. MCP execution is hosted-only. Keep tokens out of
+prompts and Git. The Gauge API must support MCP OAuth setup and connection
+bindings before using these flags. Existing UI-created authenticated servers
+continue to work.
 
 ### Website previews
 
