@@ -45,7 +45,7 @@ export async function connectMcpOauth(
     report: console.error,
     ...overrides,
   };
-  const path = `/api/v1/orgs/${encodeURIComponent(org)}/mcp-servers/oauth`;
+  const path = `/api/v1/orgs/${encodeURIComponent(org)}/mcp-authorizations`;
   const result = await client.post<mcp.BeginMcpOauthResponse>(path, input);
   if (result.kind === "connected") return result.connectionId;
   if (result.kind === "problem")
@@ -84,9 +84,19 @@ export async function connectMcpOauth(
     deps.now() + options.timeoutSeconds * 1000,
   );
   while (deps.now() < deadline) {
-    const status = await client.get<mcp.McpOauthStatus>(
-      `${path}/${encodeURIComponent(result.authorizationId)}`,
-    );
+    // A stalled poll must not outlive the consent timeout.
+    const signal = AbortSignal.timeout(Math.max(1, deadline - deps.now()));
+    let status: mcp.McpOauthStatus;
+    try {
+      status = await client.get<mcp.McpOauthStatus>(
+        `${path}/${encodeURIComponent(result.authorizationId)}`,
+        undefined,
+        signal,
+      );
+    } catch (error) {
+      if (signal.aborted) break;
+      throw error;
+    }
     if (status.status === "connected") return status.connectionId;
     if (status.status === "failed" || status.status === "expired")
       throw new CliError("invalid_request", status.message);

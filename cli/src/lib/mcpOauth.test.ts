@@ -64,7 +64,7 @@ describe("MCP browser authorization", () => {
     assert.deepEqual(h.opened, [redirect.authorizationUrl]);
     assert.equal(
       h.calls[1],
-      "/api/v1/orgs/my%2Forg/mcp-servers/oauth/pending%2F1",
+      "/api/v1/orgs/my%2Forg/mcp-authorizations/pending%2F1",
     );
     assert.equal(h.calls.length, 3);
   });
@@ -165,5 +165,45 @@ describe("MCP browser authorization", () => {
       /unsafe authorization URL/,
     );
     assert.equal(h.opened.length, 0);
+  });
+  it("aborts a stalled status request at the consent deadline", async () => {
+    const h = harness({
+      ...redirect,
+      expiresAt: new Date(Date.now() + 600_000).toISOString(),
+    });
+    const client = {
+      ...h.client,
+      get: async <T>(
+        _path: string,
+        _query?: unknown,
+        signal?: AbortSignal,
+      ): Promise<T> => {
+        assert.ok(signal);
+        return new Promise<T>((_resolve, reject) => {
+          const guard = setTimeout(
+            () => reject(new Error("Poll was not aborted")),
+            500,
+          );
+          signal.addEventListener(
+            "abort",
+            () => {
+              clearTimeout(guard);
+              reject(signal.reason);
+            },
+            { once: true },
+          );
+        });
+      },
+    };
+    await assert.rejects(
+      connectMcpOauth(
+        client,
+        "org",
+        input,
+        { browser: false, timeoutSeconds: 0.02 },
+        { ...h.deps, now: Date.now },
+      ),
+      /Timed out waiting/,
+    );
   });
 });

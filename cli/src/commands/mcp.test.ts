@@ -3,7 +3,7 @@ import { describe, it, type TestContext } from "node:test";
 import { Command } from "commander";
 import { register } from "./mcp";
 
-type Call = { path: string; body: any };
+type Call = { path: string; body: any; signal?: AbortSignal | null };
 function useApi(
   t: TestContext,
   options: {
@@ -39,15 +39,15 @@ function useApi(
     async (url: string | URL | Request, init?: RequestInit) => {
       const path = new URL(String(url)).pathname;
       const body = init?.body ? JSON.parse(String(init.body)) : undefined;
-      calls.push({ path, body });
-      if (path.endsWith("/oauth"))
+      calls.push({ path, body, signal: init?.signal });
+      if (path.endsWith("/mcp-authorizations"))
         return Response.json({
           kind: "redirect",
           authorizationId: "pending",
           authorizationUrl: "https://vendor.example/authorize?state=signed",
           expiresAt: new Date(Date.now() + 600_000).toISOString(),
         });
-      if (path.endsWith("/oauth/pending"))
+      if (path.endsWith("/mcp-authorizations/pending"))
         return Response.json(
           options.failedConsent
             ? { status: "failed", message: "Denied" }
@@ -102,6 +102,7 @@ describe("gauge mcp add", () => {
     const api = useApi(t);
     await gauge([...http, "--oauth", "--no-browser"]);
     assert.equal(api.calls.length, 3);
+    assert.ok(api.calls[1].signal instanceof AbortSignal);
     assert.equal(api.calls[2].body.connectionId, "connected");
     assert.equal(api.calls[2].body.spec.specVersion, 1);
     assert.equal(api.calls[2].body.spec.serverName, "gauge");
