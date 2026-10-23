@@ -17,7 +17,6 @@ import {
   truncate,
   withCategory,
 } from "../lib/chatApi";
-import { confirmOrAbort } from "../lib/confirm";
 import { resolveOutput } from "../lib/context";
 import { printItems, printJson } from "../lib/output";
 
@@ -461,46 +460,6 @@ Each item reports created, already_exists, or would_create (with --dry-run).`,
           return printJson({ updated, notFound, topicId });
         console.log(
           `Moved ${updated.length} prompt(s) to ${topicId}${notFound.length ? `; not found: ${notFound.join(", ")}` : ""}`,
-        );
-      },
-    );
-
-  withCategory(prompts.command("delete [prompts...]"))
-    .alias("rm")
-    .description(
-      "Delete prompts (ids as arguments or --file); answers are removed in the background",
-    )
-    .option("-f, --file <path>", "read prompt ids from a file ('-' for stdin)")
-    .option("--dry-run", "report what would be deleted")
-    .option("-y, --yes", "skip the confirmation prompt")
-    .action(
-      async (
-        args: string[],
-        opts: { file?: string; dryRun?: boolean; yes?: boolean },
-        cmd: Command,
-      ) => {
-        const ids = readIds(args, opts.file);
-        const scope = await categoryScope(cmd);
-        if (!opts.dryRun)
-          await confirmOrAbort(`Delete ${ids.length} prompt(s)?`, opts.yes);
-        const deleted: string[] = [];
-        const notFound: string[] = [];
-        for (const batch of chunks(ids)) {
-          const res = await scope.client.delete<{
-            deleted: string[];
-            notFound: string[];
-          }>(
-            chatPath(...scope.base, "prompts"),
-            { dryRun: opts.dryRun || undefined },
-            { ids: batch },
-          );
-          deleted.push(...res.deleted);
-          notFound.push(...res.notFound);
-        }
-        const result = { deleted, notFound, dryRun: opts.dryRun ?? false };
-        if (resolveOutput(cmd) === "json") return printJson(result);
-        console.log(
-          `${opts.dryRun ? "Would delete" : "Deleted"} ${deleted.length} prompt(s)${notFound.length ? `; not found: ${notFound.join(", ")}` : ""}`,
         );
       },
     );

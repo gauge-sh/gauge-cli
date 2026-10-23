@@ -18,7 +18,6 @@ import {
   withCategory,
 } from "../lib/chatApi";
 import { readConfig, updateConfig } from "../lib/config";
-import { confirmOrAbort } from "../lib/confirm";
 import { resolveOutput } from "../lib/context";
 import { printItems, printJson } from "../lib/output";
 import { registerData } from "./chatData";
@@ -224,25 +223,6 @@ function registerTopics(chat: Command): void {
         done(cmd, updated, `Renamed topic ${updated.id} to ${updated.title}`);
       },
     );
-  withCategory(topics.command("delete <topic>"))
-    .alias("rm")
-    .description(
-      "Delete a topic and all of its prompts and answers (runs in the background)",
-    )
-    .option("-y, --yes", "skip the confirmation prompt")
-    .action(async (topic: string, opts: { yes?: boolean }, cmd: Command) => {
-      const scope = await categoryScope(cmd);
-      const id = await resolveTopicId(scope, topic);
-      await confirmOrAbort(
-        `Delete topic ${id} and every prompt in it?`,
-        opts.yes,
-      );
-      const accepted = await scope.client.delete<{
-        id: string;
-        status: string;
-      }>(chatPath(...scope.base, "topics", id));
-      done(cmd, accepted, `Deleting topic ${id} (${accepted.status})`);
-    });
 }
 
 function registerTags(chat: Command): void {
@@ -336,8 +316,9 @@ config, else the org's only category). Uses the Gauge Chat API on the Chat origi
 \`gauge auth login\`, or set GAUGE_API_TOKEN to a personal access token
 (gauge_pat_…). --org takes a slug or id (default: chatOrg config, else your
 only Chat org). Pass -o json for machine-readable output; errors carry the
-API error code. Exit codes: 0 ok, 1 error, 2 invalid request, 3 plan limit,
-5 rerun (credentials busy).`,
+API error code. Exit codes: 0 ok, 1 error, 2 invalid request, 3 plan limit.
+Rate limits per token and organization: 600 requests/min, 60 queries/min,
+10 export requests/hour.`,
     );
   registerWhoami(chat);
   registerOrgs(chat);

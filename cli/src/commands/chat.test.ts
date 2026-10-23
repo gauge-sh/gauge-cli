@@ -520,6 +520,113 @@ describe("gauge chat", { concurrency: false }, () => {
     assert.equal(seen.at(-1)?.path, api("/me"));
   });
 
+  it("degrades when the server has no /api/v1/me or returns an HTML 404", async () => {
+    process.env.GAUGE_API_TOKEN = "gauge_cli_session";
+    const html404: Reply = {
+      status: 404,
+      body: "<!doctype html><title>Not Found</title><h1>Not Found</h1>",
+      headers: { "content-type": "text/html" },
+    };
+    handler = (req) =>
+      req.path === api("/me")
+        ? html404
+        : apiError(
+            403,
+            "insufficient_scope",
+            "This token lacks the 'write' scope.",
+            { requiredScope: "write" },
+          );
+    const scoped = await run("chat", "tags", "create", "x", "--org", "acme");
+    const report = errorReport(scoped.error, "chat tags create");
+    assert.equal(report.code, "insufficient_scope");
+    assert.match(report.hint ?? "", /needs the 'write' scope/);
+
+    const who = await run("chat", "whoami");
+    const whoReport = errorReport(who.error, "chat whoami");
+    assert.equal(whoReport.code, "not_found");
+    assert.match(whoReport.message, /\/api\/v1\/me is not available/);
+    assert.match(whoReport.hint ?? "", /gauge chat orgs/);
+
+    handler = () => html404;
+    const unknown = await run("chat", "tags", "--org", "acme");
+    const unknownReport = errorReport(unknown.error, "chat tags");
+    assert.equal(unknownReport.code, "not_found");
+    assert.equal(unknownReport.exitCode, 1);
+    assert.match(
+      unknownReport.message,
+      /^not_found: \/api\/v1\/orgs\/acme\/tags on 127\.0\.0\.1:\d+ is not a Gauge Chat API endpoint/,
+    );
+    assert.ok(!unknownReport.message.includes("<"), "no HTML in the message");
+  });
+
+  it("reports that --explain is staff-only", async () => {
+    process.env.GAUGE_API_TOKEN = "gauge_cli_session";
+    handler = () =>
+      apiError(403, "forbidden", "explain is only available to Gauge staff", {
+        field: "explain",
+      });
+    const { error: caught } = await run(
+      "chat",
+      "query",
+      "--org",
+      "acme",
+      "--dataset",
+      "aiTraffic",
+      "-m",
+      "requests",
+      "--explain",
+    );
+    assert.equal(seen[0].body.explain, true);
+    const report = errorReport(caught, "chat query");
+    assert.equal(report.code, "forbidden");
+    assert.equal(report.details?.field, "explain");
+    assert.match(report.message, /^forbidden: explain is only available/);
+    assert.match(
+      report.hint ?? "",
+      /only available to Gauge staff; rerun without it/,
+    );
+  });
+
+  it("prints hourly aiTraffic datetimes as returned", async () => {
+    process.env.GAUGE_API_TOKEN = "gauge_pat_abc";
+    handler = () => ({
+      body: {
+        columns: [
+          { key: "date", kind: "dimension", type: "datetime" },
+          { key: "requests", kind: "metric", type: "number", unit: "requests" },
+        ],
+        rows: [
+          { date: "2026-10-20T13:00:00Z", requests: 7 },
+          { date: "2026-10-20T14:00:00Z", requests: 3 },
+        ],
+        labels: {},
+        dateRange: { since: "2026-10-20", until: "2026-10-21" },
+        truncated: false,
+        cached: false,
+        freshness: { watermark: null, pending: 0, available: true },
+      },
+    });
+    await run(
+      "chat",
+      "query",
+      "--org",
+      "acme",
+      "--dataset",
+      "aiTraffic",
+      "-d",
+      "date",
+      "-m",
+      "requests",
+      "--granularity",
+      "hour",
+    );
+    assert.deepEqual(stdout, [
+      "date                  requests",
+      "2026-10-20T13:00:00Z  7",
+      "2026-10-20T14:00:00Z  3",
+    ]);
+  });
+
   it("moves prompts with the bulk PATCH in batches of 500", async () => {
     process.env.GAUGE_API_TOKEN = "gauge_pat_rw";
     handler = (req) =>
@@ -735,19 +842,9 @@ describe("gauge chat", { concurrency: false }, () => {
     );
   });
 
-  it("tags prompts in chunks and deletes with a JSON body", async () => {
+  it("untags prompts in chunks with a JSON DELETE body", async () => {
     process.env.GAUGE_API_TOKEN = "gauge_pat_rw";
-    handler = (req) => {
-      if (req.path.endsWith("/prompts/tags"))
-        return { body: { promptIds: req.body.promptIds } };
-      return {
-        body: {
-          deleted: req.body.ids.slice(1),
-          notFound: req.body.ids.slice(0, 1),
-          dryRun: true,
-        },
-      };
-    };
+    handler = (req) => ({ body: { promptIds: req.body.promptIds } });
     const ids = Array.from({ length: 501 }, (_, i) => `prm_${i}`);
     const file = join(directory, "ids.txt");
     writeFileSync(file, ids.join("\n"));
@@ -771,42 +868,26 @@ describe("gauge chat", { concurrency: false }, () => {
       ["DELETE 500", "DELETE 1"],
     );
     assert.equal(tagged.json.promptIds.length, 501);
+  });
 
-    seen = [];
-    const deleted = await run(
-      "chat",
-      "prompts",
-      "delete",
-      "prm_a",
-      "prm_b",
-      "--dry-run",
-      "--org",
-      "acme",
-      "--category",
-      "crm",
-      "-o",
-      "json",
-    );
-    assert.equal(seen[0].method, "DELETE");
-    assert.equal(seen[0].query.get("dryRun"), "true");
-    assert.deepEqual(seen[0].body, { ids: ["prm_a", "prm_b"] });
-    assert.deepEqual(deleted.json, {
-      deleted: ["prm_b"],
-      notFound: ["prm_a"],
-      dryRun: true,
-    });
-
-    const refused = await run(
-      "chat",
-      "prompts",
-      "delete",
-      "prm_a",
-      "--org",
-      "acme",
-      "--category",
-      "crm",
-    );
-    assert.match(String((refused.error as Error).message), /--yes/);
+  it("has no prompt or topic delete commands", async () => {
+    process.env.GAUGE_API_TOKEN = "gauge_pat_rw";
+    for (const group of ["prompts", "topics"]) {
+      const { error: caught } = await run(
+        "chat",
+        group,
+        "delete",
+        "x",
+        "--org",
+        "acme",
+        "--category",
+        "crm",
+        "--yes",
+      );
+      assert.ok(caught, `${group} delete is rejected`);
+      assert.equal(errorReport(caught, `chat ${group}`).exitCode, 2);
+      assert.deepEqual(seen, [], `${group} delete sends no request`);
+    }
   });
 
   it("waits for an export and downloads its files without Gauge credentials", async () => {
@@ -858,6 +939,11 @@ describe("gauge chat", { concurrency: false }, () => {
       dateRange: { since: "2026-10-01", until: "2026-10-07" },
     });
     assert.equal(polls, 3);
+    assert.deepEqual(
+      seen.filter((r) => r.method === "POST").map((r) => r.path),
+      [api("/orgs/acme/exports")],
+      "--download polls with GET and never re-requests",
+    );
     assert.equal(json.status, "completed");
     assert.equal(readFileSync(json.downloaded[0].path, "utf8"), "a,b\n1,2\n");
     assert.match(json.downloaded[0].path, /exp_1A-answers\.csv$/);
@@ -865,6 +951,7 @@ describe("gauge chat", { concurrency: false }, () => {
     assert.equal(fileRequest?.auth, undefined);
 
     handler = () => ({ body: exportOut("pending") });
+    seen = [];
     const { error: caught } = await run(
       "chat",
       "exports",
@@ -878,6 +965,19 @@ describe("gauge chat", { concurrency: false }, () => {
       "--interval",
       "0",
     );
-    assert.equal(errorReport(caught, "chat exports get").code, "wait_timeout");
+    const timeout = errorReport(caught, "chat exports get");
+    assert.equal(timeout.code, "wait_timeout");
+    assert.match(
+      timeout.hint ?? "",
+      /2 hours.*gauge chat exports create --since 2026-10-01 --until 2026-10-07/,
+    );
+    assert.ok(seen.every((r) => r.method === "GET"));
+
+    // An export pending for over 2 hours points at re-requesting the range.
+    await run("chat", "exports", "get", "exp_1A", "--org", "acme");
+    assert.match(
+      stderr.join("\n"),
+      /pending since 2026-10-08T00:00:00Z.*retries it/,
+    );
   });
 });

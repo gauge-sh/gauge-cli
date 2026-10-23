@@ -63,10 +63,15 @@ const LOGIN_HINT =
 
 function hintFor(
   code: string,
+  field: string | null | undefined,
   extra: Record<string, unknown>,
   retryAfter: number | undefined,
 ): string | undefined {
   switch (code) {
+    case "forbidden":
+      return field === "explain"
+        ? "--explain (or `explain` in --json) is only available to Gauge staff; rerun without it."
+        : undefined;
     case "unauthorized":
       return LOGIN_HINT;
     case "insufficient_scope":
@@ -95,9 +100,22 @@ export class ChatApiClient extends ApiClient {
   private describingScope = false;
 
   // Identity and scopes of the current token. /api/cli/me rejects personal
-  // tokens, so Chat commands use the public API's /me.
-  me(): Promise<ChatMe> {
-    return this.get<ChatMe>(chatPath("me"));
+  // tokens, so Chat commands use the public API's /me, which servers without
+  // personal access tokens don't have yet.
+  async me(): Promise<ChatMe> {
+    try {
+      return await this.get<ChatMe>(chatPath("me"));
+    } catch (error) {
+      if (!(error instanceof CliError) || error.code !== "not_found")
+        throw error;
+      throw new CliError(
+        "not_found",
+        "not_found: this Gauge server does not report token identity yet (GET /api/v1/me is not available).",
+        {
+          hint: "Run `gauge chat orgs` to check that your credentials work.",
+        },
+      );
+    }
   }
 
   private async scopeHint(required: unknown): Promise<string | undefined> {
@@ -138,7 +156,12 @@ export class ChatApiClient extends ApiClient {
     try {
       body = await res.clone().json();
     } catch {}
-    if (!isChatErrorBody(body)) return super.toError(res);
+    if (!isChatErrorBody(body)) {
+      // Unknown paths under /api/v1 get Django's HTML 404 page, not the
+      // error envelope: the server doesn't have this endpoint.
+      if (res.status === 404) return unknownEndpoint(res);
+      return super.toError(res);
+    }
     const { code, message, field, ...extra } = body.error;
     const retryAfter =
       typeof extra.retryAfter === "number"
@@ -161,10 +184,22 @@ export class ChatApiClient extends ApiClient {
         hint:
           (code === "insufficient_scope"
             ? await this.scopeHint(extra.requiredScope)
-            : undefined) ?? hintFor(code, extra, retryAfter),
+            : undefined) ?? hintFor(code, field, extra, retryAfter),
       },
     );
   }
+}
+
+function unknownEndpoint(res: Response): CliError {
+  const url = res.url ? new URL(res.url) : undefined;
+  return new CliError(
+    "not_found",
+    `not_found: ${url ? `${url.pathname} on ${url.host}` : "this path"} is not a Gauge Chat API endpoint (HTTP 404).`,
+    {
+      details: { status: 404 },
+      hint: "This server may not support this command yet, or authUrl points at the wrong host.",
+    },
+  );
 }
 
 export function createChatApiClient(

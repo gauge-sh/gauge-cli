@@ -284,9 +284,9 @@ export function registerQuery(chat: Command): void {
     .option("--limit <n>", "max rows (default 50, max 1000)")
     .option(
       "--granularity <g>",
-      "date bucket: hour | day | week | month (default day)",
+      "date bucket: hour (aiTraffic only, ≤ 14 days) | day | week | month (default day)",
     )
-    .option("--explain", "print the compiled SQL to stderr")
+    .option("--explain", "Gauge staff only: print the compiled SQL to stderr")
     .option("--brand <ids>", "comma-separated brd_ ids")
     .option("--model <models>", "comma-separated models")
     .option("--topic <ids>", "comma-separated top_ ids")
@@ -304,8 +304,9 @@ export function registerQuery(chat: Command): void {
       `
 Answer datasets (answers, citations, searchQueries) are scoped to a category:
 --category, else the chatCategory default, else the org's only category.
-aiTraffic is organization-level. Rate metrics are 0-1 fractions
-(shown as percentages in tables).`,
+aiTraffic is organization-level; with --granularity hour its date column holds
+UTC timestamps (YYYY-MM-DDTHH:MM:SSZ) instead of days. Rate metrics are 0-1
+fractions (shown as percentages in tables).`,
     )
     .action((opts: QueryOpts, command: Command) => runQuery(command, opts));
 

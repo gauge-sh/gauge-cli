@@ -154,6 +154,16 @@ async function download(
   return saved;
 }
 
+// The API generates an export when it is first requested, and again only when
+// the same range is requested while the export is still incomplete 2 hours
+// after creation or its last retry. Nothing retries on its own, and a failed
+// export stays pending.
+const EXPORT_RETRY_MS = 2 * 60 * 60 * 1000;
+
+function retryCommand(exp: Export): string {
+  return `gauge chat exports create --since ${exp.dateRange.since} --until ${exp.dateRange.until}`;
+}
+
 type ExportOpts = {
   wait?: boolean;
   download?: string;
@@ -185,6 +195,7 @@ async function settle(
           {
             apiCode: "wait_timeout",
             details: { id: exp.id, status: exp.status },
+            hint: `If it is still pending 2 hours after it was created or last retried, retry it with \`${retryCommand(exp)}\`.`,
           },
         );
       }
@@ -200,6 +211,13 @@ async function settle(
   console.log(
     `Export ${exp.id}: ${exp.status} (${exp.dateRange.since} to ${exp.dateRange.until})`,
   );
+  if (
+    exp.status === "pending" &&
+    Date.now() - Date.parse(exp.createdAt) > EXPORT_RETRY_MS
+  )
+    console.error(
+      `note: pending since ${exp.createdAt}. If it has stalled, \`${retryCommand(exp)}\` retries it (at most once every 2 hours).`,
+    );
   if (downloaded)
     for (const file of downloaded)
       console.log(`${file.kind}: ${file.path} (${file.bytes} bytes)`);
@@ -210,7 +228,7 @@ async function settle(
 
 function exportWaitOptions(command: Command): Command {
   return command
-    .option("--wait", "poll until the export completes")
+    .option("--wait", "poll (GET) until the export completes")
     .option("--download <dir>", "save the files into <dir> (implies --wait)")
     .option("--timeout <seconds>", "give up waiting after this long", "1800")
     .option("--interval <seconds>", "poll interval while waiting", "5");
@@ -325,10 +343,22 @@ export function registerData(chat: Command): void {
     exportsGroup
       .command("create")
       .description(
-        "Start an export for a date range (≤ 366 days); the same range returns the same export",
+        "Start an export of past days (≤ 366 days); the same range returns the same export",
       )
       .requiredOption("--since <date>", "YYYY-MM-DD (inclusive)")
-      .requiredOption("--until <date>", "YYYY-MM-DD (inclusive, before today)"),
+      .requiredOption(
+        "--until <date>",
+        "YYYY-MM-DD (inclusive; before today, Pacific time)",
+      )
+      .addHelpText(
+        "after",
+        `
+An export is generated when it is first requested. Nothing retries on its own,
+and a failed export stays pending: if it is still pending 2 hours after it was
+created (or last retried), request the same range again to retry it. --wait and
+--download poll with GET and never re-request. Export requests are limited to
+10 per hour per token and organization.`,
+      ),
   ).action(
     async (
       opts: ExportOpts & { since: string; until: string },
