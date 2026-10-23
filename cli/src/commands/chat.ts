@@ -1,4 +1,4 @@
-import type { Command } from "commander";
+import { type Command, Help, type Option } from "commander";
 import { CliError } from "../lib/client";
 import {
   addPageOptions,
@@ -7,6 +7,7 @@ import {
   chatPath,
   chatScope,
   createChatApiClient,
+  describeScopes,
   fetchPages,
   type Organization,
   type Page,
@@ -49,15 +50,25 @@ function registerWhoami(chat: Command): void {
   chat
     .command("whoami")
     .description(
-      "Show the signed-in user and the token's kind, scopes and expiry",
+      "Show the org API key or signed-in user in use, with its scopes and expiry",
     )
     .action(async (_opts: unknown, cmd: Command) => {
       const me = await createChatApiClient().me();
       if (resolveOutput(cmd) === "json") return printJson(me);
-      console.log(`User: ${me.user.email || me.user.id} (${me.user.name})`);
-      console.log(
-        `Token: ${me.token.kind}; scopes ${me.token.scopes.join(", ") || "(none)"}; expires ${me.token.expiresAt}`,
-      );
+      const { apiKey, user, token } = me;
+      if (apiKey)
+        console.log(
+          `Org API key "${apiKey.name}" (${describeScopes(token.scopes)}) — ${apiKey.prefix}…`,
+        );
+      else if (user)
+        console.log(
+          `Signed in as ${user.email || user.id}${user.name ? ` (${user.name})` : ""}; scopes ${token.scopes.join(", ") || "(none)"}`,
+        );
+      else
+        console.log(
+          `Token: ${token.kind}; scopes ${token.scopes.join(", ") || "(none)"}`,
+        );
+      if (token.expiresAt) console.log(`Expires ${token.expiresAt}`);
     });
 }
 
@@ -276,7 +287,7 @@ function registerTags(chat: Command): void {
   tags
     .command("delete <tag>")
     .alias("rm")
-    .description("Delete a tag (id or name); prompts keep existing")
+    .description("Delete a tag (id or name); prompts are kept")
     .action(async (tag: string, _opts: unknown, cmd: Command) => {
       const scope = await chatScope(cmd);
       const [id] = await resolveTagIds(scope, [tag]);
@@ -302,6 +313,43 @@ function registerBrands(chat: Command): void {
     });
 }
 
+const CHAT_ORG_HELP =
+  "organization slug or id (default: chatOrg config, else your only Chat org)";
+
+// The root --org help describes the Agents default, and --local/--hosted pick
+// an Agents backend. Chat help states its own default and hides the Agents-only
+// flags, and passing them to a chat command is an error. Subcommands inherit
+// this help configuration, so it must be set before they are registered.
+function scopeGlobalOptions(program: Command, chat: Command): void {
+  const isAgentsOnly = (option: Option) =>
+    option.long === "--local" || option.long === "--hosted";
+  chat.configureHelp({
+    ...program.configureHelp(),
+    visibleGlobalOptions(cmd: Command) {
+      return Help.prototype.visibleGlobalOptions
+        .call(this, cmd)
+        .filter((option) => !isAgentsOnly(option));
+    },
+    optionDescription(option: Option) {
+      return option.long === "--org" && program.options.includes(option)
+        ? CHAT_ORG_HELP
+        : Help.prototype.optionDescription.call(this, option);
+    },
+  });
+  chat.hook("preAction", () => {
+    const flag = program.options.find(
+      (option) =>
+        isAgentsOnly(option) &&
+        program.getOptionValueSource(option.attributeName()) === "cli",
+    );
+    if (flag)
+      throw new CliError(
+        "usage",
+        `${flag.long} applies only to Agents commands; gauge chat always uses the hosted Chat API. Remove ${flag.long}.`,
+      );
+  });
+}
+
 export function register(program: Command): void {
   const chat = program
     .command("chat")
@@ -312,14 +360,16 @@ export function register(program: Command): void {
       "after",
       `
 Category-scoped commands take --category (slug or cat_ id; default: chatCategory
-config, else the org's only category). Uses the Gauge Chat API on the Chat origin (authUrl). Authenticate with
-\`gauge auth login\`, or set GAUGE_API_TOKEN to a personal access token
-(gauge_pat_…). --org takes a slug or id (default: chatOrg config, else your
-only Chat org). Pass -o json for machine-readable output; errors carry the
-API error code. Exit codes: 0 ok, 1 error, 2 invalid request, 3 plan limit.
+config, else the org's only category). Authenticate with \`gauge auth login\`,
+or for scripts set GAUGE_API_TOKEN to an org API key (gauge_sk_…, created in
+Settings → API Keys); GAUGE_API_TOKEN takes precedence over a login. --org takes
+a slug or id (default: chatOrg config, else your only Chat org). Pass -o json for
+machine-readable output; errors carry the API error code. Exit codes: 0 ok,
+1 error, 2 invalid request, 3 plan limit.
 Rate limits per token and organization: 600 requests/min, 60 queries/min,
 10 export requests/hour.`,
     );
+  scopeGlobalOptions(program, chat);
   registerWhoami(chat);
   registerOrgs(chat);
   registerCategories(chat);

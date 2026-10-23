@@ -774,12 +774,16 @@ stored credentials (useful in CI). Exit codes: `0` ok · `1` error ·
 ## Gauge Chat
 
 `gauge chat` manages tracked AI-visibility prompts and reads Gauge Chat data
-through the Chat API. Sign in with `gauge auth login` (shared credentials) or set
-`GAUGE_API_TOKEN` to a personal access token (`gauge_pat_…`). Commands take
+through the Chat API. Sign in with `gauge auth login` (shared credentials), or
+for scripts and CI set `GAUGE_API_TOKEN` to an org API key
+(`GAUGE_API_TOKEN=gauge_sk_…`, created in Settings → API Keys). A key acts as its
+organization with the scopes it was created with (Read, or Read & write);
+`GAUGE_API_TOKEN` takes precedence over a stored login. Commands take
 `--org` and `--category` (slug or id); `gauge chat orgs use <org>` and
 `gauge chat categories use <category>` save defaults (`chatOrg`,
-`chatCategory`), and an only org or category is picked automatically. `gauge chat whoami`
-shows the signed-in user and the token's kind, scopes, and expiry.
+`chatCategory`), and an only org or category is picked automatically. The
+Agents-only `--local` and `--hosted` flags are rejected. `gauge chat whoami`
+shows the org API key or signed-in user in use, with its scopes and expiry.
 
 ```sh
 gauge chat topics create "Pricing" --if-exists

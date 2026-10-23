@@ -12,8 +12,9 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { Command, Option } from "commander";
 import { updateConfig } from "../lib/config";
+import { createClient } from "../lib/client";
 import { readCredentials, saveCredentials } from "../lib/credentials";
-import { errorReport } from "../lib/errors";
+import { errorReport, renderError } from "../lib/errors";
 import { register } from "./chat";
 import { parsePromptInput } from "./chatPrompts";
 
@@ -152,8 +153,8 @@ describe("gauge chat", { concurrency: false }, () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
-  it("sends a personal access token from GAUGE_API_TOKEN to the Chat origin", async () => {
-    process.env.GAUGE_API_TOKEN = "gauge_pat_abc";
+  it("sends an org API key from GAUGE_API_TOKEN to the Chat origin", async () => {
+    process.env.GAUGE_API_TOKEN = "gauge_sk_abc";
     handler = () => ({
       body: {
         data: [{ id: "uuid", slug: "acme", name: "Acme" }],
@@ -162,13 +163,122 @@ describe("gauge chat", { concurrency: false }, () => {
     });
     const { json } = await run("chat", "orgs", "-o", "json");
     assert.equal(seen[0].path, api("/orgs"));
-    assert.equal(seen[0].auth, "Bearer gauge_pat_abc");
+    assert.equal(seen[0].auth, "Bearer gauge_sk_abc");
     assert.deepEqual(json.data[0], {
       id: "uuid",
       slug: "acme",
       name: "Acme",
       isDefault: false,
     });
+  });
+
+  it("prefers GAUGE_API_TOKEN over a stored login", async () => {
+    saveCredentials({
+      version: 1,
+      sessionId: "s1",
+      accessToken: "gauge_cli_stored",
+      refreshToken: "gauge_refresh_stored",
+      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      refreshExpiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+      authUrl: "https://chat.example.invalid",
+      apiUrl: "https://agents.example.invalid",
+    });
+    process.env.GAUGE_API_TOKEN = "gauge_sk_env";
+    handler = () => ({ body: { data: [], nextCursor: null } });
+    await run("chat", "tags", "list", "--org", "acme", "-o", "json");
+    assert.deepEqual(
+      seen.map((r) => `${r.path} ${r.auth}`),
+      [`${api("/orgs/acme/tags")} Bearer gauge_sk_env`],
+      "no refresh, no stored token, and the Chat origin from GAUGE_AUTH_URL",
+    );
+  });
+
+  it("passes GAUGE_API_TOKEN to Agents API calls unchanged, org key or legacy token", async () => {
+    handler = () => ({ body: { ok: true } });
+    for (const token of ["gauge_sk_agents", "gauge_legacy", "unprefixedKey"]) {
+      process.env.GAUGE_API_TOKEN = token;
+      await createClient().get("/api/v1/me");
+    }
+    assert.deepEqual(
+      seen.map((r) => r.auth),
+      ["Bearer gauge_sk_agents", "Bearer gauge_legacy", "Bearer unprefixedKey"],
+    );
+  });
+
+  it("asks for a login or an org API key when no credential is set", async () => {
+    const { error: caught } = await run("chat", "orgs");
+    const report = errorReport(caught, "chat orgs");
+    assert.equal(report.code, "unauthorized");
+    assert.equal(
+      report.hint,
+      "Run `gauge auth login`, or set GAUGE_API_TOKEN to an org API key (Settings → API Keys).",
+    );
+    assert.equal(seen.length, 0);
+  });
+
+  it("omits the Agents docs link from chat errors", async () => {
+    const { error: caught } = await run("chat", "orgs");
+    const report = errorReport(caught, "chat orgs");
+    assert.equal(report.docs, undefined);
+    assert.ok(!renderError(report, false).includes("Docs:"));
+    assert.ok(!("docs" in JSON.parse(renderError(report, true)).error));
+    assert.match(errorReport(caught, "run list").docs ?? "", /docs\.withgauge/);
+  });
+
+  it("rejects the Agents-only --local and --hosted flags", async () => {
+    process.env.GAUGE_API_TOKEN = "gauge_sk_abc";
+    for (const flag of ["--local", "--hosted"]) {
+      const { error: caught } = await run("chat", "tags", "list", flag);
+      const report = errorReport(caught, "chat tags list");
+      assert.equal(report.code, "usage");
+      assert.equal(report.exitCode, 2);
+      assert.equal(
+        report.message,
+        `${flag} applies only to Agents commands; gauge chat always uses the hosted Chat API. Remove ${flag}.`,
+      );
+    }
+    assert.equal(seen.length, 0);
+  });
+
+  it("describes chat defaults and auth in help, without Agents-only flags", () => {
+    const program = new Command()
+      .option(
+        "--org <org>",
+        "organization slug or public id (default: gauge.json org, then user defaultOrg)",
+      )
+      .option("--local", "run on this machine")
+      .option("--hosted", "run on hosted Gauge")
+      .configureHelp({ showGlobalOptions: true });
+    register(program);
+    const chat = program.commands.find((c) => c.name() === "chat");
+    assert.ok(chat);
+    const tags = chat.commands.find((c) => c.name() === "tags");
+    const list = tags?.commands.find((c) => c.name() === "list");
+    assert.ok(tags && list);
+    const listHelp = list.helpInformation().replace(/\s+/g, " ");
+    assert.match(
+      listHelp,
+      /--org <org>\s+organization slug or id \(default: chatOrg config, else your only Chat org\)/,
+    );
+    assert.ok(!listHelp.includes("gauge.json"));
+    assert.ok(!/--local|--hosted/.test(listHelp));
+    assert.match(tags.helpInformation(), /prompts are kept/);
+    let chatHelp = "";
+    chat.configureOutput({ writeOut: (text) => void (chatHelp += text) });
+    chat.outputHelp();
+    assert.match(chatHelp, /GAUGE_API_TOKEN to an org API key \(gauge_sk_…/);
+    assert.match(chatHelp, /takes precedence over a login/);
+    assert.ok(!/authUrl|Chat origin|gauge_pat|personal access/.test(chatHelp));
+    const root = new Command()
+      .option("--org <org>", "agents org help")
+      .configureHelp({ showGlobalOptions: true });
+    root.command("eval").command("list");
+    register(root);
+    assert.match(
+      root.commands[0].commands[0].helpInformation(),
+      /agents org help/,
+      "Agents commands keep the root --org help",
+    );
   });
 
   it("refreshes shared CLI credentials once after a 401 and retries", async () => {
@@ -229,7 +339,7 @@ describe("gauge chat", { concurrency: false }, () => {
   });
 
   it("follows cursors with --all, bounded by --max, and resolves tag names", async () => {
-    process.env.GAUGE_API_TOKEN = "gauge_pat_abc";
+    process.env.GAUGE_API_TOKEN = "gauge_sk_abc";
     const prompt = (n: number) => ({
       id: `prm_${n}`,
       text: `p${n}`,
@@ -315,7 +425,7 @@ describe("gauge chat", { concurrency: false }, () => {
   });
 
   it("builds the query body and defaults the category for answer datasets only", async () => {
-    process.env.GAUGE_API_TOKEN = "gauge_pat_abc";
+    process.env.GAUGE_API_TOKEN = "gauge_sk_abc";
     const response = {
       columns: [
         { key: "brand", kind: "dimension", type: "id:brand" },
@@ -410,7 +520,7 @@ describe("gauge chat", { concurrency: false }, () => {
   });
 
   it("maps API errors to codes, details and exit codes", async () => {
-    process.env.GAUGE_API_TOKEN = "gauge_pat_read";
+    process.env.GAUGE_API_TOKEN = "gauge_sk_read";
     const cases: [Reply, string, number, RegExp, Record<string, unknown>?][] = [
       [
         apiError(
@@ -484,15 +594,12 @@ describe("gauge chat", { concurrency: false }, () => {
     }
   });
 
-  it("explains insufficient_scope with the token's scopes from /api/v1/me", async () => {
-    process.env.GAUGE_API_TOKEN = "gauge_pat_read";
-    const me = {
-      user: { id: "u1", email: "a@b.co", name: "A" },
-      token: {
-        kind: "personal",
-        scopes: ["read"],
-        expiresAt: "2027-01-01T00:00:00Z",
-      },
+  it("explains insufficient_scope for an org API key and a login session", async () => {
+    process.env.GAUGE_API_TOKEN = "gauge_sk_read";
+    let me: unknown = {
+      user: null,
+      apiKey: { id: "key_1", name: "Warehouse sync", prefix: "gauge_sk_3fA9" },
+      token: { kind: "api_key", scopes: ["read"], expiresAt: null },
     };
     handler = (req) =>
       req.path === api("/me")
@@ -503,21 +610,79 @@ describe("gauge chat", { concurrency: false }, () => {
             "This token lacks the 'write' scope.",
             { requiredScope: "write" },
           );
-    const { error: caught } = await run(
-      "chat",
-      "tags",
-      "create",
-      "x",
-      "--org",
-      "acme",
+    const keyed = await run("chat", "tags", "create", "x", "--org", "acme");
+    assert.equal(
+      errorReport(keyed.error, "chat tags create").hint,
+      "This org API key is read-only and needs 'write'. Create a Read & write key in Settings → API Keys.",
     );
+
+    me = {
+      user: { id: "u1", email: "a@b.co", name: "A" },
+      apiKey: null,
+      token: {
+        kind: "session",
+        scopes: ["read"],
+        expiresAt: "2027-01-01T00:00:00Z",
+      },
+    };
+    const session = await run("chat", "tags", "create", "x", "--org", "acme");
     assert.match(
-      errorReport(caught, "chat tags create").hint ?? "",
-      /personal access token has scopes \[read\] and needs 'write'/,
+      errorReport(session.error, "chat tags create").hint ?? "",
+      /^This login session has scopes \[read\] and needs 'write'\./,
     );
-    const who = await run("chat", "whoami", "-o", "json");
-    assert.deepEqual(who.json, me);
-    assert.equal(seen.at(-1)?.path, api("/me"));
+
+    me = { unexpected: true };
+    const unknown = await run("chat", "tags", "create", "x", "--org", "acme");
+    assert.equal(
+      errorReport(unknown.error, "chat tags create").hint,
+      "This credential needs the 'write' scope. If it is an org API key, create a Read & write key in Settings → API Keys.",
+      "falls back to the generic hint",
+    );
+  });
+
+  it("shows the org API key or signed-in user in whoami", async () => {
+    process.env.GAUGE_API_TOKEN = "gauge_sk_read";
+    const keyMe = {
+      user: null,
+      apiKey: { id: "key_1", name: "Warehouse sync", prefix: "gauge_sk_3fA9" },
+      token: { kind: "api_key", scopes: ["read"], expiresAt: null },
+    };
+    let me: unknown = keyMe;
+    handler = () => ({ body: me });
+    const key = await run("chat", "whoami");
+    assert.equal(
+      key.json,
+      'Org API key "Warehouse sync" (read-only) — gauge_sk_3fA9…',
+    );
+    assert.deepEqual((await run("chat", "whoami", "-o", "json")).json, keyMe);
+
+    me = {
+      ...keyMe,
+      token: {
+        ...keyMe.token,
+        scopes: ["read", "write"],
+        expiresAt: "2027-01-01T00:00:00Z",
+      },
+    };
+    assert.equal(
+      (await run("chat", "whoami")).json,
+      'Org API key "Warehouse sync" (read & write) — gauge_sk_3fA9…\nExpires 2027-01-01T00:00:00Z',
+    );
+
+    me = {
+      user: { id: "u1", email: "a@b.co", name: "A" },
+      apiKey: null,
+      token: {
+        kind: "session",
+        scopes: ["read", "write"],
+        expiresAt: "2027-01-01T00:00:00Z",
+      },
+    };
+    assert.equal(
+      (await run("chat", "whoami")).json,
+      "Signed in as a@b.co (A); scopes read, write\nExpires 2027-01-01T00:00:00Z",
+    );
+    assert.ok(seen.every((r) => r.path === api("/me")));
   });
 
   it("degrades when the server has no /api/v1/me or returns an HTML 404", async () => {
@@ -598,7 +763,7 @@ describe("gauge chat", { concurrency: false }, () => {
   });
 
   it("prints hourly aiTraffic datetimes as returned", async () => {
-    process.env.GAUGE_API_TOKEN = "gauge_pat_abc";
+    process.env.GAUGE_API_TOKEN = "gauge_sk_abc";
     handler = () => ({
       body: {
         columns: [
@@ -638,7 +803,7 @@ describe("gauge chat", { concurrency: false }, () => {
   });
 
   it("moves prompts with the bulk PATCH in batches of 500", async () => {
-    process.env.GAUGE_API_TOKEN = "gauge_pat_rw";
+    process.env.GAUGE_API_TOKEN = "gauge_sk_rw";
     handler = (req) =>
       req.path.endsWith("/topics")
         ? { body: { data: topics, nextCursor: null } }
@@ -696,7 +861,7 @@ describe("gauge chat", { concurrency: false }, () => {
   });
 
   it("chunks prompt creation, previews multi-chunk writes, and reports per-item status", async () => {
-    process.env.GAUGE_API_TOKEN = "gauge_pat_rw";
+    process.env.GAUGE_API_TOKEN = "gauge_sk_rw";
     updateConfig({ chatOrg: "acme", chatCategory: "crm" });
     let remaining = 5000;
     handler = (req) => {
@@ -853,7 +1018,7 @@ describe("gauge chat", { concurrency: false }, () => {
   });
 
   it("untags prompts in chunks with a JSON DELETE body", async () => {
-    process.env.GAUGE_API_TOKEN = "gauge_pat_rw";
+    process.env.GAUGE_API_TOKEN = "gauge_sk_rw";
     handler = (req) => ({ body: { promptIds: req.body.promptIds } });
     const ids = Array.from({ length: 501 }, (_, i) => `prm_${i}`);
     const file = join(directory, "ids.txt");
@@ -881,7 +1046,7 @@ describe("gauge chat", { concurrency: false }, () => {
   });
 
   it("has no prompt or topic delete commands", async () => {
-    process.env.GAUGE_API_TOKEN = "gauge_pat_rw";
+    process.env.GAUGE_API_TOKEN = "gauge_sk_rw";
     for (const group of ["prompts", "topics"]) {
       const { error: caught } = await run(
         "chat",
@@ -901,7 +1066,7 @@ describe("gauge chat", { concurrency: false }, () => {
   });
 
   it("waits for an export and downloads its files without Gauge credentials", async () => {
-    process.env.GAUGE_API_TOKEN = "gauge_pat_read";
+    process.env.GAUGE_API_TOKEN = "gauge_sk_read";
     let polls = 0;
     const exportOut = (status: string) => ({
       id: "exp_1A",

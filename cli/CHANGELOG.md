@@ -8,10 +8,11 @@
   `whoami`, topics (list, create, rename), prompts (bulk add with `--dry-run`,
   bulk move, tag, untag), tags, brands, `query` with
   `datasets`/`fields`/`metadata` discovery, answers, citations, and exports
-  (`--wait`, `--download`). They use `gauge auth login` shared credentials or a
-  `gauge_pat_` token in `GAUGE_API_TOKEN`; defaults come from the `chatOrg` and
-  `chatCategory` config keys. Errors report the API's error code; plan limits
-  exit 3. A stalled export points at re-requesting its range.
+  (`--wait`, `--download`). They use `gauge auth login` shared credentials or,
+  for scripts, an org API key (`GAUGE_API_TOKEN=gauge_sk_…`, created in
+  Settings → API Keys), which takes precedence over a login. Defaults come from
+  the `chatOrg` and `chatCategory` config keys. Errors report the API's error
+  code; plan limits exit 3. A stalled export points at re-requesting its range.
 
 ## 0.24.0 — 2026-10-21
 

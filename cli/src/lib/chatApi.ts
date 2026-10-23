@@ -14,7 +14,8 @@ import { resolveAuthUrl, storedSharedCredentials } from "./sharedAuth";
 
 // The Gauge Chat public API (v1) lives on the Chat origin, the same origin that
 // issues shared CLI credentials. Shared access tokens refresh through ApiClient;
-// personal access tokens (gauge_pat_…) come from GAUGE_API_TOKEN.
+// org API keys (gauge_sk_…, or older unprefixed keys) come from GAUGE_API_TOKEN,
+// which takes precedence over a stored login.
 export const CHAT_API_PREFIX = "/api/v1";
 
 // Bulk endpoints accept at most this many items per request.
@@ -59,7 +60,7 @@ function isChatErrorBody(value: unknown): value is ChatErrorBody {
 }
 
 const LOGIN_HINT =
-  "Run `gauge auth login`, or set GAUGE_API_TOKEN to a Gauge Chat personal access token (gauge_pat_…).";
+  "Run `gauge auth login`, or set GAUGE_API_TOKEN to an org API key (Settings → API Keys).";
 
 function hintFor(
   code: string,
@@ -75,7 +76,7 @@ function hintFor(
     case "unauthorized":
       return LOGIN_HINT;
     case "insufficient_scope":
-      return `This token needs the '${String(extra.requiredScope ?? "write")}' scope. Use a personal access token with that scope, or \`gauge auth login\`.`;
+      return `This credential needs the '${String(extra.requiredScope ?? "write")}' scope. If it is an org API key, create a Read & write key in Settings → API Keys.`;
     case "limit_exceeded":
       return typeof extra.remaining === "number"
         ? `Your plan allows ${extra.remaining} more prompt(s); nothing was created.`
@@ -91,17 +92,28 @@ function hintFor(
   }
 }
 
+// A login session reports its user; an org API key reports the key.
 export type ChatMe = {
-  user: { id: string; email: string; name: string };
-  token: { kind: "session" | "personal"; scopes: string[]; expiresAt: string };
+  user: { id: string; email: string; name: string } | null;
+  apiKey: { id: string; name: string; prefix: string } | null;
+  token: {
+    kind: "session" | "api_key";
+    scopes: string[];
+    expiresAt: string | null;
+  };
 };
+
+export function describeScopes(scopes: string[]): string {
+  if (scopes.includes("write")) return "read & write";
+  if (scopes.length === 1 && scopes[0] === "read") return "read-only";
+  return scopes.length ? scopes.join(", ") : "no scopes";
+}
 
 export class ChatApiClient extends ApiClient {
   private describingScope = false;
 
-  // Identity and scopes of the current token. /api/cli/me rejects personal
-  // tokens, so Chat commands use the public API's /me, which servers without
-  // personal access tokens don't have yet.
+  // Identity and scopes of the current credential. /api/cli/me rejects org API
+  // keys, so Chat commands use the public API's /me, which older servers lack.
   async me(): Promise<ChatMe> {
     try {
       return await this.get<ChatMe>(chatPath("me"));
@@ -123,7 +135,12 @@ export class ChatApiClient extends ApiClient {
     this.describingScope = true;
     try {
       const { token } = await this.me();
-      return `This ${token.kind === "personal" ? "personal access token" : "login session"} has scopes [${token.scopes.join(", ")}] and needs '${String(required ?? "write")}'. Use a personal access token with that scope, or \`gauge auth login\`.`;
+      const needs = String(required ?? "write");
+      if (token.kind === "api_key")
+        return `This org API key is ${describeScopes(token.scopes)} and needs '${needs}'.${needs === "write" ? " Create a Read & write key in Settings → API Keys." : ""}`;
+      if (token.kind === "session")
+        return `This login session has scopes [${token.scopes.join(", ")}] and needs '${needs}'. Ask an organization admin for write access, or use a Read & write org API key (Settings → API Keys).`;
+      return undefined;
     } catch {
       return undefined;
     } finally {

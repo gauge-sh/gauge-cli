@@ -12,7 +12,7 @@ export type ErrorReport = {
   message: string;
   details?: Record<string, unknown>;
   hint?: string;
-  docs: string;
+  docs?: string;
   feedback?: string;
   exitCode: number;
 };
@@ -31,9 +31,12 @@ export function errorReport(
       ? localModeError(command, context.local, error.hint)
       : describe(error);
   const quiet = base.message === "aborted" || command === "feedback";
+  // The docs site covers Agents only; Chat has no docs to link yet.
+  const isChat = command === "chat" || command.startsWith("chat ");
+  const docs = base.docs ?? (isChat ? undefined : DOCS_URL);
   return {
     ...base,
-    docs: base.docs ?? DOCS_URL,
+    ...(docs ? { docs } : {}),
     ...(quiet
       ? {}
       : {
@@ -143,7 +146,7 @@ export function renderError(report: ErrorReport, json: boolean): string {
   return `${[
     `${red("error:")} ${report.message}`,
     ...(report.hint ? [report.hint] : []),
-    dim(`Docs: ${report.docs}`),
+    ...(report.docs ? [dim(`Docs: ${report.docs}`)] : []),
     ...(report.feedback ? [dim(`Hit friction? ${report.feedback}`)] : []),
   ].join("\n")}\n`;
 }
