@@ -771,6 +771,43 @@ Every read supports `-o json` for scripting. `GAUGE_API_TOKEN` overrides
 stored credentials (useful in CI). Exit codes: `0` ok · `1` error ·
 `2` usage · `3` billing-blocked · `4` needs your input (`optimizations watch`).
 
+## Gauge Chat
+
+`gauge chat` manages tracked AI-visibility prompts and reads Gauge Chat data
+through the Chat API. Sign in with `gauge auth login` (shared credentials), or
+for scripts and CI set `GAUGE_API_TOKEN` to an org API key
+(`GAUGE_API_TOKEN=gauge_sk_…`, created in Settings → API Keys). A key acts as its
+organization with the scopes it was created with (Read, or Read & write);
+`GAUGE_API_TOKEN` takes precedence over a stored login. Commands take
+`--org` and `--category` (slug or id); `gauge chat orgs use <org>` and
+`gauge chat categories use <category>` save defaults (`chatOrg`,
+`chatCategory`), and an only org or category is picked automatically. The
+Agents-only `--local` and `--hosted` flags are rejected. `gauge chat whoami`
+shows the org API key or signed-in user in use, with its scopes and expiry.
+
+```sh
+gauge chat topics create "Pricing" --if-exists
+gauge chat prompts add --file prompts.txt --topic pricing --dry-run -o json
+gauge chat query --dataset answers -d brand -m visibility,shareOfVoice --last-days 30
+gauge chat query fields --dataset citations
+gauge chat answers list --since 2026-10-01 --all --max 500 -o json
+gauge chat exports create --since 2026-09-01 --until 2026-09-30 --download ./export
+```
+
+`prompts add` reads arguments or a file of lines, JSON Lines, or a JSON array,
+sends batches of 500 (previewing every batch before a multi-batch write), and
+reports `created`, `already_exists`, or `would_create` per prompt. List commands
+return `{data, nextCursor}` with `-o json`; `--all` follows cursors up to `--max`.
+Errors carry the API code (`insufficient_scope`, `limit_exceeded`,
+`incompatible_dimension`, `rate_limited`…) and details such as `retryAfter`.
+Invalid requests exit 2 and plan limits exit 3. Query rate metrics are 0-1
+fractions, as in `gauge query`.
+Requesting the same export range returns the same export, and `--wait` and
+`--download` poll it without re-requesting. Exports don't retry on their own:
+if one is still pending 2 hours after it was created (or last retried), request
+the same range again to retry it. Rate limits apply per token and organization:
+600 requests/min, 60 queries/min, and 10 export requests/hour.
+
 ## Support
 
 Questions or problems: [support@withgauge.com](mailto:support@withgauge.com).

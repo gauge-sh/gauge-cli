@@ -7,6 +7,8 @@ export type CliConfig = {
   apiUrl?: string;
   authUrl?: string;
   backend?: "local" | "hosted";
+  chatOrg?: string;
+  chatCategory?: string;
 };
 
 export const CONFIG_KEYS = [
@@ -14,6 +16,8 @@ export const CONFIG_KEYS = [
   "apiUrl",
   "authUrl",
   "backend",
+  "chatOrg",
+  "chatCategory",
 ] as const;
 export type ConfigKey = (typeof CONFIG_KEYS)[number];
 
