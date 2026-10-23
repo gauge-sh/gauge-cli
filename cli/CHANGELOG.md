@@ -5,7 +5,8 @@
 ### Added
 
 - `gauge chat` commands for the Gauge Chat API: organizations, categories,
-  topics, prompts (bulk add with `--dry-run`, move, delete, tag, untag), tags,
+  `whoami`, topics, prompts (bulk add with `--dry-run`, bulk move, delete, tag,
+  untag), tags,
   brands, `query` with `datasets`/`fields`/`metadata` discovery, answers,
   citations, and exports (`--wait`, `--download`). They use `gauge auth login`
   shared credentials or a `gauge_pat_` token in `GAUGE_API_TOKEN`; defaults come

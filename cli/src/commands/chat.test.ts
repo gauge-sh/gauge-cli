@@ -319,9 +319,9 @@ describe("gauge chat", { concurrency: false }, () => {
     const response = {
       columns: [
         { key: "brand", kind: "dimension", type: "id:brand" },
-        { key: "visibility", kind: "metric", type: "rate", unit: "percent" },
+        { key: "visibility", kind: "metric", type: "rate", unit: "ratio" },
       ],
-      rows: [{ brand: "brd_1A", visibility: 42.5 }],
+      rows: [{ brand: "brd_1A", visibility: 0.425 }],
       labels: { brand: { brd_1A: { name: "Acme", slug: "acme" } } },
       dateRange: { since: "2026-09-22", until: "2026-10-21" },
       truncated: false,
@@ -381,7 +381,7 @@ describe("gauge chat", { concurrency: false }, () => {
       dateRange: { lastDays: 30 },
       filters: { brand: ["brd_1A"], tagMode: "all", category: "crm" },
     });
-    // Table output shows labels and percent units.
+    // Table output shows labels and formats 0-1 rates like `gauge query`.
     assert.match(stdout.join("\n"), /Acme\s+42.5%/);
 
     seen = [];
@@ -484,6 +484,90 @@ describe("gauge chat", { concurrency: false }, () => {
     }
   });
 
+  it("explains insufficient_scope with the token's scopes from /api/v1/me", async () => {
+    process.env.GAUGE_API_TOKEN = "gauge_pat_read";
+    const me = {
+      user: { id: "u1", email: "a@b.co", name: "A" },
+      token: {
+        kind: "personal",
+        scopes: ["read"],
+        expiresAt: "2027-01-01T00:00:00Z",
+      },
+    };
+    handler = (req) =>
+      req.path === api("/me")
+        ? { body: me }
+        : apiError(
+            403,
+            "insufficient_scope",
+            "This token lacks the 'write' scope.",
+            { requiredScope: "write" },
+          );
+    const { error: caught } = await run(
+      "chat",
+      "tags",
+      "create",
+      "x",
+      "--org",
+      "acme",
+    );
+    assert.match(
+      errorReport(caught, "chat tags create").hint ?? "",
+      /personal access token has scopes \[read\] and needs 'write'/,
+    );
+    const who = await run("chat", "whoami", "-o", "json");
+    assert.deepEqual(who.json, me);
+    assert.equal(seen.at(-1)?.path, api("/me"));
+  });
+
+  it("moves prompts with the bulk PATCH in batches of 500", async () => {
+    process.env.GAUGE_API_TOKEN = "gauge_pat_rw";
+    handler = (req) =>
+      req.path.endsWith("/topics")
+        ? { body: { data: topics, nextCursor: null } }
+        : {
+            body: {
+              updated: req.body.ids.slice(1),
+              notFound: req.body.ids.slice(0, 1),
+            },
+          };
+    const ids = Array.from({ length: 501 }, (_, i) => `prm_${i}`);
+    const file = join(directory, "move.txt");
+    writeFileSync(file, ids.join("\n"));
+    const { json } = await run(
+      "chat",
+      "prompts",
+      "move",
+      "--file",
+      file,
+      "--topic",
+      "Pricing",
+      "--org",
+      "acme",
+      "--category",
+      "crm",
+      "-o",
+      "json",
+    );
+    const patches = seen.filter((r) => r.method === "PATCH");
+    assert.deepEqual(
+      patches.map((r) => r.path),
+      [
+        api("/orgs/acme/categories/crm/prompts"),
+        api("/orgs/acme/categories/crm/prompts"),
+      ],
+    );
+    assert.deepEqual(
+      patches.map((r) => [r.body.ids.length, r.body.topicId]),
+      [
+        [500, "top_1A"],
+        [1, "top_1A"],
+      ],
+    );
+    assert.equal(json.updated.length, 499);
+    assert.deepEqual(json.notFound, ["prm_0", "prm_500"]);
+  });
+
   it("reports a missing login without blaming local mode", async () => {
     const { error: caught } = await run("chat", "orgs");
     const report = errorReport(caught, "chat orgs", {
@@ -518,7 +602,16 @@ describe("gauge chat", { concurrency: false }, () => {
       );
       return {
         status: dry ? 200 : 201,
-        body: { results, dryRun: dry, remaining },
+        // `remaining` is what is left after this request, dry run or not.
+        body: {
+          results,
+          dryRun: dry,
+          remaining:
+            remaining -
+            results.filter(
+              (r: { status: string }) => r.status !== "already_exists",
+            ).length,
+        },
       };
     };
     const lines = Array.from({ length: 1203 }, (_, i) =>

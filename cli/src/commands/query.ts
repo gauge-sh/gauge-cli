@@ -173,7 +173,8 @@ async function buildSpec(opts: QueryOpts): Promise<QuerySpec> {
   return spec;
 }
 
-const pct = (n: number): string => `${(n * 100).toFixed(1)}%`;
+// Rate metrics are 0-1 fractions in both the Agents and Chat query APIs.
+export const pct = (n: number): string => `${(n * 100).toFixed(1)}%`;
 
 export function noteFreshness(f: stats.StatsFreshness): void {
   if (!f.available) {

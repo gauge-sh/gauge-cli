@@ -778,7 +778,8 @@ through the Chat API. Sign in with `gauge auth login` (shared credentials) or se
 `GAUGE_API_TOKEN` to a personal access token (`gauge_pat_…`). Commands take
 `--org` and `--category` (slug or id); `gauge chat orgs use <org>` and
 `gauge chat categories use <category>` save defaults (`chatOrg`,
-`chatCategory`), and an only org or category is picked automatically.
+`chatCategory`), and an only org or category is picked automatically. `gauge chat whoami`
+shows the signed-in user and the token's kind, scopes, and expiry.
 
 ```sh
 gauge chat topics create "Pricing" --if-exists
@@ -795,7 +796,8 @@ reports `created`, `already_exists`, or `would_create` per prompt. List commands
 return `{data, nextCursor}` with `-o json`; `--all` follows cursors up to `--max`.
 Errors carry the API code (`insufficient_scope`, `limit_exceeded`,
 `incompatible_dimension`, `rate_limited`…) and details such as `retryAfter`.
-Invalid requests exit 2 and plan limits exit 3.
+Invalid requests exit 2 and plan limits exit 3. Query rate metrics are 0-1
+fractions, as in `gauge query`.
 
 ## Support
 

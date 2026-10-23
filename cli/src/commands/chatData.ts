@@ -328,10 +328,7 @@ export function registerData(chat: Command): void {
         "Start an export for a date range (≤ 366 days); the same range returns the same export",
       )
       .requiredOption("--since <date>", "YYYY-MM-DD (inclusive)")
-      .requiredOption(
-        "--until <date>",
-        "YYYY-MM-DD (inclusive, not in the future)",
-      ),
+      .requiredOption("--until <date>", "YYYY-MM-DD (inclusive, before today)"),
   ).action(
     async (
       opts: ExportOpts & { since: string; until: string },

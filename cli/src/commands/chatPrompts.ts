@@ -269,7 +269,14 @@ export async function addPrompts(
             normalized(prompts[chunk * CHAT_BATCH_SIZE + r.index].text),
           );
     });
-    const remaining = preview[0]?.remaining ?? null;
+    // Each preview is checked against the same current state, and
+    // `remaining` is what would be left after that batch alone.
+    const first = preview[0];
+    const remaining =
+      first?.remaining === null || first?.remaining === undefined
+        ? null
+        : first.remaining +
+          first.results.filter((r) => r.status === "would_create").length;
     if (remaining !== null && fresh.size > remaining)
       throw new CliError(
         "insufficient_credits",
@@ -425,23 +432,38 @@ Each item reports created, already_exists, or would_create (with --dry-run).`,
       },
     );
 
-  withCategory(prompts.command("move <prompts...>"))
-    .description("Move prompts to another topic")
+  withCategory(prompts.command("move [prompts...]"))
+    .description(
+      "Move prompts to another topic (ids as arguments or --file), in batches of 500",
+    )
     .requiredOption("--topic <topic>", "destination topic (id, slug, or title)")
-    .action(async (ids: string[], opts: { topic: string }, cmd: Command) => {
-      const scope = await categoryScope(cmd);
-      const topicId = await resolveTopicId(scope, opts.topic);
-      const moved: Prompt[] = [];
-      for (const id of new Set(ids))
-        moved.push(
-          await scope.client.patch<Prompt>(
-            chatPath(...scope.base, "prompts", id),
-            { topicId },
-          ),
+    .option("-f, --file <path>", "read prompt ids from a file ('-' for stdin)")
+    .action(
+      async (
+        args: string[],
+        opts: { topic: string; file?: string },
+        cmd: Command,
+      ) => {
+        const ids = readIds(args, opts.file);
+        const scope = await categoryScope(cmd);
+        const topicId = await resolveTopicId(scope, opts.topic);
+        const updated: string[] = [];
+        const notFound: string[] = [];
+        for (const batch of chunks(ids)) {
+          const res = await scope.client.patch<{
+            updated: string[];
+            notFound: string[];
+          }>(chatPath(...scope.base, "prompts"), { ids: batch, topicId });
+          updated.push(...res.updated);
+          notFound.push(...res.notFound);
+        }
+        if (resolveOutput(cmd) === "json")
+          return printJson({ updated, notFound, topicId });
+        console.log(
+          `Moved ${updated.length} prompt(s) to ${topicId}${notFound.length ? `; not found: ${notFound.join(", ")}` : ""}`,
         );
-      if (resolveOutput(cmd) === "json") return printJson({ data: moved });
-      console.log(`Moved ${moved.length} prompt(s) to ${topicId}`);
-    });
+      },
+    );
 
   withCategory(prompts.command("delete [prompts...]"))
     .alias("rm")

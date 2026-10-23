@@ -10,7 +10,7 @@ import {
 } from "../lib/chatApi";
 import { resolveOutput } from "../lib/context";
 import { printItems, printJson } from "../lib/output";
-import { noteFreshness, parseOrderBy, readStdin } from "./query";
+import { noteFreshness, parseOrderBy, pct, readStdin } from "./query";
 
 // Same envelope as the Agents query endpoint (gauge query), against Chat data.
 export const CHAT_DATASETS = [
@@ -228,8 +228,8 @@ async function runQuery(command: Command, opts: QueryOpts): Promise<void> {
         out[col.key] =
           col.kind === "dimension"
             ? labelFor(res.labels, col.type, v)
-            : col.unit === "percent" && typeof v === "number"
-              ? `${v}%`
+            : col.type === "rate" && typeof v === "number"
+              ? pct(v)
               : v;
       }
       return out;
@@ -304,7 +304,8 @@ export function registerQuery(chat: Command): void {
       `
 Answer datasets (answers, citations, searchQueries) are scoped to a category:
 --category, else the chatCategory default, else the org's only category.
-aiTraffic is organization-level. Rates (unit percent) are 0-100.`,
+aiTraffic is organization-level. Rate metrics are 0-1 fractions
+(shown as percentages in tables).`,
     )
     .action((opts: QueryOpts, command: Command) => runQuery(command, opts));
 

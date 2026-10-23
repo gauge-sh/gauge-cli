@@ -46,6 +46,22 @@ function done(cmd: Command, value: unknown, text: string): void {
   else console.log(text);
 }
 
+function registerWhoami(chat: Command): void {
+  chat
+    .command("whoami")
+    .description(
+      "Show the signed-in user and the token's kind, scopes and expiry",
+    )
+    .action(async (_opts: unknown, cmd: Command) => {
+      const me = await createChatApiClient().me();
+      if (resolveOutput(cmd) === "json") return printJson(me);
+      console.log(`User: ${me.user.email || me.user.id} (${me.user.name})`);
+      console.log(
+        `Token: ${me.token.kind}; scopes ${me.token.scopes.join(", ") || "(none)"}; expires ${me.token.expiresAt}`,
+      );
+    });
+}
+
 function registerOrgs(chat: Command): void {
   const orgs = chat
     .command("orgs")
@@ -323,6 +339,7 @@ only Chat org). Pass -o json for machine-readable output; errors carry the
 API error code. Exit codes: 0 ok, 1 error, 2 invalid request, 3 plan limit,
 5 rerun (credentials busy).`,
     );
+  registerWhoami(chat);
   registerOrgs(chat);
   registerCategories(chat);
   registerTopics(chat);

@@ -86,7 +86,33 @@ function hintFor(
   }
 }
 
+export type ChatMe = {
+  user: { id: string; email: string; name: string };
+  token: { kind: "session" | "personal"; scopes: string[]; expiresAt: string };
+};
+
 export class ChatApiClient extends ApiClient {
+  private describingScope = false;
+
+  // Identity and scopes of the current token. /api/cli/me rejects personal
+  // tokens, so Chat commands use the public API's /me.
+  me(): Promise<ChatMe> {
+    return this.get<ChatMe>(chatPath("me"));
+  }
+
+  private async scopeHint(required: unknown): Promise<string | undefined> {
+    if (this.describingScope) return undefined;
+    this.describingScope = true;
+    try {
+      const { token } = await this.me();
+      return `This ${token.kind === "personal" ? "personal access token" : "login session"} has scopes [${token.scopes.join(", ")}] and needs '${String(required ?? "write")}'. Use a personal access token with that scope, or \`gauge auth login\`.`;
+    } catch {
+      return undefined;
+    } finally {
+      this.describingScope = false;
+    }
+  }
+
   constructor(options: ApiClientOptions = {}) {
     super({
       ...options,
@@ -129,7 +155,14 @@ export class ChatApiClient extends ApiClient {
     return new CliError(
       exitFamily(res.status, code),
       `${code}: ${message}${field ? ` (field: ${field})` : ""}`,
-      { apiCode: code, details, hint: hintFor(code, extra, retryAfter) },
+      {
+        apiCode: code,
+        details,
+        hint:
+          (code === "insufficient_scope"
+            ? await this.scopeHint(extra.requiredScope)
+            : undefined) ?? hintFor(code, extra, retryAfter),
+      },
     );
   }
 }
