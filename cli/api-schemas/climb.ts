@@ -16,6 +16,7 @@ import {
   sandboxOverridesSchema,
 } from "./sandbox-overrides";
 import { type WebFixture, webFixtureSchema } from "./web-fixtures";
+import { webPageKey } from "./web-page-identity";
 
 export const climbSubjectKindSchema = z.enum(["EVAL_SET", "VISIBILITY_PROMPT"]);
 export const leverKindSchema = z.enum(LEVER_KINDS);
@@ -169,7 +170,10 @@ export function changeConflicts(changes: readonly Change[]): string[] {
     switch (change.kind) {
       case "REWRITE_DOCS":
         for (const page of change.after.pages)
-          claim(`page:${page.url}`, `Two changes rewrite ${page.url}`);
+          claim(
+            `page:${webPageKey(page.url)}`,
+            `Two changes rewrite ${page.url}`,
+          );
         break;
       case "CLI_INTERVENTION":
         claim("cli", "Two changes set CLI rules; merge them into one");
