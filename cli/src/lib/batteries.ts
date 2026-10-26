@@ -5,6 +5,7 @@ import { z } from "zod";
 import { CliError, createClient } from "./client";
 import { readConfig } from "./config";
 import { resolveOutput } from "./context";
+import { resolveSelection } from "./orgDirectory";
 import { printJson } from "./output";
 
 type BatteryPlan = batteries.BatteryPlan;
@@ -110,18 +111,19 @@ export function parseSpec(parsed: unknown): batteries.BatterySpec {
   return result.data;
 }
 
-function resolveApplyOrg(
+async function resolveApplyOrg(
   command: Command,
   spec: batteries.BatterySpec,
-): string {
+): Promise<string> {
   const { org } = command.optsWithGlobals<{ org?: string }>();
-  if (org) return org;
-  if (typeof spec.org === "string" && spec.org) return spec.org;
+  if (org) return (await resolveSelection(org, "flag")).id;
+  if (typeof spec.org === "string" && spec.org)
+    return (await resolveSelection(spec.org, "file")).id;
   const { defaultOrg } = readConfig();
-  if (defaultOrg) return defaultOrg;
+  if (defaultOrg) return (await resolveSelection(defaultOrg, "config")).id;
   throw new CliError(
     "usage",
-    "No organization selected. Pass --org <org>, set `org` in the spec, or run `gauge orgs use <slug>`.",
+    "No organization selected. Pass --org <org>, set `org` in the spec, or run `gauge orgs use <org>`.",
   );
 }
 
@@ -191,7 +193,7 @@ export async function applySpec(
 ): Promise<void> {
   if (opts.requireExperiment !== undefined)
     assertRequiredExperiment(spec, opts.requireExperiment);
-  const org = resolveApplyOrg(command, spec);
+  const org = await resolveApplyOrg(command, spec);
   const result = await createClient().post<BatteryPlan | BatteryApplyResponse>(
     `/api/v1/orgs/${encodeURIComponent(org)}/batteries`,
     spec,

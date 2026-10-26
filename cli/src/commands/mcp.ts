@@ -79,7 +79,7 @@ export function register(program: Command): void {
     .command("list")
     .description("List the org's MCP servers with their newest version")
     .action(async (_opts: unknown, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       const res = await createClient().get<mcp.ListMcpServersResponse>(
         mcpPath(org),
       );
@@ -102,7 +102,7 @@ export function register(program: Command): void {
     .command("get <ref>")
     .description("Show one MCP server: note and every version")
     .action(async (ref: string, _opts: unknown, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       const server = await createClient().get<mcp.McpServerDetail>(
         serverPath(org, ref),
       );
@@ -183,7 +183,7 @@ export function register(program: Command): void {
         },
         cmd: Command,
       ) => {
-        const org = resolveOrg(cmd);
+        const org = await resolveOrg(cmd);
         const result = await createClient().post<mcp.SaveMcpServerResponse>(
           mcpPath(org),
           {
@@ -223,7 +223,7 @@ export function register(program: Command): void {
         opts: { rename?: string; note?: string; clearNote?: boolean },
         cmd: Command,
       ) => {
-        const org = resolveOrg(cmd);
+        const org = await resolveOrg(cmd);
         if (opts.note !== undefined && opts.clearNote)
           throw new CliError("usage", "--note and --clear-note conflict");
         const body: Record<string, unknown> = {};
@@ -247,7 +247,7 @@ export function register(program: Command): void {
       "Remove a server; the handle stays reserved and finished runs keep their snapshot",
     )
     .action(async (ref: string, _opts: unknown, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       const result = await createClient().delete<{
         referencedBatches: number;
         referencedRuns: number;

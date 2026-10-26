@@ -292,9 +292,15 @@ export class ApiClient {
     try {
       const parsed = errorEnvelopeSchema.safeParse(await res.clone().json());
       if (parsed.success) {
-        return new CliError(parsed.data.error.code, parsed.data.error.message, {
-          hint,
-        });
+        const { code, message } = parsed.data.error;
+        if (
+          code === "not_found" &&
+          message.startsWith("Organization not found")
+        ) {
+          const explained = await explainMissingOrg(res.url);
+          if (explained) return explained;
+        }
+        return new CliError(code, message, { hint });
       }
     } catch {}
     const what =
@@ -308,6 +314,20 @@ export class ApiClient {
       `${what}: HTTP ${res.status} ${res.statusText}`.trim(),
       { hint },
     );
+  }
+}
+
+// An Agents 404 for an organization the user belongs to that doesn't use
+// Gauge Agents reads better as exactly that.
+async function explainMissingOrg(url: string): Promise<CliError | undefined> {
+  const match = url && /\/api\/v1\/orgs\/([^/?#]+)/.exec(new URL(url).pathname);
+  if (!match) return undefined;
+  try {
+    // Imported lazily: the directory module builds on this one.
+    const { missingAgentsOrg } = await import("./orgDirectory");
+    return await missingAgentsOrg(decodeURIComponent(match[1]));
+  } catch {
+    return undefined;
   }
 }
 

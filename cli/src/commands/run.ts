@@ -474,7 +474,7 @@ async function loadWorkingTree(
     { spec },
   );
   try {
-    const org = resolveOrg(cmd, loaded.org);
+    const org = await resolveOrg(cmd, loaded.org);
     if (upload) await confirmOrAbort("Run these cases now?", opts.yes);
     await uploadLocalInputs(createClient(), org, loaded.uploads);
     return {
@@ -877,8 +877,8 @@ function printLocalPlan(
 const WAIT_POLL_MS = 5_000;
 const LOCAL_WAIT_POLL_MS = 2_000;
 
-function runRequestPath(cmd: Command, id: string): string {
-  return `/api/v1/orgs/${encodeURIComponent(resolveOrg(cmd))}/run-requests/${encodeURIComponent(id)}`;
+async function runRequestPath(cmd: Command, id: string): Promise<string> {
+  return `/api/v1/orgs/${encodeURIComponent(await resolveOrg(cmd))}/run-requests/${encodeURIComponent(id)}`;
 }
 
 function printRunRequest(result: runRequests.RunRequestResponse): void {
@@ -915,7 +915,7 @@ async function waitForRequest(
   id: string,
   opts: { check?: boolean },
 ): Promise<void> {
-  const path = runRequestPath(cmd, id);
+  const path = await runRequestPath(cmd, id);
   const client = createClient();
   const json = resolveOutput(cmd) === "json";
   let lastStatus = "";
@@ -1213,7 +1213,7 @@ export function register(program: Command): void {
         await listPreferencePromptRuns(command, opts.preference, opts);
         return;
       }
-      const org = resolveOrg(command);
+      const org = await resolveOrg(command);
       const page = await createClient().get<RunListResponse>(
         `/api/v1/orgs/${encodeURIComponent(org)}/runs`,
         {
@@ -1470,7 +1470,7 @@ export function register(program: Command): void {
             );
           const result =
             await createClient().get<runRequests.RunRequestResponse>(
-              runRequestPath(command, id),
+              await runRequestPath(command, id),
             );
           if (resolveOutput(command) === "json") printJson(result);
           else printRunRequest(result);
@@ -1613,7 +1613,7 @@ ${style("1")(" EXAMPLES")}
           warnings = localCompareWarnings;
         } else {
           result = await createClient().post<RunCompareResponse>(
-            `/api/v1/orgs/${encodeURIComponent(resolveOrg(cmd))}/runs/compare`,
+            `/api/v1/orgs/${encodeURIComponent(await resolveOrg(cmd))}/runs/compare`,
             body,
           );
           warnings = compareWarnings;

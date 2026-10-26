@@ -203,7 +203,7 @@ function labelFor(
 
 async function runQuery(command: Command, opts: QueryOpts): Promise<void> {
   const spec = await buildChatSpec(opts);
-  const { client, org } = await chatScope(command);
+  const { client, org, chatOrg } = await chatScope(command);
   const { category } = command.optsWithGlobals<{ category?: string }>();
   if (category) spec.filters = { ...(spec.filters ?? {}), category };
   else if (
@@ -212,7 +212,7 @@ async function runQuery(command: Command, opts: QueryOpts): Promise<void> {
   )
     spec.filters = {
       ...(spec.filters ?? {}),
-      category: await resolveChatCategory(command, client, org),
+      category: await resolveChatCategory(command, client, chatOrg),
     };
   const res = await client.post<QueryResponse>(
     chatPath("orgs", org, "query"),
@@ -244,7 +244,7 @@ async function runQuery(command: Command, opts: QueryOpts): Promise<void> {
 }
 
 async function metadata(command: Command, dataset?: string): Promise<Metadata> {
-  const { client, org } = await chatScope(command);
+  const { client, org, chatOrg } = await chatScope(command);
   return client.get<Metadata>(chatPath("orgs", org, "query", "metadata"), {
     dataset,
   });

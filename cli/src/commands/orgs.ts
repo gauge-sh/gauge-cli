@@ -1,44 +1,115 @@
-import type { MeOrg, MeResponse } from "@withgauge/api-schemas/me";
-import type { CreateOrgResponse, OrgSettings } from "@withgauge/api-schemas/orgs";
+import type {
+  CreateOrgResponse,
+  OrgSettings,
+} from "@withgauge/api-schemas/orgs";
 import type { Command } from "commander";
 import { CliError, createClient } from "../lib/client";
 import { readConfig, updateConfig } from "../lib/config";
 import { hostedOnly, resolveOutput } from "../lib/context";
+import {
+  type AgentsOrg,
+  credentialKind,
+  type DirectoryOrg,
+  fetchAgentsOrgs,
+  fetchDirectory,
+  type Products,
+  productsLabel,
+  resolveOrgValue,
+} from "../lib/orgDirectory";
 import { printItems, printJson } from "../lib/output";
 
-function isDefault(org: MeOrg, defaultOrg: string | undefined): boolean {
+type OrgRow = {
+  // The shared organization id; null for an Agents workspace without one.
+  id: string | null;
+  slug: string;
+  name: string;
+  products: Products;
+  // The Agents workspace slug older CLI versions use.
+  agentsSlug: string | null;
+};
+
+// Every organization you belong to, from the Chat directory, completed with
+// the Agents workspaces your login reaches: Agents answers which shared
+// organizations have one when the directory couldn't ask, and adds workspaces
+// with no shared organization (LOCAL workspaces).
+async function listOrgs(): Promise<OrgRow[]> {
+  const kind = credentialKind();
+  const [directory, agentsOrgs] = await Promise.all([
+    kind === "legacy" ? Promise.resolve<DirectoryOrg[]>([]) : fetchDirectory(),
+    kind === "api_key"
+      ? Promise.resolve<AgentsOrg[]>([])
+      : fetchAgentsOrgs().catch((error: unknown) => {
+          // Chat answered; the Agents half is best effort.
+          if (kind === "legacy") throw error;
+          return null;
+        }),
+  ]);
+  const workspaces = new Map(
+    (agentsOrgs ?? [])
+      .filter((o) => o.canonicalGaugeOrganizationId)
+      .map((o) => [o.canonicalGaugeOrganizationId as string, o]),
+  );
+  const rows: OrgRow[] = directory.map((org) => {
+    const workspace = workspaces.get(org.id);
+    const agents =
+      org.products?.agents ?? (agentsOrgs ? workspace !== undefined : null);
+    return {
+      id: org.id,
+      slug: org.slug,
+      name: org.name,
+      products: { chat: org.products?.chat ?? true, agents },
+      agentsSlug: workspace?.slug ?? null,
+    };
+  });
+  const listed = new Set(directory.map((org) => org.id));
+  for (const workspace of agentsOrgs ?? []) {
+    const id = workspace.canonicalGaugeOrganizationId ?? null;
+    if (id && listed.has(id)) continue;
+    rows.push({
+      id,
+      slug: workspace.slug,
+      name: workspace.name,
+      products: { chat: false, agents: true },
+      agentsSlug: workspace.slug,
+    });
+  }
+  return rows;
+}
+
+function isDefault(row: OrgRow, defaultOrg: string | undefined): boolean {
   return (
     defaultOrg !== undefined &&
-    (org.slug === defaultOrg || org.publicId === defaultOrg)
+    [row.id, row.slug, row.agentsSlug].includes(defaultOrg)
   );
 }
 
 export function register(program: Command): void {
-  const orgs = hostedOnly(program.command("orgs"), { account: true })
-    .description("Organizations");
+  const orgs = hostedOnly(program.command("orgs"), {
+    account: true,
+  }).description("Organizations, and which Gauge products each one uses");
 
   orgs
-    .command("list")
-    .description("List orgs you belong to")
+    .command("list", { isDefault: true })
+    .description("List organizations you belong to (* marks defaultOrg)")
     .action(async (_opts: unknown, command: Command) => {
-      const output = resolveOutput(command);
-      const me = await createClient().get<MeResponse>("/api/v1/me");
+      const rows = await listOrgs();
       const { defaultOrg } = readConfig();
-      if (output === "json") {
+      if (resolveOutput(command) === "json") {
         printJson(
-          me.orgs.map((org) => ({
-            ...org,
-            isDefault: isDefault(org, defaultOrg),
+          rows.map((row) => ({
+            ...row,
+            isDefault: isDefault(row, defaultOrg),
           })),
         );
         return;
       }
       printItems(
-        me.orgs.map((org) => ({
-          slug: org.slug,
-          name: org.name,
-          publicId: org.publicId ?? "",
-          default: isDefault(org, defaultOrg) ? "*" : "",
+        rows.map((row) => ({
+          default: isDefault(row, defaultOrg) ? "*" : "",
+          id: row.id ?? "",
+          slug: row.slug,
+          name: row.name,
+          products: productsLabel(row.products),
         })),
         "table",
       );
@@ -73,23 +144,43 @@ export function register(program: Command): void {
 
   orgs
     .command("use <org>")
-    .description("Set the default org (slug or public id) in local config")
+    .description(
+      "Set the default org for Gauge Chat and Gauge Agents (slug or id)",
+    )
     .action(async (org: string, _opts: unknown, command: Command) => {
-      const resolved = await createClient()
-        .get<OrgSettings>(`/api/v1/orgs/${encodeURIComponent(org)}`)
-        .catch((e: unknown) => {
-          if (e instanceof CliError && e.code === "not_found")
-            throw new CliError(
-              "not_found",
-              `Organization "${org}" was not found. Run \`gauge orgs list\`.`,
-            );
-          throw e;
-        });
-      updateConfig({ defaultOrg: resolved.slug });
+      const resolved = await resolveOrgValue(org);
+      // The shared id, or an Agents workspace's own slug when it has none.
+      let id = resolved.id;
+      let name = resolved.name;
+      if (resolved.via === "uuid" || resolved.via === "unresolved") {
+        const match = (await listOrgs()).find((row) =>
+          [row.id, row.slug, row.agentsSlug].includes(org),
+        );
+        if (match) {
+          id = match.id ?? id;
+          name = match.name;
+        }
+        else {
+          // Staff can address organizations they don't belong to.
+          const found = await createClient()
+            .get<OrgSettings>(`/api/v1/orgs/${encodeURIComponent(org)}`)
+            .catch((e: unknown) => {
+              if (e instanceof CliError && e.code === "not_found")
+                throw new CliError(
+                  "not_found",
+                  `Organization "${org}" was not found. Run \`gauge orgs list\`.`,
+                );
+              throw e;
+            });
+          if (resolved.via === "unresolved") id = found.slug;
+          name = found.name;
+        }
+      }
+      updateConfig({ defaultOrg: id });
       if (resolveOutput(command) === "json") {
-        printJson({ defaultOrg: resolved.slug });
+        printJson({ defaultOrg: id, name: name ?? null });
         return;
       }
-      console.log(`Default org set to ${resolved.slug} (${resolved.name})`);
+      console.log(`Default org set to ${name ?? org} (${id})`);
     });
 }

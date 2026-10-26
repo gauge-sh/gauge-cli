@@ -133,7 +133,7 @@ export async function listEvalSets(
     return listLocalMeasurements(cmd, "eval");
   }
   const res = await createClient().get<evals.ListEvalSetsResponse>(
-    evalSetsPath(resolveOrg(cmd)),
+    evalSetsPath(await resolveOrg(cmd)),
     {
       agents:
         opts.agents === undefined
@@ -149,7 +149,7 @@ export async function listEvalSets(
 export async function getEvalSet(cmd: Command, id: string): Promise<void> {
   const evalSet = isLocal(cmd)
     ? localMeasurementView(getLocalMeasurement(cmd, "eval", id))
-    : await createClient().get<EvalSet>(evalSetPath(resolveOrg(cmd), id));
+    : await createClient().get<EvalSet>(evalSetPath(await resolveOrg(cmd), id));
   if (resolveOutput(cmd) === "json") printJson(evalSet);
   else printDetail(evalSet);
 }
@@ -186,7 +186,7 @@ export async function createEvalSet(
     );
   const created = isLocal(cmd)
     ? createLocalMeasurement(cmd, "eval", body)
-    : await createClient().post<EvalSet>(evalSetsPath(resolveOrg(cmd)), body);
+    : await createClient().post<EvalSet>(evalSetsPath(await resolveOrg(cmd)), body);
   if (resolveOutput(cmd) === "json") printJson(created);
   else console.log(`Created eval set ${created.id}`);
 }
@@ -224,7 +224,7 @@ export async function editEvalSet(
   const updated = isLocal(cmd)
     ? editLocalMeasurement(cmd, "eval", id, body)
     : await createClient().patch<EvalSet>(
-        evalSetPath(resolveOrg(cmd), id),
+        evalSetPath(await resolveOrg(cmd), id),
         body,
       );
   if (resolveOutput(cmd) === "json") printJson(updated);
@@ -233,7 +233,7 @@ export async function editEvalSet(
 
 export async function removeEvalSet(cmd: Command, id: string): Promise<void> {
   if (isLocal(cmd)) removeLocalMeasurement(cmd, "eval", id);
-  else await createClient().delete<void>(evalSetPath(resolveOrg(cmd), id));
+  else await createClient().delete<void>(evalSetPath(await resolveOrg(cmd), id));
   if (resolveOutput(cmd) !== "json") console.log(`Deleted eval set ${id}`);
 }
 
@@ -247,7 +247,7 @@ export async function runEvalSet(
     samples?: string;
   },
 ): Promise<void> {
-  const org = resolveOrg(cmd);
+  const org = await resolveOrg(cmd);
   const overrides = runOverridesFromOpts(opts);
   await confirmOrAbort(
     Object.keys(overrides).length > 0

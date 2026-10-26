@@ -9,11 +9,9 @@ import {
   createChatApiClient,
   describeScopes,
   fetchPages,
-  type Organization,
   type Page,
   type PageOptions,
   printPage,
-  resolveChatOrg,
   resolveTagIds,
   resolveTopicId,
   withCategory,
@@ -72,52 +70,6 @@ function registerWhoami(chat: Command): void {
     });
 }
 
-function registerOrgs(chat: Command): void {
-  const orgs = chat
-    .command("orgs")
-    .description("Organizations with Gauge Chat that you belong to");
-  orgs
-    .command("list", { isDefault: true })
-    .description("List organizations (* marks the chatOrg default)")
-    .action(async (_opts: unknown, cmd: Command) => {
-      const { data } = await createChatApiClient().get<Page<Organization>>(
-        chatPath("orgs"),
-      );
-      const { chatOrg } = readConfig();
-      const rows = data.map((org) => ({
-        ...org,
-        isDefault: chatOrg === org.slug || chatOrg === org.id,
-      }));
-      if (resolveOutput(cmd) === "json") return printJson({ data: rows });
-      printItems(
-        rows.map(({ isDefault, ...org }) => ({
-          default: isDefault ? "*" : "",
-          ...org,
-        })),
-        "table",
-      );
-    });
-  orgs
-    .command("use <org>")
-    .description("Set the default Chat organization (slug or id)")
-    .action(async (org: string, _opts: unknown, cmd: Command) => {
-      const found = await createChatApiClient().get<Organization>(
-        chatPath("orgs", org),
-      );
-      const { chatOrg, chatCategory } = readConfig();
-      const changed = chatOrg !== found.slug;
-      updateConfig({
-        chatOrg: found.slug,
-        chatCategory: changed ? undefined : chatCategory,
-      });
-      done(
-        cmd,
-        { chatOrg: found.slug },
-        `Default Chat organization: ${found.slug}${changed && chatCategory ? " (default category cleared)" : ""}`,
-      );
-    });
-}
-
 function registerCategories(chat: Command): void {
   const categories = chat
     .command("categories")
@@ -126,13 +78,16 @@ function registerCategories(chat: Command): void {
     .command("list", { isDefault: true })
     .description("List categories (* marks the chatCategory default)")
     .action(async (_opts: unknown, cmd: Command) => {
-      const { client, org } = await chatScope(cmd);
+      const { client, org, chatOrg } = await chatScope(cmd);
       const { data } = await client.get<Page<Category>>(
         chatPath("orgs", org, "categories"),
       );
-      const { chatOrg, chatCategory } = readConfig();
+      const { chatCategory, chatCategoryOrg } = readConfig();
+      const applies = chatCategoryOrg
+        ? chatCategoryOrg === org
+        : chatOrg.source === "config";
       const isDefault = (c: Category) =>
-        org === chatOrg && (chatCategory === c.slug || chatCategory === c.id);
+        applies && (chatCategory === c.slug || chatCategory === c.id);
       if (resolveOutput(cmd) === "json")
         return printJson({
           data: data.map((c) => ({ ...c, isDefault: isDefault(c) })),
@@ -150,19 +105,18 @@ function registerCategories(chat: Command): void {
   categories
     .command("use <category>")
     .description(
-      "Set the default category (slug or id); also pins the org as chatOrg",
+      "Set the default category (slug or id) for the selected organization",
     )
     .action(async (category: string, _opts: unknown, cmd: Command) => {
-      const client = createChatApiClient();
-      const org = await resolveChatOrg(cmd, client);
+      const { client, org, chatOrg } = await chatScope(cmd);
       const found = await client.get<Category>(
         chatPath("orgs", org, "categories", category),
       );
-      updateConfig({ chatOrg: org, chatCategory: found.slug });
+      updateConfig({ chatCategory: found.slug, chatCategoryOrg: org });
       done(
         cmd,
-        { chatOrg: org, chatCategory: found.slug },
-        `Default Chat category: ${found.slug} (org ${org})`,
+        { org, chatCategory: found.slug },
+        `Default Chat category: ${found.slug} (org ${chatOrg.name ?? org})`,
       );
     });
 }
@@ -314,7 +268,7 @@ function registerBrands(chat: Command): void {
 }
 
 const CHAT_ORG_HELP =
-  "organization slug or id (default: chatOrg config, else your only Chat org)";
+  "organization slug or id (default: gauge.json org, then defaultOrg, else your only Chat org; an org API key implies its org)";
 
 // The root --org help describes the Agents default, and --local/--hosted pick
 // an Agents backend. Chat help states its own default and hides the Agents-only
@@ -363,14 +317,16 @@ Category-scoped commands take --category (slug or cat_ id; default: chatCategory
 config, else the org's only category). Authenticate with \`gauge auth login\`,
 or for scripts set GAUGE_API_TOKEN to an org API key (gauge_sk_…, created in
 Settings → API Keys); GAUGE_API_TOKEN takes precedence over a login. --org takes
-a slug or id (default: chatOrg config, else your only Chat org). Pass -o json for
+a slug or id and selects the same organization as Agents commands (default:
+gauge.json org, then defaultOrg from \`gauge orgs use\`, else your only Chat org);
+an org API key implies its own org, and --org may pick one of an agency key's
+clients. Pass -o json for
 machine-readable output; errors carry the API error code. Exit codes: 0 ok,
 1 error, 2 invalid request, 3 plan limit.
 Rate limits per token and organization: 600 requests/min, 60 queries/min.`,
     );
   scopeGlobalOptions(program, chat);
   registerWhoami(chat);
-  registerOrgs(chat);
   registerCategories(chat);
   registerTopics(chat);
   registerPrompts(chat);

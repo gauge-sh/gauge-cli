@@ -196,7 +196,7 @@ async function runQuery(command: Command, opts: QueryOpts): Promise<void> {
     state.mode === "local"
       ? queryLocal(localDirectory(command), spec)
       : await createClient().post<query.QueryResponse>(
-          `/api/v1/orgs/${encodeURIComponent(resolveOrg(command))}/query`,
+          `/api/v1/orgs/${encodeURIComponent(await resolveOrg(command))}/query`,
           spec,
         );
   if (output === "json") {
@@ -246,7 +246,7 @@ async function showMetadata(
     gaugeState(command).mode === "local"
       ? localQueryMetadata()
       : await createClient().get<query.MetadataResponse>(
-          `/api/v1/orgs/${encodeURIComponent(resolveOrg(command))}/query/metadata`,
+          `/api/v1/orgs/${encodeURIComponent(await resolveOrg(command))}/query/metadata`,
         );
 
   if (mode === "datasets") {

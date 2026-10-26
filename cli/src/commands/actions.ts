@@ -29,7 +29,7 @@ export function register(program: Command): void {
     .description("List actions, highest-leverage first")
     .option("--status <status>", "filter: open | resolved | dismissed (csv)")
     .action(async (opts: { status?: string }, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       const res = await createClient().get<actions.ListActionsResponse>(
         actionsPath(org),
         {
@@ -68,7 +68,7 @@ export function register(program: Command): void {
         opts: { note?: string },
         cmd: Command,
       ) => {
-        const org = resolveOrg(cmd);
+        const org = await resolveOrg(cmd);
         const updated = await createClient().patch<actions.Action>(
           `${actionsPath(org)}/${encodeURIComponent(id)}`,
           { status: parseStatus(status), note: opts.note },

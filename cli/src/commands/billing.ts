@@ -51,7 +51,7 @@ export function register(program: Command): void {
     .command("status")
     .description("Show credit balance, plan, payment, and overage")
     .action(async (_opts: unknown, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       const status = await createClient().get<BillingStatus>(
         `/api/v1/orgs/${encodeURIComponent(org)}/billing`,
       );

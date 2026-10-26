@@ -9,9 +9,23 @@
   bulk move, tag, untag), tags, brands, `query` with
   `datasets`/`fields`/`metadata` discovery, answers, and citations. They use `gauge auth login` shared credentials or,
   for scripts, an org API key (`GAUGE_API_TOKEN=gauge_sk_…`, created in
-  Settings → API Keys), which takes precedence over a login. Defaults come from
-  the `chatOrg` and `chatCategory` config keys. Errors report the API's error
-  code; plan limits exit 3.
+  Settings → API Keys), which takes precedence over a login. Errors report the
+  API's error code; plan limits exit 3. `gauge chat categories use` saves a
+  default category (`chatCategory`) for the selected organization.
+
+### Changed
+
+- One organization selection for Gauge Chat and Gauge Agents: `--org`,
+  `gauge.json` `org`, and `defaultOrg` accept a Gauge slug, the organization id,
+  or an Agents workspace slug, and the CLI sends the organization id to both
+  APIs. `gauge orgs` lists every organization you belong to with the products it
+  uses, and `gauge orgs use` stores the organization id. A `defaultOrg` holding
+  an Agents workspace slug is rewritten to the id on first use; `gauge.json` is
+  never rewritten (a one-time hint suggests the id). A slug that names different
+  organizations in Chat and Agents is an error asking for the id. Commands for a
+  product an organization doesn't use say so instead of returning a 404. An org
+  API key acts as its own organization; `--org` selects among an agency key's
+  clients.
 
 ## 0.24.0 — 2026-10-21
 

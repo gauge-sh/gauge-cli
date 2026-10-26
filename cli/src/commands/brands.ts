@@ -61,7 +61,7 @@ export function register(program: Command): void {
     .description("List brands")
     .addOption(new Option("--kind <kind>", "filter by kind").choices(KINDS))
     .action(async (opts: { kind?: string }, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       const items = await fetchAllPages<Brand>(
         createClient(),
         brandsPath(org),
@@ -102,7 +102,7 @@ export function register(program: Command): void {
         },
         cmd: Command,
       ) => {
-        const org = resolveOrg(cmd);
+        const org = await resolveOrg(cmd);
         const row = await createClient().post<Brand>(brandsPath(org), {
           name,
           kind: opts.kind.toUpperCase(),
@@ -162,7 +162,7 @@ export function register(program: Command): void {
             "Nothing to update — pass at least one of --name/--kind/--aliases/--websites/--package/--clear-packages.",
           );
         }
-        const org = resolveOrg(cmd);
+        const org = await resolveOrg(cmd);
         const row = await createClient().patch<Brand>(
           `${brandsPath(org)}/${encodeURIComponent(id)}`,
           patch,
@@ -176,7 +176,7 @@ export function register(program: Command): void {
     .command("rm <id>")
     .description("Delete a brand")
     .action(async (id: string, _opts: unknown, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       await createClient().delete(
         `${brandsPath(org)}/${encodeURIComponent(id)}`,
       );

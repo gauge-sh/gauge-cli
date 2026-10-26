@@ -116,7 +116,13 @@ function printIdentity(me: IdentityResponse): void {
 
 export function useOnlyOrg(me: IdentityResponse, shared = false): void {
   const org = me.orgs.length === 1 ? me.orgs[0] : undefined;
-  const only = org ? (shared && "id" in org ? org.id : org.slug) : undefined;
+  const only = !org
+    ? undefined
+    : shared && "id" in org
+      ? org.id
+      : "canonicalGaugeOrganizationId" in org
+        ? (org.canonicalGaugeOrganizationId ?? org.slug)
+        : org.slug;
   if (!only || readConfig().defaultOrg) return;
   updateConfig({ defaultOrg: only });
   console.log(`Default org set to ${only}.`);

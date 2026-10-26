@@ -9,6 +9,14 @@ import {
   retryAfterSeconds,
 } from "./client";
 import { readConfig } from "./config";
+import { type OrgSelection, selectedOrg } from "./context";
+import {
+  credentialKind,
+  fetchDirectory,
+  keyOrganization,
+  type OrgSource,
+  resolveSelection,
+} from "./orgDirectory";
 import { type OutputFormat, printItems, printJson } from "./output";
 import { resolveAuthUrl, storedSharedCredentials } from "./sharedAuth";
 
@@ -86,7 +94,7 @@ function hintFor(
         ? "Retry shortly."
         : `Retry in ${retryAfter} s.`;
     case "product_not_enabled":
-      return "Run `gauge chat orgs` to list organizations with Gauge Chat.";
+      return "Run `gauge orgs` to see which products each organization uses.";
     default:
       return undefined;
   }
@@ -111,6 +119,8 @@ export function describeScopes(scopes: string[]): string {
 
 export class ChatApiClient extends ApiClient {
   private describingScope = false;
+  // The organization a command targets, to name it in errors.
+  orgName?: string;
 
   // Identity and scopes of the current credential. /api/cli/me rejects org API
   // keys, so Chat commands use the public API's /me, which older servers lack.
@@ -124,7 +134,7 @@ export class ChatApiClient extends ApiClient {
         "not_found",
         "not_found: this Gauge server does not report token identity yet (GET /api/v1/me is not available).",
         {
-          hint: "Run `gauge chat orgs` to check that your credentials work.",
+          hint: "Run `gauge orgs` to check that your credentials work.",
         },
       );
     }
@@ -192,6 +202,16 @@ export class ChatApiClient extends ApiClient {
       ...extra,
       ...(retryAfter !== undefined ? { retryAfter } : {}),
     };
+    if (code === "product_not_enabled" && this.orgName)
+      return new CliError(
+        exitFamily(res.status, code),
+        `${this.orgName} doesn't use Gauge Chat.`,
+        {
+          apiCode: code,
+          details,
+          hint: hintFor(code, field, extra, retryAfter),
+        },
+      );
     return new CliError(
       exitFamily(res.status, code),
       `${code}: ${message}${field ? ` (field: ${field})` : ""}`,
@@ -229,7 +249,6 @@ export function chatPath(...segments: string[]): string {
   return `${CHAT_API_PREFIX}/${segments.map(encodeURIComponent).join("/")}`;
 }
 
-export type Organization = { id: string; slug: string; name: string };
 export type Category = {
   id: string;
   slug: string;
@@ -239,64 +258,106 @@ export type Category = {
 
 type ChatGlobals = { org?: string; category?: string };
 
-// Org: --org, then `chatOrg` config, then the only Chat organization you belong to.
-export async function resolveChatOrg(
-  command: Command,
-  client: ApiClient,
-): Promise<string> {
+export type ChatOrg = {
+  // The shared organization id (or, unresolved, the selection as given).
+  id: string;
+  name?: string;
+  source: OrgSource | "key" | "only";
+};
+
+function notChat(value: string, name?: string): CliError {
+  return new CliError("not_found", `${name ?? value} doesn't use Gauge Chat.`, {
+    hint: "It is a Gauge Agents workspace. Run `gauge orgs` to see which products each organization uses.",
+  });
+}
+
+// Org: --org, then gauge.json `org`, then defaultOrg, else the only Chat
+// organization you belong to. An org API key implies its organization; --org
+// can select one of an agency key's clients instead.
+export async function resolveChatOrg(command: Command): Promise<ChatOrg> {
   const { org } = command.optsWithGlobals<ChatGlobals>();
-  if (org) return org;
-  const { chatOrg } = readConfig();
-  if (chatOrg) return chatOrg;
-  const { data } = await client.get<Page<Organization>>(chatPath("orgs"));
-  if (data.length === 1) return data[0].slug;
+  const isKey = credentialKind() === "api_key";
+  const selection: OrgSelection | undefined = isKey
+    ? org
+      ? { value: org, source: "flag" }
+      : undefined
+    : selectedOrg(command);
+  if (selection) {
+    const resolved = await resolveSelection(selection.value, selection.source);
+    if (resolved.via === "agents_unlinked")
+      throw notChat(selection.value, resolved.name);
+    return { id: resolved.id, name: resolved.name, source: selection.source };
+  }
+  if (isKey) {
+    const keyOrg = await keyOrganization().catch(() => undefined);
+    if (keyOrg) return { id: keyOrg.id, name: keyOrg.name, source: "key" };
+  }
+  const chatOrgs = (await fetchDirectory()).filter(
+    (o) => o.products?.chat !== false,
+  );
+  if (chatOrgs.length === 1)
+    return { id: chatOrgs[0].id, name: chatOrgs[0].name, source: "only" };
   throw new CliError(
     "usage",
-    data.length === 0
+    chatOrgs.length === 0
       ? "You are not a member of any organization with Gauge Chat."
-      : `Several organizations have Gauge Chat (${data.map((o) => o.slug).join(", ")}). Pass --org <slug> or run \`gauge chat orgs use <slug>\`.`,
+      : `Several organizations have Gauge Chat (${chatOrgs.map((o) => o.slug).join(", ")}). Pass --org <org> or run \`gauge orgs use <org>\`.`,
   );
 }
 
-// Category: --category, then `chatCategory` config (only for the default org),
-// then the org's only category.
+// Category: --category, then `chatCategory` config (for the organization it
+// was chosen in), then the org's only category.
 export async function resolveChatCategory(
   command: Command,
   client: ApiClient,
-  org: string,
+  org: ChatOrg,
 ): Promise<string> {
-  const { category, org: orgFlag } = command.optsWithGlobals<ChatGlobals>();
+  const { category } = command.optsWithGlobals<ChatGlobals>();
   if (category) return category;
-  const { chatOrg, chatCategory } = readConfig();
-  if (chatCategory && (!orgFlag || orgFlag === chatOrg)) return chatCategory;
+  const { chatCategory, chatCategoryOrg } = readConfig();
+  if (
+    chatCategory &&
+    (chatCategoryOrg ? chatCategoryOrg === org.id : org.source === "config")
+  )
+    return chatCategory;
   const { data } = await client.get<Page<Category>>(
-    chatPath("orgs", org, "categories"),
+    chatPath("orgs", org.id, "categories"),
   );
   if (data.length === 1) return data[0].slug;
+  const label = org.name ?? org.id;
   throw new CliError(
     "usage",
     data.length === 0
-      ? `Organization ${org} has no categories.`
-      : `Organization ${org} has several categories (${data.map((c) => c.slug).join(", ")}). Pass --category <slug> or run \`gauge chat categories use <slug>\`.`,
+      ? `Organization ${label} has no categories.`
+      : `Organization ${label} has several categories (${data.map((c) => c.slug).join(", ")}). Pass --category <slug> or run \`gauge chat categories use <slug>\`.`,
   );
 }
 
-export type ChatScope = { client: ChatApiClient; org: string };
+export type ChatScope = {
+  client: ChatApiClient;
+  org: string;
+  chatOrg: ChatOrg;
+};
 export type CategoryScope = ChatScope & { category: string; base: string[] };
 
 export async function chatScope(command: Command): Promise<ChatScope> {
   const client = createChatApiClient();
-  return { client, org: await resolveChatOrg(command, client) };
+  const chatOrg = await resolveChatOrg(command);
+  client.orgName = chatOrg.name ?? chatOrg.id;
+  return { client, org: chatOrg.id, chatOrg };
 }
 
 export async function categoryScope(command: Command): Promise<CategoryScope> {
-  const { client, org } = await chatScope(command);
-  const category = await resolveChatCategory(command, client, org);
+  const scope = await chatScope(command);
+  const category = await resolveChatCategory(
+    command,
+    scope.client,
+    scope.chatOrg,
+  );
   return {
-    client,
-    org,
+    ...scope,
     category,
-    base: ["orgs", org, "categories", category],
+    base: ["orgs", scope.org, "categories", category],
   };
 }
 

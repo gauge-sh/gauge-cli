@@ -9,6 +9,7 @@ npm install -g @withgauge/cli
 gauge update              # update the CLI to the latest published version
 gauge onboard             # sign in and create a workspace (account only)
 gauge auth login          # (or just sign in)
+gauge orgs                # list your organizations and the products each uses
 gauge orgs use <org>      # set your default organization
 gauge init                # initialize a workspace; local is the default
 gauge init --hosted       # set a private hosted backend preference
@@ -16,6 +17,36 @@ gauge init --cases        # optionally scaffold shared gauge-cases/
 ```
 
 Requires Node.js ≥ 22.13.
+
+## Organizations
+
+One organization selection serves Gauge Chat and Gauge Agents commands: `--org`,
+then `org` in the project's `gauge.json`, then `defaultOrg` (set with
+`gauge orgs use <org>`). A value can be the organization's Gauge slug or its id
+(a UUID); a Gauge Agents workspace slug from an older setup (such as
+`acme-1a2b3c4d`) still works. The CLI resolves the value to the organization id
+and sends that to both APIs. Resolutions are cached for a day per login, so a
+slug costs a lookup only the first time.
+
+`gauge orgs` lists every organization you belong to with the products it uses
+(Chat, Agents, or both). A command for a product the organization doesn't use
+says so (for example `Acme doesn't use Gauge Chat.`).
+
+Older values keep working:
+
+- A `defaultOrg` that is an Agents workspace slug is rewritten to the
+  organization id the first time it is used.
+- A committed `gauge.json` is never rewritten; the CLI prints a one-time hint
+  suggesting the organization id or Gauge slug instead.
+- If a value is a Gauge slug of one organization and the Agents workspace slug
+  of another, the CLI stops and asks for the organization id.
+- Released CLIs before this change keep sending Agents workspace slugs, which
+  Gauge Agents still accepts, and they also accept an organization id written
+  by a newer CLI.
+
+An org API key (`GAUGE_API_TOKEN=gauge_sk_…`) acts as its own organization and
+ignores `defaultOrg` and `gauge.json`; `--org` can select one of an agency
+key's client organizations.
 
 ## Workspace and local storage
 
@@ -778,10 +809,11 @@ through the Chat API. Sign in with `gauge auth login` (shared credentials), or
 for scripts and CI set `GAUGE_API_TOKEN` to an org API key
 (`GAUGE_API_TOKEN=gauge_sk_…`, created in Settings → API Keys). A key acts as its
 organization with the scopes it was created with (Read, or Read & write);
-`GAUGE_API_TOKEN` takes precedence over a stored login. Commands take
-`--org` and `--category` (slug or id); `gauge chat orgs use <org>` and
-`gauge chat categories use <category>` save defaults (`chatOrg`,
-`chatCategory`), and an only org or category is picked automatically. The
+`GAUGE_API_TOKEN` takes precedence over a stored login. Commands use the
+shared [organization selection](#organizations), and an only Chat organization
+is picked when none is set. Category-scoped commands take `--category` (slug or
+id); `gauge chat categories use <category>` saves `chatCategory` for the
+selected organization, and an only category is picked automatically. The
 Agents-only `--local` and `--hosted` flags are rejected. `gauge chat whoami`
 shows the org API key or signed-in user in use, with its scopes and expiry.
 

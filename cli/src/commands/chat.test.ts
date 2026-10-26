@@ -102,6 +102,32 @@ function parse(): any {
 }
 
 const api = (path: string) => `/api/v1${path}`;
+const ORG = "8c7f0e1a-1111-4222-8333-944455556666";
+const OTHER = "1d2e3f40-5555-4666-8777-988899990000";
+const orgDirectory = [
+  {
+    id: ORG,
+    slug: "acme",
+    name: "Acme",
+    products: { chat: true, agents: true },
+  },
+  {
+    id: OTHER,
+    slug: "beta",
+    name: "Beta",
+    products: { chat: false, agents: true },
+  },
+];
+const keyMe = {
+  user: null,
+  apiKey: {
+    id: "1",
+    name: "ci",
+    prefix: "gauge_sk_ab",
+    organization: { id: ORG, slug: "acme", name: "Acme" },
+  },
+  token: { kind: "api_key", scopes: ["read", "write"], expiresAt: null },
+};
 const topics = [
   {
     id: "top_1A",
@@ -153,23 +179,110 @@ describe("gauge chat", { concurrency: false }, () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
-  it("sends an org API key from GAUGE_API_TOKEN to the Chat origin", async () => {
+  it("sends an org API key from GAUGE_API_TOKEN to the Chat origin, in its own org", async () => {
     process.env.GAUGE_API_TOKEN = "gauge_sk_abc";
-    handler = () => ({
-      body: {
-        data: [{ id: "uuid", slug: "acme", name: "Acme" }],
-        nextCursor: null,
-      },
-    });
-    const { json } = await run("chat", "orgs", "-o", "json");
-    assert.equal(seen[0].path, api("/orgs"));
-    assert.equal(seen[0].auth, "Bearer gauge_sk_abc");
-    assert.deepEqual(json.data[0], {
-      id: "uuid",
-      slug: "acme",
-      name: "Acme",
-      isDefault: false,
-    });
+    updateConfig({ defaultOrg: "someone-elses-default" });
+    handler = (req) =>
+      req.path === api("/me")
+        ? { body: keyMe }
+        : { body: { data: [], nextCursor: null } };
+    await run("chat", "tags", "list", "-o", "json");
+    await run("chat", "tags", "list", "-o", "json");
+    assert.deepEqual(
+      seen.map((r) => `${r.path} ${r.auth}`),
+      [
+        `${api("/me")} Bearer gauge_sk_abc`,
+        `${api(`/orgs/${ORG}/tags`)} Bearer gauge_sk_abc`,
+        `${api(`/orgs/${ORG}/tags`)} Bearer gauge_sk_abc`,
+      ],
+      "the key's org, looked up once; defaultOrg belongs to the login",
+    );
+  });
+
+  it("resolves a slug to the shared org id once, and checks Agents for a clash", async () => {
+    process.env.GAUGE_API_TOKEN = "gauge_cli_session";
+    handler = (req) => {
+      if (req.path === api("/orgs")) return { body: { data: orgDirectory } };
+      if (req.path === api("/me"))
+        return {
+          body: {
+            user: { id: "u", email: null },
+            orgs: [
+              {
+                slug: "acme-1a2b3c4d",
+                publicId: null,
+                canonicalGaugeOrganizationId: ORG,
+                name: "Acme",
+              },
+            ],
+          },
+        };
+      return { body: { data: [], nextCursor: null } };
+    };
+    await run("chat", "tags", "list", "--org", "acme", "-o", "json");
+    await run("chat", "tags", "list", "--org", "acme", "-o", "json");
+    assert.deepEqual(seen.map((r) => r.path).sort(), [
+      api("/me"),
+      api("/orgs"),
+      api(`/orgs/${ORG}/tags`),
+      api(`/orgs/${ORG}/tags`),
+    ]);
+  });
+
+  it("refuses a slug that names different orgs in Chat and Agents", async () => {
+    process.env.GAUGE_API_TOKEN = "gauge_cli_session";
+    handler = (req) =>
+      req.path === api("/orgs")
+        ? { body: { data: orgDirectory } }
+        : {
+            body: {
+              user: { id: "u", email: null },
+              orgs: [
+                {
+                  slug: "acme",
+                  publicId: null,
+                  canonicalGaugeOrganizationId: OTHER,
+                  name: "Acme Labs",
+                },
+              ],
+            },
+          };
+    const { error: caught } = await run(
+      "chat",
+      "tags",
+      "list",
+      "--org",
+      "acme",
+    );
+    const report = errorReport(caught, "chat tags list");
+    assert.equal(report.code, "usage");
+    assert.match(report.message, /"acme" names two organizations/);
+    assert.match(report.hint ?? "", /Pass the organization's id/);
+  });
+
+  it("names an organization that doesn't use Gauge Chat", async () => {
+    process.env.GAUGE_API_TOKEN = "gauge_cli_session";
+    handler = (req) => {
+      if (req.path === api("/orgs")) return { body: { data: orgDirectory } };
+      if (req.path === api("/me"))
+        return { body: { user: { id: "u", email: null }, orgs: [] } };
+      return apiError(
+        403,
+        "product_not_enabled",
+        "Gauge Chat is not set up for this organization.",
+      );
+    };
+    const { error: caught } = await run(
+      "chat",
+      "tags",
+      "list",
+      "--org",
+      "beta",
+    );
+    const report = errorReport(caught, "chat tags list");
+    assert.equal(seen.at(-1)?.path, api(`/orgs/${OTHER}/tags`));
+    assert.equal(report.message, "Beta doesn't use Gauge Chat.");
+    assert.match(report.hint ?? "", /gauge orgs/);
   });
 
   it("prefers GAUGE_API_TOKEN over a stored login", async () => {
@@ -185,10 +298,10 @@ describe("gauge chat", { concurrency: false }, () => {
     });
     process.env.GAUGE_API_TOKEN = "gauge_sk_env";
     handler = () => ({ body: { data: [], nextCursor: null } });
-    await run("chat", "tags", "list", "--org", "acme", "-o", "json");
+    await run("chat", "tags", "list", "--org", ORG, "-o", "json");
     assert.deepEqual(
       seen.map((r) => `${r.path} ${r.auth}`),
-      [`${api("/orgs/acme/tags")} Bearer gauge_sk_env`],
+      [`${api(`/orgs/${ORG}/tags`)} Bearer gauge_sk_env`],
       "no refresh, no stored token, and the Chat origin from GAUGE_AUTH_URL",
     );
   });
@@ -206,8 +319,8 @@ describe("gauge chat", { concurrency: false }, () => {
   });
 
   it("asks for a login or an org API key when no credential is set", async () => {
-    const { error: caught } = await run("chat", "orgs");
-    const report = errorReport(caught, "chat orgs");
+    const { error: caught } = await run("chat", "tags", "list");
+    const report = errorReport(caught, "chat tags list");
     assert.equal(report.code, "unauthorized");
     assert.equal(
       report.hint,
@@ -217,8 +330,8 @@ describe("gauge chat", { concurrency: false }, () => {
   });
 
   it("omits the Agents docs link from chat errors", async () => {
-    const { error: caught } = await run("chat", "orgs");
-    const report = errorReport(caught, "chat orgs");
+    const { error: caught } = await run("chat", "tags", "list");
+    const report = errorReport(caught, "chat tags list");
     assert.equal(report.docs, undefined);
     assert.ok(!renderError(report, false).includes("Docs:"));
     assert.ok(!("docs" in JSON.parse(renderError(report, true)).error));
@@ -258,9 +371,8 @@ describe("gauge chat", { concurrency: false }, () => {
     const listHelp = list.helpInformation().replace(/\s+/g, " ");
     assert.match(
       listHelp,
-      /--org <org>\s+organization slug or id \(default: chatOrg config, else your only Chat org\)/,
+      /--org <org>\s+organization slug or id \(default: gauge.json org, then defaultOrg, else your only Chat org; an org API key implies its org\)/,
     );
-    assert.ok(!listHelp.includes("gauge.json"));
     assert.ok(!/--local|--hosted/.test(listHelp));
     assert.match(tags.helpInformation(), /prompts are kept/);
     let chatHelp = "";
@@ -319,16 +431,16 @@ describe("gauge chat", { concurrency: false }, () => {
       "tags",
       "list",
       "--org",
-      "acme",
+      ORG,
       "-o",
       "json",
     );
     assert.deepEqual(
       seen.map((r) => `${r.path} ${r.auth ?? ""}`.trim()),
       [
-        `${api("/orgs/acme/tags")} Bearer gauge_cli_old`,
+        `${api(`/orgs/${ORG}/tags`)} Bearer gauge_cli_old`,
         "/api/cli/refresh",
-        `${api("/orgs/acme/tags")} Bearer gauge_cli_new`,
+        `${api(`/orgs/${ORG}/tags`)} Bearer gauge_cli_new`,
       ],
     );
     assert.equal(json.data[0].id, "tag_1A");
@@ -375,7 +487,7 @@ describe("gauge chat", { concurrency: false }, () => {
       "prompts",
       "list",
       "--org",
-      "acme",
+      ORG,
       "--category",
       "crm",
       "--tag",
@@ -389,7 +501,7 @@ describe("gauge chat", { concurrency: false }, () => {
     assert.equal(all.json.data.length, 6);
     assert.equal(all.json.nextCursor, null);
     const pages = seen.filter((r) => r.path.endsWith("/prompts"));
-    assert.equal(pages[0].path, api("/orgs/acme/categories/crm/prompts"));
+    assert.equal(pages[0].path, api(`/orgs/${ORG}/categories/crm/prompts`));
     assert.deepEqual(
       pages.map((r) => r.query.get("cursor")),
       [null, "2", "4"],
@@ -402,7 +514,7 @@ describe("gauge chat", { concurrency: false }, () => {
       "prompts",
       "list",
       "--org",
-      "acme",
+      ORG,
       "--category",
       "crm",
       "--all",
@@ -439,9 +551,8 @@ describe("gauge chat", { concurrency: false }, () => {
       freshness: { watermark: "2026-10-21", pending: 0, available: true },
     };
     handler = (req) => {
-      if (req.path === api("/orgs"))
-        return { body: { data: [{ id: "u", slug: "acme", name: "Acme" }] } };
-      if (req.path === api("/orgs/acme/categories"))
+      if (req.path === api("/me")) return { body: keyMe };
+      if (req.path === api(`/orgs/${ORG}/categories`))
         return {
           body: {
             data: [{ id: "cat_1A", slug: "crm", name: "CRM", description: "" }],
@@ -476,7 +587,7 @@ describe("gauge chat", { concurrency: false }, () => {
       "10",
     );
     const post = seen.find((r) => r.method === "POST");
-    assert.equal(post?.path, api("/orgs/acme/query"));
+    assert.equal(post?.path, api(`/orgs/${ORG}/query`));
     assert.deepEqual(post?.body, {
       dataset: "answers",
       dimensions: ["brand", "date"],
@@ -499,7 +610,7 @@ describe("gauge chat", { concurrency: false }, () => {
       "chat",
       "query",
       "--org",
-      "acme",
+      ORG,
       "-o",
       "json",
       "--json",
@@ -509,7 +620,7 @@ describe("gauge chat", { concurrency: false }, () => {
     );
     assert.deepEqual(
       seen.map((r) => r.path),
-      [api("/orgs/acme/query")],
+      [api(`/orgs/${ORG}/query`)],
     );
     assert.deepEqual(seen[0].body, {
       dataset: "aiTraffic",
@@ -580,7 +691,7 @@ describe("gauge chat", { concurrency: false }, () => {
         "create",
         "x",
         "--org",
-        "acme",
+        ORG,
       );
       const report = errorReport(caught, "chat tags create");
       assert.equal(report.code, code);
@@ -610,7 +721,7 @@ describe("gauge chat", { concurrency: false }, () => {
             "This token lacks the 'write' scope.",
             { requiredScope: "write" },
           );
-    const keyed = await run("chat", "tags", "create", "x", "--org", "acme");
+    const keyed = await run("chat", "tags", "create", "x", "--org", ORG);
     assert.equal(
       errorReport(keyed.error, "chat tags create").hint,
       "This org API key is read-only and needs 'write'. Create a Read & write key in Settings → API Keys.",
@@ -625,14 +736,14 @@ describe("gauge chat", { concurrency: false }, () => {
         expiresAt: "2027-01-01T00:00:00Z",
       },
     };
-    const session = await run("chat", "tags", "create", "x", "--org", "acme");
+    const session = await run("chat", "tags", "create", "x", "--org", ORG);
     assert.match(
       errorReport(session.error, "chat tags create").hint ?? "",
       /^This login session has scopes \[read\] and needs 'write'\./,
     );
 
     me = { unexpected: true };
-    const unknown = await run("chat", "tags", "create", "x", "--org", "acme");
+    const unknown = await run("chat", "tags", "create", "x", "--org", ORG);
     assert.equal(
       errorReport(unknown.error, "chat tags create").hint,
       "This credential needs the 'write' scope. If it is an org API key, create a Read & write key in Settings → API Keys.",
@@ -701,7 +812,7 @@ describe("gauge chat", { concurrency: false }, () => {
             "This token lacks the 'write' scope.",
             { requiredScope: "write" },
           );
-    const scoped = await run("chat", "tags", "create", "x", "--org", "acme");
+    const scoped = await run("chat", "tags", "create", "x", "--org", ORG);
     const report = errorReport(scoped.error, "chat tags create");
     assert.equal(report.code, "insufficient_scope");
     assert.match(report.hint ?? "", /needs the 'write' scope/);
@@ -710,16 +821,16 @@ describe("gauge chat", { concurrency: false }, () => {
     const whoReport = errorReport(who.error, "chat whoami");
     assert.equal(whoReport.code, "not_found");
     assert.match(whoReport.message, /\/api\/v1\/me is not available/);
-    assert.match(whoReport.hint ?? "", /gauge chat orgs/);
+    assert.match(whoReport.hint ?? "", /gauge orgs/);
 
     handler = () => html404;
-    const unknown = await run("chat", "tags", "--org", "acme");
+    const unknown = await run("chat", "tags", "--org", ORG);
     const unknownReport = errorReport(unknown.error, "chat tags");
     assert.equal(unknownReport.code, "not_found");
     assert.equal(unknownReport.exitCode, 1);
     assert.match(
       unknownReport.message,
-      /^not_found: \/api\/v1\/orgs\/acme\/tags on 127\.0\.0\.1:\d+ is not a Gauge Chat API endpoint/,
+      /^not_found: \/api\/v1\/orgs\/[0-9a-f-]{36}\/tags on 127\.0\.0\.1:\d+ is not a Gauge Chat API endpoint/,
     );
     assert.ok(!unknownReport.message.includes("<"), "no HTML in the message");
   });
@@ -744,7 +855,7 @@ describe("gauge chat", { concurrency: false }, () => {
       "chat",
       "query",
       "--org",
-      "acme",
+      ORG,
       "--dataset",
       "aiTraffic",
       "-m",
@@ -785,7 +896,7 @@ describe("gauge chat", { concurrency: false }, () => {
       "chat",
       "query",
       "--org",
-      "acme",
+      ORG,
       "--dataset",
       "aiTraffic",
       "-d",
@@ -825,7 +936,7 @@ describe("gauge chat", { concurrency: false }, () => {
       "--topic",
       "Pricing",
       "--org",
-      "acme",
+      ORG,
       "--category",
       "crm",
       "-o",
@@ -835,8 +946,8 @@ describe("gauge chat", { concurrency: false }, () => {
     assert.deepEqual(
       patches.map((r) => r.path),
       [
-        api("/orgs/acme/categories/crm/prompts"),
-        api("/orgs/acme/categories/crm/prompts"),
+        api(`/orgs/${ORG}/categories/crm/prompts`),
+        api(`/orgs/${ORG}/categories/crm/prompts`),
       ],
     );
     assert.deepEqual(
@@ -851,8 +962,8 @@ describe("gauge chat", { concurrency: false }, () => {
   });
 
   it("reports a missing login without blaming local mode", async () => {
-    const { error: caught } = await run("chat", "orgs");
-    const report = errorReport(caught, "chat orgs", {
+    const { error: caught } = await run("chat", "tags", "list");
+    const report = errorReport(caught, "chat tags list", {
       local: "default",
     } as never);
     assert.equal(report.code, "unauthorized");
@@ -861,8 +972,8 @@ describe("gauge chat", { concurrency: false }, () => {
   });
 
   it("chunks prompt creation, previews multi-chunk writes, and reports per-item status", async () => {
-    process.env.GAUGE_API_TOKEN = "gauge_sk_rw";
-    updateConfig({ chatOrg: "acme", chatCategory: "crm" });
+    process.env.GAUGE_API_TOKEN = "gauge_cli_rw";
+    updateConfig({ defaultOrg: ORG, chatCategory: "crm" });
     let remaining = 5000;
     handler = (req) => {
       if (req.path.endsWith("/topics"))
@@ -914,7 +1025,7 @@ describe("gauge chat", { concurrency: false }, () => {
       "json",
     );
     const posts = seen.filter((r) => r.method === "POST");
-    assert.equal(posts[0].path, api("/orgs/acme/categories/crm/prompts"));
+    assert.equal(posts[0].path, api(`/orgs/${ORG}/categories/crm/prompts`));
     assert.deepEqual(
       posts.map(
         (r) => `${r.query.get("dryRun") ?? "-"}:${r.body.prompts.length}`,
@@ -1032,7 +1143,7 @@ describe("gauge chat", { concurrency: false }, () => {
       "--tag",
       "tag_1A",
       "--org",
-      "acme",
+      ORG,
       "--category",
       "crm",
       "-o",
@@ -1054,7 +1165,7 @@ describe("gauge chat", { concurrency: false }, () => {
         "delete",
         "x",
         "--org",
-        "acme",
+        ORG,
         "--category",
         "crm",
         "--yes",
