@@ -88,7 +88,8 @@ export const NEEDS_INPUT_EXIT = 4;
 const NEXT_ACTION_HINT: Record<string, string> = {
   START: "start the draft: `gauge optimizations start-draft <id>`",
   WAIT: "sessions are running; nothing to do",
-  AUTHOR_TRIAL: "author the next trial: `gauge optimizations trials add <id>`",
+  AUTHOR_TRIAL:
+    "author the next round: `gauge optimizations authoring <id>`, then `round preview` and `round save`",
   LAUNCH_ROUND: "launch the saved round: `gauge optimizations launch <id>`",
   ADOPT: "adopt the winning trial: `gauge optimizations adopt <id> <trial>`",
   RESUME: "resume it in the web app, or `gauge optimizations cancel <id>`",
@@ -411,7 +412,7 @@ function printDetail(o: Detail): void {
   );
   if (o.summary) console.log(`summary:   ${o.summary}`);
   console.log(
-    `next:      ${o.nextAction} — ${NEXT_ACTION_HINT[o.nextAction] ?? ""}`,
+    `next:      ${o.nextAction} — ${(NEXT_ACTION_HINT[o.nextAction] ?? "").replaceAll("<id>", o.id)}`,
   );
   console.log("trials:");
   const trials = o.rounds.flatMap((round) => round.trials);

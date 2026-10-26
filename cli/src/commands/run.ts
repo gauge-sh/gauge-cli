@@ -254,6 +254,12 @@ const OWNERSHIP_LABELS: Record<string, string> = {
   THIRD_PARTY: "third-party",
 };
 
+const OPTIMIZE_GOALS: Record<InsightFinding["kind"], string> = {
+  FRICTION: "resolve friction",
+  OBJECTION: "address objection",
+  OPPORTUNITY: "act on opportunity",
+};
+
 function isOptimizable(finding: InsightFinding): boolean {
   return (
     finding.surface?.ownership === "CATALOG" ||
@@ -293,7 +299,7 @@ function printInsight(insight: RunInsightResponse): void {
     console.log(`    ${findingSurfaceLine(finding)}`);
     if (isOptimizable(finding))
       console.log(
-        `    Optimize: gauge optimizations start --finding ${finding.id}`,
+        `    Start an Optimization to ${OPTIMIZE_GOALS[finding.kind]}: gauge optimizations start --finding ${finding.id}`,
       );
   }
 

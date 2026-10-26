@@ -167,55 +167,60 @@ To switch this repo to hosted, run \`gauge onboard\`, then \`gauge init --hosted
 
 const OPTIMIZATIONS = `---
 name: gauge-optimizations
-description: Discover observed surfaces, choose a baseline, and test docs, CLI,
-  or skill changes against a Gauge eval or preference prompt.
+description: Start from an owned finding or a baseline run, author docs, CLI,
+  or skill changes, and judge each trial against the baseline.
 ---
 
 # Optimizations
 
-Gauge measures; you author. Use -o json on reads. Discover before starting.
+Gauge measures; you author changes. Use -o json on reads.
+
+## Start
+
+    gauge run insight <run-id> -o json
+    gauge optimizations start --finding <findingId> --yes
+
+Start from an owned finding (surface.ownership CATALOG or INFERRED) by default. It becomes the
+target; its session sets the baseline, subject, and model.
+Find findings across runs with gauge query run --dataset findings -d run,label,surface_lever.
+Without a finding, list eligible runs and start from one:
+
+    gauge optimizations baselines --eval <id> -o json     # or --preference <id>
+    gauge optimizations start --eval <id> --from-run <run-id> --yes
+
+Pass one of --finding, --from-run, or --target <agent:model> (a new, paid baseline); --yes only when approved.
 
 ## The loop
 
-    gauge optimizations baselines --eval <id> -o json
-    gauge run insight <run-id> -o json
-    gauge run get <run-id> --logs -o json
-    gauge optimizations start --eval <id> --from-run <run-id> --yes
-
-Discovery returns observed owned surfaces, evidence, judging, eligibility, and nextCursor.
-Choose a run that encountered the surface you want to improve. Missing evidence is unknown.
---from-run reuses its eligible baseline (possibly several runs) and inherits its model.
-Use --preference for preference prompts, or --target <agent:model> to establish a baseline.
-A new baseline may spend credits. Only use --yes for approved spending.
-To fix one owned finding, start --finding <findingId> alone: it becomes the target, and its
-session sets the baseline, subject, and model. run insight prints each finding's Optimize: line.
-
-    gauge optimizations watch <id>            # exit 4 = your turn, not failure
-    gauge optimizations authoring <id>          # targets, guidance, revision
+    gauge optimizations watch <id>                 # exit 4 = your turn, not failure
+    gauge optimizations authoring <id> -o json     # targets, targeted findings, revision
     gauge optimizations page <id> --url <url> -o json
 
 Follow nextAction: WAIT → watch; AUTHOR_TRIAL → author; LAUNCH_ROUND → launch.
-Check page.source: scrape is current content, not the captured baseline response.
-Write each trial in round.json as one hypothesis with changes: [...] across any surfaces, using the authoring revision.
-Docs use exact find/replace edits or body with rewriteReason; a skill edit carries its complete files.
+Edit pages in authoring.targets: the baseline session read them. Each find must match the page
+body exactly once; a scrape body is raw HTML, a captured body is text.
+round.json is {revision, trials: [{trial: {title, hypothesis, changes: [...]}}]}; trials template shows one.
+One hypothesis per trial. Edit one page per trial unless the hypothesis needs the same text on several.
+Docs use find/replace edits or body with rewriteReason; a skill edit carries its complete files.
 CLI: cli-change --file takes v3 {schemaVersion:3,target,rules,shippingIntent}; its output is a CLI_INTERVENTION change's after.
 
     gauge optimizations round preview <id> --file round.json -o json
     gauge optimizations round save <id> --file round.json --digest <previewDigest>
     gauge optimizations launch <id> --yes
-    gauge optimizations watch <id>
-    gauge optimizations trial <id> <trial> -o json
 
-Checkpoints are saved states of baseline runs: resuming one avoids repeating earlier work.
-Gauge selects checkpoints automatically before the affected interaction, or starts fresh with a reason.
-Omit startingPoints and fork flags; you do not select a checkpoint. Check candidateExecution,
-candidateDelivery (exposure, observedArtifacts, evidenceComplete), scores, counts, and failed sessions.
-Better scores alone are not proof. Keep eval/prompt/criteria fixed; repeat if inconclusive.
-The trial's ledger is its result: did each target come back, move later, or vanish; what is new?
-Record it: judge <id> <trial> --direction BETTER|WORSE|MIXED|UNCHANGED|UNCLEAR --summary <text>
---target <observationId>=RESOLVED|RETURNED|MOVED|UNCLEAR. Unexercised change: UNCLEAR.
-Adopt <id> <trial> selects the winner; handoff <id> gives source instructions; complete <id> finishes.
-Neither deploys. Single-trial retries: trials add --idempotency-key.
+## Judge
+
+Read trial <id> <trial> -o json. Check exposure first (runs[].candidateDelivery): exercised = saw every
+edited page; partial = saw only observedArtifacts, so judge those; not_exercised = record UNCLEAR, not
+WORSE; unknown = incomplete evidence. Gauge selects checkpoints automatically or starts fresh; a fresh session
+can skip the edited page. Then read scores, counts, and failed sessions; scores alone are not proof. The ledger
+is the result: did each target come back, move, or vanish? A returned target shows targeted: false; match by meaning.
+
+    gauge optimizations judge <id> <trial> --direction BETTER|WORSE|MIXED|UNCHANGED|UNCLEAR --summary <text> --target <findingId>=RESOLVED|RETURNED|MOVED|UNCLEAR
+
+Keep the eval, prompt, and criteria fixed; repeat an inconclusive trial before you adopt it.
+adopt <id> <trial> marks the winner; handoff <id> gives source instructions; complete <id> finishes,
+with no --adopt when no trial won. None of these deploy. Retry one trial with trials add --idempotency-key.
 `;
 
 export const TOPICS: Record<string, Topic> = {

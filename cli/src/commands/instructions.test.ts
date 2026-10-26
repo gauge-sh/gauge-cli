@@ -236,11 +236,11 @@ describe("gauge instructions", () => {
     assert.match(optimization, /baselines --eval/);
     assert.match(optimization, /--from-run/);
     assert.match(optimization, /selects checkpoints automatically/);
-    assert.match(optimization, /Checkpoints are saved states of baseline runs/);
+    assert.match(optimization, /start --finding/);
     assert.match(optimization, /candidateDelivery/);
     assert.ok(
-      optimization.indexOf("baselines --eval") <
-        optimization.indexOf("optimizations start"),
+      optimization.indexOf("start --finding") <
+        optimization.indexOf("baselines --eval"),
     );
     assert.equal(instructions("optimizations"), optimization);
   });
