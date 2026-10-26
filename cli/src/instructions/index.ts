@@ -193,10 +193,10 @@ Pass one of --finding, --from-run, or --target <agent:model> (a new, paid baseli
 ## The loop
 
     gauge optimizations watch <id>                 # exit 4 = your turn, not failure
-    gauge optimizations authoring <id> -o json     # targets, targeted findings, revision
+    gauge optimizations authoring <id> -o json     # targets, targeted findings, practices, revision
     gauge optimizations page <id> --url <url> -o json
 
-Follow nextAction: WAIT → watch; AUTHOR_TRIAL → author; LAUNCH_ROUND → launch.
+Follow nextAction (WAIT → watch; AUTHOR_TRIAL → author; LAUNCH_ROUND → launch) and every rule in authoring.practices.
 Edit pages in authoring.targets: the baseline session read them. Each find must match the page
 body exactly once; a scrape body is raw HTML, a captured body is text.
 round.json is {revision, trials: [{trial: {title, hypothesis, changes: [...]}}]}; trials template shows one.
