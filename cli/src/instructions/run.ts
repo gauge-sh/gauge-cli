@@ -25,6 +25,11 @@ description: Write Gauge eval cases, choose models and judging criteria, and
 
 ## Definition and input snapshots
 
+For web interventions, declare \`type: "web-fixture", path: "fixtures/docs.json"\` in gauge.json; select with \`config.inputs\` or override with \`--input docs=path.json\` locally or hosted.
+The version 1 JSON file supports \`pages\` (exact HTTPS url/body, optional status/contentType), \`scopes\` (block missing pages under HTTPS path prefixes), and \`origins\` (origin/upstream HTTPS mappings preserving paths and queries).
+Select either pages/scopes or an origin mapping for each origin. Conflicts, search mocks, unknown fields, and body transformations are rejected; the combined fixture is limited to 1 MB.
+Local runs use a separate TLS gateway: \`gauge local runtime pull\` obtains both images, and \`--dry-run -o json\` reports routes and digests. Original hostnames must resolve. GitHub-resolved \`website\` inputs remain hosted-only.
+
 Interactive CLI runs read working-tree case definitions in both backends, including
 uncommitted edits and new files. Selected filesystem inputs are packaged for local
 execution or hosted upload. Explicit remote artifacts retain their declared sources.
@@ -116,8 +121,9 @@ It does not see this repo, this conversation, or the user. Write each prompt for
 | CLI | \`npm-package\`, \`install: environment\` | greenfield dir, pack of this checkout | yes |
 | SDK | \`npm-package\`, \`install: workspace\` | greenfield app in the SDK's language | yes |
 | Docs | \`files\`, \`paths\` globs | docs given to the agent as files | yes |
+| Web fixture | \`web-fixture\`, \`path\` to JSON | exact HTTPS pages or origin mappings through the gateway | yes |
 
-Binary, website preview routing, and MCP inputs are hosted only. Supplied docs files test content use; they do not replace the canonical site or test its discovery. A reachable preview URL in the prompt is another content-only option, with the same discovery limitation. Inputs never include \`.gauge/\`. Choose the surface the user wants to test rather than adding a Skill to an existing CLI or SDK.
+Binary, GitHub-resolved \`website\`, and MCP inputs are hosted only. Local \`web-fixture\` JSON supports version 1 \`pages\` (exact HTTPS url/body), \`scopes\` (block missing pages), and \`origins\` (origin/upstream HTTPS mappings). Select with \`config.inputs\`; override with \`--input name=path.json\`. Original hostnames must resolve. Fixtures are limited to 1 MB; overlapping routes, search mocks, and body transformations are rejected. Supplied docs files do not replace a canonical site. Inputs never include \`.gauge/\`.
 
 Add one \`inputs\` entry in gauge.json per surface or skill; keep every other key. An \`npm-package\` \`path\` is a glob that must match one packed .tgz. \`gauge run\` does not pack it: run \`npm pack\` after every change, and delete old .tgz files.
 

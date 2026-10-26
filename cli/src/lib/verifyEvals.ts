@@ -1,4 +1,5 @@
 import { findWorkspace } from "./gaugeState";
+import { mergeWebFixtures, parseWebFixtureInput } from "@withgauge/api-schemas/web-fixtures";
 import { execFileSync } from "node:child_process";
 import {
   globSync,
@@ -448,6 +449,7 @@ function inputChecks(
             );
         }
       }
+      if (input.type === "web-fixture") parseWebFixtureInput(read(root, input.path).toString("utf8"));
       if (
         input.type === "npm-package" &&
         (selected.length !== 1 || !selected[0].endsWith(".tgz"))
@@ -602,6 +604,11 @@ export function verifyEvals(
           if (missing.length)
             throw new Error(`${path}: Unknown input(s): ${missing.join(", ")}`);
           const commandOwners = new Map<string, string>();
+          mergeWebFixtures((item.config.inputs ?? Object.keys(config.data.inputs)).flatMap((name) => {
+            const input = config.data.inputs[name];
+            return input.type === "web-fixture" && (local || input.source.type === "git")
+              ? [parseWebFixtureInput(read(root, input.path).toString("utf8"))] : [];
+          }));
           for (const name of new Set(
             item.config.inputs ?? Object.keys(config.data.inputs),
           )) {

@@ -35,6 +35,11 @@ first release:
    unchanged when the source repository changes.
    See [GitHub package permissions](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility)
    and [connecting a package to a repository](https://docs.github.com/en/packages/learn-github-packages/connecting-a-repository-to-a-package).
+4. Configure `ghcr.io/gauge-sh/gauge-gateway` the same way. GHCR creates a
+   new package as private on its first push, so after the first gateway
+   workflow publishes its native images, make the package public, connect it
+   to `gauge-sh/gauge-cli`, and rerun the workflow so its anonymous-pull jobs
+   can pass.
 
 Source and Git history are separate review surfaces. When creating a repository
 with a fresh history, copy the reviewed source tree rather than pushing old
@@ -79,3 +84,23 @@ publishing. Tags must use versions that have not already been published.
 Changing the runtime source requires another runtime release and reviewed
 manifest pin. CLI-only changes can reuse a qualified runtime when its source
 revision remains available and the runtime source has not changed.
+
+## Gateway
+
+Each CLI release also pins the local web-fixture gateway image in
+`cli/gateway-manifest.json`. The gateway is released independently of the
+runtime through `.github/workflows/gateway.yml`, using the same steps:
+
+1. On `main`, choose a new gateway version in `cli/gateway-manifest.json` with
+   `digest` and `revision` set to `null`. Commit it and push
+   `gateway-v<version>` pointing to the reviewed commit.
+2. The workflow qualifies `packages/local/gateway` on both native
+   architectures against the pinned runtime, publishes the images and index,
+   and verifies anonymous pulls.
+3. Commit the `qualified-gateway-manifest` artifact as
+   `cli/gateway-manifest.json` through a reviewed PR before releasing the CLI.
+
+The same workflow runs qualification without publishing on pull requests that
+change `packages/local/`. Because gateway qualification uses the pinned
+runtime, release and pin a changed runtime first. Changing
+`packages/local/gateway` requires another gateway release and reviewed pin.

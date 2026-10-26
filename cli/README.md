@@ -170,6 +170,7 @@ contains the execution preference. Git is optional for workspace initialization.
 |---|---|---|
 | Skill, npm package (CLI or SDK), and `files` inputs | yes | yes |
 | Docs supplied as `files` inputs | yes | yes |
+| Web fixture JSON: exact pages, scopes, and origin proxying | yes | yes |
 | Eval and Agent Preference cases in `gauge-cases/` | yes (you read the sessions) | yes (judged) |
 | `run`, `run list`, `run compare --local`, `models list`, `cleanup`, `feedback` | yes | yes |
 | Binary, website, and MCP inputs | no | yes |
@@ -290,6 +291,12 @@ leaves out. For npm inputs it contains the `.tgz`; the raw
 tarball has a different hash and size. Each launch takes a fresh snapshot.
 Each case owns its agents, models, consumer repository/ref, Persona and criteria.
 The optional `config.inputs` selects named inputs; all attach by default.
+
+For transparent web fixtures, declare an input such as
+`"docs": { "type": "web-fixture", "path": "fixtures/docs.json" }`.
+Select it with `config.inputs` and override it with `--input docs=path.json` in
+either backend. Local runs use a separate mitmproxy gateway; `gauge local runtime
+inspect` and `pull` cover both images. See [web fixture setup and contract](../docs/local-web-fixtures.md).
 
 `verify` reads the repository's current files, including non-ignored untracked files,
 without login, network access, a PR, built CI artifacts, or sandbox compute. It checks

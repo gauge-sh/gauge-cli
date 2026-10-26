@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add an optional transparent TLS gateway with immutable web fixtures and public CA distribution.
+- Move container creation into the session worker; join preparation before cleanup and retain explicit cleanup state after failures.
+
 ## 0.2.0 — 2026-10-21
 
 - Cancelling a session that is already shutting down is accepted and waits for

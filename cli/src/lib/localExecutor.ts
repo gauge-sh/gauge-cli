@@ -49,6 +49,8 @@ import {
   type RuntimeInspection,
 } from "./localRuntime";
 import { checkLocalRuntimeCompatibility } from "./localRuntimeCompatibility";
+import { inspectLocalGateway, requireLocalGateway } from "./localRuntime";
+import { freezeWebFixtures, type FrozenWebFixture } from "./webFixtureInputs";
 import {
   openLocalStore,
   type LocalSessionSummary,
@@ -57,7 +59,7 @@ import {
 export { RUNTIME_IMAGE } from "./localRuntime";
 
 type ResolvedLocalRuntime = RuntimeInspection & { imageId: string };
-export type LocalRuntimeOptions = { runtimeImage?: string };
+export type LocalRuntimeOptions = { runtimeImage?: string; gatewayImage?: string };
 
 const CONCURRENCY = 4;
 const POLL_MS = 1_000;
@@ -106,6 +108,7 @@ export function analysisNext(batchId: string): string {
 export type LocalPlan = {
   mode: "local";
   runtime: RuntimeInspection;
+  gateway?: RuntimeInspection;
   runtimeProbe: "not_run";
   expectedSessions: number;
   cases: {
@@ -122,9 +125,11 @@ export async function planLocal(
   definition: RunDefinitionSubmission,
   options: LocalCredentialOptions & LocalRuntimeOptions = {},
 ): Promise<LocalPlan> {
-  const { resources, queue } = plan(definition);
+  const { queue } = plan(definition);
   const warnings: string[] = [];
   const runtime = inspectLocalRuntime(options.runtimeImage);
+  const gateway = definition.resources.some((r) => r.use.type === "web-fixture") ? inspectLocalGateway(options.gatewayImage) : undefined;
+  if (gateway?.problem) warnings.push(`${gateway.problem.message} ${gateway.problem.hint}`);
   if (runtime.problem)
     warnings.push(`${runtime.problem.message} ${runtime.problem.hint}`);
   const credentials = await credentialReadiness(queue, options);
@@ -134,6 +139,7 @@ export async function planLocal(
   return {
     mode: "local",
     runtime,
+    gateway,
     runtimeProbe: "not_run",
     expectedSessions: queue.length,
     cases: definition.cases.map((item) => {
@@ -157,9 +163,9 @@ export async function planLocal(
         sessions: [...sessions.values()],
       };
     }),
-    inputs: [...resources.values()].map((r) => ({
+    inputs: definition.resources.map((r) => ({
       name: r.name,
-      use: r.use?.type ?? r.kind,
+      use: r.use.type,
     })),
     warnings,
     credentials,
@@ -182,7 +188,7 @@ function plan(definition: RunDefinitionSubmission) {
         );
   }
   const resources = new Map(
-    definition.resources.map((resource) => [
+    definition.resources.filter((resource) => resource.use.type !== "web-fixture").map((resource) => [
       resource.name,
       toResourceRef(resource),
     ]),
@@ -234,6 +240,8 @@ export async function prepareLocal(
   options: BatchOptions = {},
 ) {
   const { queue } = plan(definition);
+  const webFixtures = await freezeWebFixtures(definition, uploads);
+  const gateway = Object.keys(webFixtures).length ? requireLocalGateway(options.gatewayImage) : undefined;
   await freezeCredentials(queue, options);
   const runtime = requireLocalRuntime(options.runtimeImage);
   await checkLocalRuntimeCompatibility(runtime.imageId, [
@@ -247,6 +255,7 @@ export async function prepareLocal(
   const directory = batchDirectory(gaugeDir, batchId);
   await mkdir(directory, { recursive: true, mode: 0o700 });
   await writeJson(join(directory, "runtime.json"), runtime);
+  await writeJson(join(directory, "gateway.json"), { gateway, cases: webFixtures });
   await writeJson(join(directory, "status.json"), {
     batchId,
     runtime,
@@ -367,6 +376,9 @@ export async function runLocal(
   const runtime: ResolvedLocalRuntime = JSON.parse(
     await readFile(join(directory, "runtime.json"), "utf8"),
   );
+  const gatewayPlan: { gateway?: ResolvedLocalRuntime; cases: Record<string, FrozenWebFixture> } = JSON.parse(
+    await readFile(join(directory, "gateway.json"), "utf8"),
+  );
   const expectedSessions = queue.length;
   let interrupted = false;
   const signal = () => {
@@ -403,6 +415,8 @@ export async function runLocal(
           resources,
           credentialSelections,
           runtime,
+          gateway: gatewayPlan.gateway && gatewayPlan.cases[job.item.path]
+            ? { image: gatewayPlan.gateway.imageId, ...gatewayPlan.cases[job.item.path] } : undefined,
           canceled,
           measurement: options.measurement,
           provenance: definition.source ?? {},
@@ -532,6 +546,7 @@ async function runJob(
     resources: Map<string, ResourceRef>;
     credentialSelections: Record<string, ResolvedLocalProfile>;
     runtime: ResolvedLocalRuntime;
+    gateway?: SessionSpec["gateway"];
     canceled: () => boolean;
     measurement: BatchOptions["measurement"];
     provenance: Record<string, unknown>;
@@ -615,6 +630,7 @@ async function runJob(
       profile,
       context.runtime.imageId,
     );
+    spec.gateway = context.gateway;
     await writeJson(join(attemptDir, "spec.json"), {
       ...metadata,
       session: spec,

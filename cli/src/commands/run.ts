@@ -449,6 +449,7 @@ type LaunchOpts = {
   dryRun?: boolean;
   detach?: boolean;
   runtimeImage?: string;
+  gatewayImage?: string;
   requireExperiment?: string;
   schema?: boolean;
   example?: boolean;
@@ -771,8 +772,12 @@ async function runLocalCases(
         ...(await planLocal(local.definition, {
           profile: opts.profile,
           runtimeImage: opts.runtimeImage,
+          gatewayImage: opts.gatewayImage,
         })),
         inputSnapshots: local.inputSnapshots,
+        webFixtures: Object.fromEntries(Object.entries(local.webFixtures).map(([path, { fixture, digest }]) => [path, {
+          digest, pages: fixture.pages.map((p) => p.url), scopes: fixture.scopes ?? [], origins: fixture.origins ?? [],
+        }])),
         unattachedInputs: local.unattachedInputs,
       };
       if (json) printJson(plan);
@@ -788,7 +793,7 @@ async function runLocalCases(
         local.definition,
         local.uploads,
         join(root, ".gauge"),
-        { profile: opts.profile, runtimeImage: opts.runtimeImage, measurement },
+        { profile: opts.profile, runtimeImage: opts.runtimeImage, gatewayImage: opts.gatewayImage, measurement },
       );
       if (json) printJson(detached);
       else
@@ -816,6 +821,7 @@ async function runLocalCases(
         measurement,
         profile: opts.profile,
         runtimeImage: opts.runtimeImage,
+        gatewayImage: opts.gatewayImage,
         onStart: (batchId) =>
           console.error(
             `Batch ${batchId}\nStatus: gauge run status --batch ${batchId} --local\nWait: gauge run wait --batch ${batchId} --local\nStop: gauge run cancel --batch ${batchId} --local`,
@@ -861,6 +867,7 @@ function printLocalPlan(
   console.log(
     `Runtime: ${plan.runtime.reference}${plan.runtime.imageId ? ` (${plan.runtime.imageId})` : ""}. Compatibility probe runs at launch.`,
   );
+  if (plan.gateway) console.log(`Gateway: ${plan.gateway.reference}${plan.gateway.imageId ? ` (${plan.gateway.imageId})` : ""}`);
   for (const item of plan.cases)
     console.log(
       `  ${item.path}: ${item.sessions.map((s) => `${s.agent} ${s.model} ×${s.samples}`).join(", ")}; ${item.criteria} criteria`,
@@ -1055,6 +1062,7 @@ export function register(program: Command): void {
       "--runtime-image <image>",
       "use a compatible custom Docker image for local runs (tag, digest, or image ID)",
     )
+    .option("--gateway-image <image>", "use a compatible custom gateway image for local web fixtures")
     .option("--verify", "check this repo's eval files; start no sessions")
     .option(
       "--dry-run",
@@ -1088,10 +1096,10 @@ export function register(program: Command): void {
           opts.example)
       )
         throw new CliError("usage", "--detach requires a local run");
-      if (opts.runtimeImage && gaugeState(cmd).mode !== "local")
+      if ((opts.runtimeImage || opts.gatewayImage) && gaugeState(cmd).mode !== "local")
         throw new CliError(
           "usage",
-          "--runtime-image works only on local runs; pass --local",
+          "--runtime-image and --gateway-image work only on local runs; pass --local",
         );
       await launch(cmd, opts);
     });

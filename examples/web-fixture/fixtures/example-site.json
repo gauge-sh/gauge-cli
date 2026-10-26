@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "origins": [
+    {
+      "origin": "https://example.com",
+      "upstream": "https://example.org"
+    }
+  ]
+}

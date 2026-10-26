@@ -1,0 +1,11 @@
+{
+  "version": "0.1.0",
+  "repository": "ghcr.io/gauge-sh/gauge-gateway",
+  "digest": null,
+  "contract": "gateway-1",
+  "platforms": [
+    "linux/amd64",
+    "linux/arm64"
+  ],
+  "revision": null
+}
