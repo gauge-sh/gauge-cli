@@ -270,10 +270,7 @@ function registerBrands(chat: Command): void {
 const CHAT_ORG_HELP =
   "organization slug or id (default: gauge.json org, then defaultOrg, else your only Chat org; an org API key implies its org)";
 
-// The root --org help describes the Agents default, and --local/--hosted pick
-// an Agents backend. Chat help states its own default and hides the Agents-only
-// flags, and passing them to a chat command is an error. Subcommands inherit
-// this help configuration, so it must be set before they are registered.
+// Configure help before registering subcommands so they inherit these overrides.
 function scopeGlobalOptions(program: Command, chat: Command): void {
   const isAgentsOnly = (option: Option) =>
     option.long === "--local" || option.long === "--hosted";

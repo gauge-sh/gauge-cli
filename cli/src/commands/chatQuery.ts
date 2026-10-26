@@ -12,14 +12,12 @@ import { resolveOutput } from "../lib/context";
 import { printItems, printJson } from "../lib/output";
 import { noteFreshness, parseOrderBy, pct, readStdin } from "./query";
 
-// Same envelope as the Agents query endpoint (gauge query), against Chat data.
 export const CHAT_DATASETS = [
   "answers",
   "citations",
   "searchQueries",
   "aiTraffic",
 ] as const;
-// Datasets scoped to the organization rather than a category.
 const ORG_LEVEL_DATASETS = new Set(["aiTraffic"]);
 
 type WhereOp = "eq" | "neq" | "in" | "notIn" | "contains";
@@ -286,7 +284,6 @@ export function registerQuery(chat: Command): void {
       "--granularity <g>",
       "date bucket: hour (aiTraffic only, ≤ 14 days) | day | week | month (default day)",
     )
-    // Gauge staff only (the API rejects it for everyone else), so hidden from help.
     .addOption(
       new Option("--explain", "print the compiled SQL to stderr").hideHelp(),
     )

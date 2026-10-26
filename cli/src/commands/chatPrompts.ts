@@ -51,7 +51,6 @@ type PromptIn = {
   tagIds?: string[];
 };
 
-// One prompt from args or a file, before topic and tag names are resolved.
 export type RawPrompt = {
   text: string;
   topic?: string;
@@ -97,8 +96,6 @@ function fromJson(value: unknown, where: string): RawPrompt {
   };
 }
 
-// A JSON array (strings or objects), or one prompt per line where a line that
-// starts with "{" is a JSON object (JSON Lines). Blank lines are ignored.
 export function parsePromptInput(content: string): RawPrompt[] {
   const trimmed = content.trim();
   if (trimmed.startsWith("[")) {
@@ -237,10 +234,6 @@ function printOutcome(result: AddOutcome, cmd: Command): void {
   );
 }
 
-// Create prompts in ≤500-item requests. A multi-request write is preceded by a
-// dry run of every chunk, so validation errors and plan limits fail before
-// anything is created. Creation is idempotent per text, so rerunning after a
-// partial failure is safe.
 export async function addPrompts(
   scope: CategoryScope,
   prompts: PromptIn[],
@@ -258,6 +251,7 @@ export async function addPrompts(
       },
     );
   if (!dryRun && batches.length > 1) {
+    // Preview every batch to catch validation and quota errors before writing.
     const preview: CreateResponse[] = [];
     for (const batch of batches) preview.push(await send(batch, true));
     const fresh = new Set<string>();
@@ -268,8 +262,7 @@ export async function addPrompts(
             normalized(prompts[chunk * CHAT_BATCH_SIZE + r.index].text),
           );
     });
-    // Each preview is checked against the same current state, and
-    // `remaining` is what would be left after that batch alone.
+    // Previews don't consume quota; remaining excludes only that batch's prompts.
     const first = preview[0];
     const remaining =
       first?.remaining === null || first?.remaining === undefined

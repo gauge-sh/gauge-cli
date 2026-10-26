@@ -35,10 +35,8 @@ export type CliErrorOptions = {
   hint?: string;
   docs?: string;
   needsAccount?: boolean;
-  // The server's own error code when it is more specific than `code`
-  // (e.g. Chat's insufficient_scope); reported instead of `code`.
+  // Overrides the displayed code without changing the CLI exit code.
   apiCode?: string;
-  // Structured error fields from the server (field, retryAfter, remaining…).
   details?: Record<string, unknown>;
 };
 
@@ -317,13 +315,11 @@ export class ApiClient {
   }
 }
 
-// An Agents 404 for an organization the user belongs to that doesn't use
-// Gauge Agents reads better as exactly that.
 async function explainMissingOrg(url: string): Promise<CliError | undefined> {
   const match = url && /\/api\/v1\/orgs\/([^/?#]+)/.exec(new URL(url).pathname);
   if (!match) return undefined;
   try {
-    // Imported lazily: the directory module builds on this one.
+    // orgDirectory imports this module.
     const { missingAgentsOrg } = await import("./orgDirectory");
     return await missingAgentsOrg(decodeURIComponent(match[1]));
   } catch {

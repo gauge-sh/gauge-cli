@@ -470,7 +470,6 @@ describe("gauge chat", { concurrency: false }, () => {
             ],
           },
         };
-      // Six prompts; the cursor is an offset and the page honors limit.
       const offset = Number(req.query.get("cursor") ?? 0);
       const end = Math.min(6, offset + Number(req.query.get("limit") ?? 50));
       return {
@@ -602,7 +601,6 @@ describe("gauge chat", { concurrency: false }, () => {
       dateRange: { lastDays: 30 },
       filters: { brand: ["brd_1A"], tagMode: "all", category: "crm" },
     });
-    // Table output shows labels and formats 0-1 rates like `gauge query`.
     assert.match(stdout.join("\n"), /Acme\s+42.5%/);
 
     seen = [];
@@ -1047,7 +1045,6 @@ describe("gauge chat", { concurrency: false }, () => {
       would_create: 0,
     });
 
-    // Dry run sends only previews.
     seen = [];
     const dry = await run(
       "chat",
@@ -1070,7 +1067,6 @@ describe("gauge chat", { concurrency: false }, () => {
       ["would_create", "would_create"],
     );
 
-    // A plan limit found in preview fails before anything is written.
     seen = [];
     remaining = 1000;
     const { error: caught } = await run(

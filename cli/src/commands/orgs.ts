@@ -19,19 +19,13 @@ import {
 import { printItems, printJson } from "../lib/output";
 
 type OrgRow = {
-  // The shared organization id; null for an Agents workspace without one.
   id: string | null;
   slug: string;
   name: string;
   products: Products;
-  // The Agents workspace slug older CLI versions use.
   agentsSlug: string | null;
 };
 
-// Every organization you belong to, from the Chat directory, completed with
-// the Agents workspaces your login reaches: Agents answers which shared
-// organizations have one when the directory couldn't ask, and adds workspaces
-// with no shared organization (LOCAL workspaces).
 async function listOrgs(): Promise<OrgRow[]> {
   const kind = credentialKind();
   const [directory, agentsOrgs] = await Promise.all([
@@ -39,7 +33,7 @@ async function listOrgs(): Promise<OrgRow[]> {
     kind === "api_key"
       ? Promise.resolve<AgentsOrg[]>([])
       : fetchAgentsOrgs().catch((error: unknown) => {
-          // Chat answered; the Agents half is best effort.
+          // Legacy tokens have no Chat directory to fall back to.
           if (kind === "legacy") throw error;
           return null;
         }),
@@ -149,7 +143,6 @@ export function register(program: Command): void {
     )
     .action(async (org: string, _opts: unknown, command: Command) => {
       const resolved = await resolveOrgValue(org);
-      // The shared id, or an Agents workspace's own slug when it has none.
       let id = resolved.id;
       let name = resolved.name;
       if (resolved.via === "uuid" || resolved.via === "unresolved") {

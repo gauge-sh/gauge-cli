@@ -7,34 +7,22 @@ import { configDir, readConfig, updateConfig } from "./config";
 import { resolveToken } from "./credentials";
 import { storedSharedCredentials } from "./sharedAuth";
 
-// One organization selection for Gauge Chat and Gauge Agents. A selection
-// (--org, gauge.json `org`, defaultOrg) may be a Chat slug, the shared
-// organization UUID, or a legacy Agents slug; it is resolved to the shared
-// UUID, which both APIs accept. Chat (the organization directory) lists every
-// organization the credential reaches with the products it uses; Agents'
-// /api/v1/me maps legacy Agents slugs to the shared UUID.
-
 export type Products = { chat: boolean; agents: boolean | null };
 
 export type DirectoryOrg = {
   id: string;
   slug: string;
   name: string;
-  // Absent from Chat servers that predate the directory: those list only
-  // organizations with Gauge Chat.
+  // Older servers omit products and list only Chat organizations.
   products?: Products;
 };
 
 export type AgentsOrg = MeOrg;
 
 export type ResolvedOrg = {
-  // What to send as {org}: the shared UUID, or the value itself when it names
-  // nothing linked to a Gauge organization (a LOCAL Agents workspace, or an
-  // org only staff can reach).
+  // Unlinked Agents workspaces retain their slug instead of a shared UUID.
   id: string;
   name?: string;
-  // How the value matched: a UUID as given, a Chat slug, a legacy Agents
-  // slug, an Agents workspace without a shared organization, or nothing.
   via: "uuid" | "chat" | "agents" | "agents_unlinked" | "unresolved";
 };
 
@@ -45,9 +33,6 @@ export const isUuid = (value: string): boolean => UUID_RE.test(value);
 
 export type CredentialKind = "session" | "api_key" | "legacy" | "none";
 
-// gauge_cli_ is a shared login (Chat and Agents); gauge_sk_ and older
-// unprefixed tokens are Chat org API keys; other gauge_ tokens are legacy
-// Agents tokens, which Chat does not accept.
 export function credentialKind(token = resolveToken()): CredentialKind {
   if (!token) return "none";
   if (token.startsWith("gauge_cli_")) return "session";
@@ -55,10 +40,6 @@ export function credentialKind(token = resolveToken()): CredentialKind {
     return "api_key";
   return "legacy";
 }
-
-// --- Resolution cache ----------------------------------------------------------
-// Resolutions are cached per credential so most commands make no extra request.
-// A shared login is identified by its session (its access token rotates).
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -77,6 +58,7 @@ export function orgCachePath(): string {
 
 function credentialId(): string {
   const shared = storedSharedCredentials();
+  // A session ID survives access-token rotation.
   const raw = shared?.sessionId
     ? `${shared.authUrl}#${shared.sessionId}`
     : (resolveToken() ?? "");
@@ -113,12 +95,8 @@ function remember(value: string, org: CachedOrg): void {
   saveCache(cache);
 }
 
-// --- Directory lookups ---------------------------------------------------------
-
-// The organizations this credential reaches, from the Chat directory.
 export async function fetchDirectory(): Promise<DirectoryOrg[]> {
-  // Imported lazily: chatApi depends on the Agents client module, which reaches
-  // back here to explain a missing organization.
+  // Lazy import breaks the chatApi -> context -> orgDirectory cycle.
   const { chatPath, createChatApiClient } = await import("./chatApi");
   const { data } = await createChatApiClient().get<{ data: DirectoryOrg[] }>(
     chatPath("orgs"),
@@ -128,7 +106,6 @@ export async function fetchDirectory(): Promise<DirectoryOrg[]> {
   return data;
 }
 
-// The Agents workspaces this credential reaches.
 export async function fetchAgentsOrgs(): Promise<AgentsOrg[]> {
   const { orgs } = await createClient().get<MeResponse>("/api/v1/me");
   if (!Array.isArray(orgs))
@@ -139,13 +116,8 @@ export async function fetchAgentsOrgs(): Promise<AgentsOrg[]> {
 const quietly = <T>(promise: Promise<T>): Promise<T | null> =>
   promise.catch(() => null);
 
-// Look a selection up in both directories, among organizations the credential
-// reaches. A Chat slug wins, but a value that is also the Agents slug of a
-// different organization is ambiguous: older CLIs sent it to Agents.
 export async function resolveOrgValue(value: string): Promise<ResolvedOrg> {
   if (isUuid(value)) return { id: value, via: "uuid" };
-  // A legacy Agents token only reaches Agents, which takes its own slugs as
-  // they are; without a credential there is nothing to ask.
   const kind = credentialKind();
   if (kind === "legacy" || kind === "none")
     return { id: value, via: "unresolved" };
@@ -177,7 +149,6 @@ export async function resolveOrgValue(value: string): Promise<ResolvedOrg> {
   return resolved;
 }
 
-// The organization an org API key acts as, from Chat's /api/v1/me.
 export async function keyOrganization(): Promise<DirectoryOrg | undefined> {
   const cache = readCache();
   if (cache.keyOrg && fresh(cache.keyOrg.at)) return cache.keyOrg;
@@ -193,13 +164,8 @@ export async function keyOrganization(): Promise<DirectoryOrg | undefined> {
   return org;
 }
 
-// --- Selection -----------------------------------------------------------------
-
 export type OrgSource = "flag" | "file" | "project" | "config";
 
-// Resolve a selection and settle legacy values: a defaultOrg that was a legacy
-// Agents slug is rewritten to the shared UUID; a committed gauge.json is never
-// rewritten, but gets a one-time hint.
 export async function resolveSelection(
   value: string,
   source: OrgSource,
@@ -224,8 +190,6 @@ export async function resolveSelection(
   return resolved;
 }
 
-// Explain an Agents "Organization not found" for an organization the user
-// belongs to that doesn't use Gauge Agents. Best effort.
 export async function missingAgentsOrg(
   org: string,
 ): Promise<CliError | undefined> {

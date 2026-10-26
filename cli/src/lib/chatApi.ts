@@ -20,13 +20,9 @@ import {
 import { type OutputFormat, printItems, printJson } from "./output";
 import { resolveAuthUrl, storedSharedCredentials } from "./sharedAuth";
 
-// The Gauge Chat public API (v1) lives on the Chat origin, the same origin that
-// issues shared CLI credentials. Shared access tokens refresh through ApiClient;
-// org API keys (gauge_sk_…, or older unprefixed keys) come from GAUGE_API_TOKEN,
-// which takes precedence over a stored login.
 export const CHAT_API_PREFIX = "/api/v1";
 
-// Bulk endpoints accept at most this many items per request.
+// Maximum batch size accepted by the Chat API.
 export const CHAT_BATCH_SIZE = 500;
 
 export type Page<T> = { data: T[]; nextCursor?: string | null };
@@ -46,9 +42,7 @@ const INVALID_CODES = new Set([
   "range_too_large",
 ]);
 
-// Map a Chat error to the CLI's exit-code families: 2 for requests the caller
-// must change, 3 for plan limits, 1 for everything else. The Chat code itself
-// is reported verbatim (CliError.apiCode).
+// Preserve the API error code separately from the CLI exit-code category.
 function exitFamily(status: number, code: string): CliErrorCode {
   if (code === "limit_exceeded") return "insufficient_credits";
   if (status === 400 || status === 422 || INVALID_CODES.has(code))
@@ -100,7 +94,6 @@ function hintFor(
   }
 }
 
-// A login session reports its user; an org API key reports the key.
 export type ChatMe = {
   user: { id: string; email: string; name: string } | null;
   apiKey: { id: string; name: string; prefix: string } | null;
@@ -119,11 +112,9 @@ export function describeScopes(scopes: string[]): string {
 
 export class ChatApiClient extends ApiClient {
   private describingScope = false;
-  // The organization a command targets, to name it in errors.
   orgName?: string;
 
-  // Identity and scopes of the current credential. /api/cli/me rejects org API
-  // keys, so Chat commands use the public API's /me, which older servers lack.
+  // Unlike /api/cli/me, the public /me endpoint accepts organization API keys.
   async me(): Promise<ChatMe> {
     try {
       return await this.get<ChatMe>(chatPath("me"));
@@ -184,8 +175,7 @@ export class ChatApiClient extends ApiClient {
       body = await res.clone().json();
     } catch {}
     if (!isChatErrorBody(body)) {
-      // Unknown paths under /api/v1 get Django's HTML 404 page, not the
-      // error envelope: the server doesn't have this endpoint.
+      // Django returns HTML for unregistered routes.
       if (res.status === 404) return unknownEndpoint(res);
       return super.toError(res);
     }
@@ -259,7 +249,6 @@ export type Category = {
 type ChatGlobals = { org?: string; category?: string };
 
 export type ChatOrg = {
-  // The shared organization id (or, unresolved, the selection as given).
   id: string;
   name?: string;
   source: OrgSource | "key" | "only";
@@ -271,9 +260,6 @@ function notChat(value: string, name?: string): CliError {
   });
 }
 
-// Org: --org, then gauge.json `org`, then defaultOrg, else the only Chat
-// organization you belong to. An org API key implies its organization; --org
-// can select one of an agency key's clients instead.
 export async function resolveChatOrg(command: Command): Promise<ChatOrg> {
   const { org } = command.optsWithGlobals<ChatGlobals>();
   const isKey = credentialKind() === "api_key";
@@ -305,8 +291,6 @@ export async function resolveChatOrg(command: Command): Promise<ChatOrg> {
   );
 }
 
-// Category: --category, then `chatCategory` config (for the organization it
-// was chosen in), then the org's only category.
 export async function resolveChatCategory(
   command: Command,
   client: ApiClient,
@@ -385,8 +369,6 @@ export function parsePositive(
   return value;
 }
 
-// One page, or with --all every page up to --max items. When the cap stops
-// paging early, nextCursor is kept so the caller can resume.
 export async function fetchPages<T>(
   client: ApiClient,
   path: string,
@@ -416,7 +398,6 @@ export async function fetchPages<T>(
   return { data, nextCursor: cursor ?? null };
 }
 
-// Every page of an endpoint, for client-side name resolution.
 export async function fetchAll<T>(
   client: ApiClient,
   path: string,
@@ -475,7 +456,6 @@ type Tag = { id: string; name: string };
 
 const lower = (s: string) => s.trim().toLowerCase();
 
-// Accept a `top_` ID, or a topic slug or title in the category.
 export async function resolveTopicId(
   scope: CategoryScope,
   value: string,
@@ -500,7 +480,6 @@ export async function resolveTopicId(
   );
 }
 
-// Accept `tag_` IDs or tag names (case-insensitive).
 export async function resolveTagIds(
   scope: ChatScope,
   values: string[],
@@ -526,8 +505,6 @@ export async function resolveTagIds(
   });
 }
 
-// Commands scoped to one category take --category on the leaf command so it
-// shows in that command's help.
 export function withCategory(command: Command): Command {
   return command.option(
     "--category <category>",

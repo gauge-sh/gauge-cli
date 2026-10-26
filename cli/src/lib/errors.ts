@@ -7,7 +7,6 @@ import type { ModeSource } from "./gaugeState";
 import { style } from "./output";
 
 export type ErrorReport = {
-  // A CLI error code, or the server's more specific code when it sent one.
   code: CliErrorCode | "internal" | (string & {});
   message: string;
   details?: Record<string, unknown>;
@@ -31,7 +30,7 @@ export function errorReport(
       ? localModeError(command, context.local, error.hint)
       : describe(error);
   const quiet = base.message === "aborted" || command === "feedback";
-  // The docs site covers Agents only; Chat has no docs to link yet.
+  // DOCS_URL covers Agents commands.
   const isChat = command === "chat" || command.startsWith("chat ");
   const docs = base.docs ?? (isChat ? undefined : DOCS_URL);
   return {

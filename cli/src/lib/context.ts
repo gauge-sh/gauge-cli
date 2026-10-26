@@ -7,8 +7,6 @@ import type { OutputFormat } from "./output";
 
 export type OrgSelection = { value: string; source: OrgSource };
 
-// The org a command targets: --org, then the command's own file (a battery
-// spec), then gauge.json `org`, then defaultOrg.
 export function selectedOrg(
   command: Command,
   fileOrg?: string,
@@ -27,9 +25,6 @@ export function selectedOrg(
 const NO_ORG_MESSAGE =
   "No organization selected. Pass --org <org> or set a default with `gauge orgs use <org>`.";
 
-// The {org} an Agents API call sends: the shared organization id when the
-// selection resolves to one, else the selection as given (Agents also accepts
-// its own slugs, which is how LOCAL workspaces are addressed).
 export async function resolveOrg(
   command: Command,
   fileOrg?: string,

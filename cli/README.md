@@ -20,13 +20,15 @@ Requires Node.js ≥ 22.13.
 
 ## Organizations
 
-One organization selection serves Gauge Chat and Gauge Agents commands: `--org`,
+With a shared login, Gauge Chat and Gauge Agents commands use `--org`,
 then `org` in the project's `gauge.json`, then `defaultOrg` (set with
 `gauge orgs use <org>`). A value can be the organization's Gauge slug or its id
 (a UUID); a Gauge Agents workspace slug from an older setup (such as
 `acme-1a2b3c4d`) still works. The CLI resolves the value to the organization id
-and sends that to both APIs. Resolutions are cached for a day per login, so a
-slug costs a lookup only the first time.
+and sends that to both APIs. Successful slug resolutions are cached for 24 hours
+per credential. UUIDs need no directory lookup; the API still checks access on
+each request. Agents commands that accept an org in a run specification use that
+value after `--org` and before `gauge.json`.
 
 `gauge orgs` lists every organization you belong to with the products it uses
 (Chat, Agents, or both). A command for a product the organization doesn't use
@@ -38,15 +40,25 @@ Older values keep working:
   organization id the first time it is used.
 - A committed `gauge.json` is never rewritten; the CLI prints a one-time hint
   suggesting the organization id or Gauge slug instead.
-- If a value is a Gauge slug of one organization and the Agents workspace slug
-  of another, the CLI stops and asks for the organization id.
+- If directory lookups find that a value names different organizations in Chat
+  and Agents, the CLI stops and asks for the organization id.
 - Released CLIs before this change keep sending Agents workspace slugs, which
   Gauge Agents still accepts, and they also accept an organization id written
   by a newer CLI.
 
-An org API key (`GAUGE_API_TOKEN=gauge_sk_…`) acts as its own organization and
-ignores `defaultOrg` and `gauge.json`; `--org` can select one of an agency
-key's client organizations.
+Chat commands with an org API key (`GAUGE_API_TOKEN=gauge_sk_…`) default to the
+key's organization and ignore `defaultOrg` and `gauge.json`; `--org` can select
+one of an agency key's client organizations. Agents commands still require an
+organization selection from `--org`, a run specification, or configuration.
+
+With a shared login and no organization selected, Chat commands select your
+only Chat-enabled organization or ask you to choose. Agents commands require
+an explicit or configured selection.
+
+`gauge orgs -o json` returns shared `id`, `slug`, `name`, `products`,
+`agentsSlug`, and `isDefault` fields. This replaces the previous Agents-only
+list shape. `products.agents: null` means availability could not be determined;
+an unlinked Agents workspace has `id: null` and continues to use its slug.
 
 ## Workspace and local storage
 

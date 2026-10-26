@@ -4,10 +4,11 @@
 
 ### Added
 
-- `gauge chat` commands for the Gauge Chat API: organizations, categories,
+- `gauge chat` commands for the Gauge Chat API: categories,
   `whoami`, topics (list, create, rename), prompts (bulk add with `--dry-run`,
   bulk move, tag, untag), tags, brands, `query` with
-  `datasets`/`fields`/`metadata` discovery, answers, and citations. They use `gauge auth login` shared credentials or,
+  `datasets`/`fields`/`metadata` discovery, answers, and citations. They use
+  `gauge auth login` shared credentials or,
   for scripts, an org API key (`GAUGE_API_TOKEN=gauge_sk_…`, created in
   Settings → API Keys), which takes precedence over a login. Errors report the
   API's error code; plan limits exit 3. `gauge chat categories use` saves a
@@ -22,10 +23,12 @@
   uses, and `gauge orgs use` stores the organization id. A `defaultOrg` holding
   an Agents workspace slug is rewritten to the id on first use; `gauge.json` is
   never rewritten (a one-time hint suggests the id). A slug that names different
-  organizations in Chat and Agents is an error asking for the id. Commands for a
+  organizations in Chat and Agents is an error asking for the id when both
+  directory matches are available. Commands for a
   product an organization doesn't use say so instead of returning a 404. An org
-  API key acts as its own organization; `--org` selects among an agency key's
-  clients.
+  API key defaults to its own organization in Chat commands; `--org` selects
+  among an agency key's clients. Agents commands still use their explicit or
+  configured organization selection.
 
 ## 0.24.0 — 2026-10-21
 
