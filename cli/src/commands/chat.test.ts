@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import {
   createServer,
   type IncomingMessage,
@@ -1063,96 +1063,5 @@ describe("gauge chat", { concurrency: false }, () => {
       assert.equal(errorReport(caught, `chat ${group}`).exitCode, 2);
       assert.deepEqual(seen, [], `${group} delete sends no request`);
     }
-  });
-
-  it("waits for an export and downloads its files without Gauge credentials", async () => {
-    process.env.GAUGE_API_TOKEN = "gauge_sk_read";
-    let polls = 0;
-    const exportOut = (status: string) => ({
-      id: "exp_1A",
-      status,
-      dateRange: { since: "2026-10-01", until: "2026-10-07" },
-      createdAt: "2026-10-08T00:00:00Z",
-      completedAt: status === "completed" ? "2026-10-08T00:01:00Z" : null,
-      files:
-        status === "completed"
-          ? [
-              {
-                kind: "answers",
-                url: `${origin}/files/answers.csv?sig=1`,
-                expiresAt: "2026-10-08T01:00:00Z",
-              },
-            ]
-          : [],
-    });
-    handler = (req) => {
-      if (req.path.startsWith("/files/")) return { body: "a,b\n1,2\n" };
-      if (req.method === "POST")
-        return { status: 202, body: exportOut("pending") };
-      polls++;
-      return { body: exportOut(polls < 3 ? "pending" : "completed") };
-    };
-    const dir = join(directory, "out");
-    const { json } = await run(
-      "chat",
-      "exports",
-      "create",
-      "--org",
-      "acme",
-      "--since",
-      "2026-10-01",
-      "--until",
-      "2026-10-07",
-      "--download",
-      dir,
-      "--interval",
-      "0",
-      "-o",
-      "json",
-    );
-    assert.deepEqual(seen[0].body, {
-      dateRange: { since: "2026-10-01", until: "2026-10-07" },
-    });
-    assert.equal(polls, 3);
-    assert.deepEqual(
-      seen.filter((r) => r.method === "POST").map((r) => r.path),
-      [api("/orgs/acme/exports")],
-      "--download polls with GET and never re-requests",
-    );
-    assert.equal(json.status, "completed");
-    assert.equal(readFileSync(json.downloaded[0].path, "utf8"), "a,b\n1,2\n");
-    assert.match(json.downloaded[0].path, /exp_1A-answers\.csv$/);
-    const fileRequest = seen.find((r) => r.path.startsWith("/files/"));
-    assert.equal(fileRequest?.auth, undefined);
-
-    handler = () => ({ body: exportOut("pending") });
-    seen = [];
-    const { error: caught } = await run(
-      "chat",
-      "exports",
-      "get",
-      "exp_1A",
-      "--org",
-      "acme",
-      "--wait",
-      "--timeout",
-      "0",
-      "--interval",
-      "0",
-    );
-    const timeout = errorReport(caught, "chat exports get");
-    assert.equal(timeout.code, "wait_timeout");
-    assert.match(
-      timeout.hint ?? "",
-      /2 hours.*gauge chat exports create --since 2026-10-01 --until 2026-10-07/,
-    );
-    assert.ok(seen.every((r) => r.method === "GET"));
-
-    // An export pending for over 2 hours points at re-requesting the range.
-    await run("chat", "exports", "get", "exp_1A", "--org", "acme");
-    assert.match(
-      stderr.join("\n"),
-      /pending since 2026-10-08T00:00:00Z.*retries it/,
-    );
   });
 });

@@ -791,7 +791,6 @@ gauge chat prompts add --file prompts.txt --topic pricing --dry-run -o json
 gauge chat query --dataset answers -d brand -m visibility,shareOfVoice --last-days 30
 gauge chat query fields --dataset citations
 gauge chat answers list --since 2026-10-01 --all --max 500 -o json
-gauge chat exports create --since 2026-09-01 --until 2026-09-30 --download ./export
 ```
 
 `prompts add` reads arguments or a file of lines, JSON Lines, or a JSON array,
@@ -801,12 +800,8 @@ return `{data, nextCursor}` with `-o json`; `--all` follows cursors up to `--max
 Errors carry the API code (`insufficient_scope`, `limit_exceeded`,
 `incompatible_dimension`, `rate_limited`…) and details such as `retryAfter`.
 Invalid requests exit 2 and plan limits exit 3. Query rate metrics are 0-1
-fractions, as in `gauge query`.
-Requesting the same export range returns the same export, and `--wait` and
-`--download` poll it without re-requesting. Exports don't retry on their own:
-if one is still pending 2 hours after it was created (or last retried), request
-the same range again to retry it. Rate limits apply per token and organization:
-600 requests/min, 60 queries/min, and 10 export requests/hour.
+fractions, as in `gauge query`. Rate limits apply per token and organization:
+600 requests/min and 60 queries/min.
 
 ## Support
 

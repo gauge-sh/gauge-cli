@@ -354,7 +354,7 @@ export function register(program: Command): void {
   const chat = program
     .command("chat")
     .description(
-      "Gauge Chat AI visibility: prompts, topics, tags, answers, citations, queries, exports",
+      "Gauge Chat AI visibility: prompts, topics, tags, answers, citations, queries",
     )
     .addHelpText(
       "after",
@@ -366,8 +366,7 @@ Settings → API Keys); GAUGE_API_TOKEN takes precedence over a login. --org tak
 a slug or id (default: chatOrg config, else your only Chat org). Pass -o json for
 machine-readable output; errors carry the API error code. Exit codes: 0 ok,
 1 error, 2 invalid request, 3 plan limit.
-Rate limits per token and organization: 600 requests/min, 60 queries/min,
-10 export requests/hour.`,
+Rate limits per token and organization: 600 requests/min, 60 queries/min.`,
     );
   scopeGlobalOptions(program, chat);
   registerWhoami(chat);
