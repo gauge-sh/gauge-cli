@@ -663,20 +663,23 @@ gauge optimizations round save cl_1 --file round.json --digest <previewDigest>
 gauge optimizations launch cl_1 --yes
 gauge optimizations watch cl_1
 gauge optimizations trial cl_1 R1.1 -o json
+gauge optimizations judge cl_1 R1.1 --direction BETTER --summary "The auth error did not return" --target obs_1=RESOLVED
 gauge optimizations adopt cl_1 R1.1 --yes
 gauge optimizations handoff cl_1
 gauge optimizations complete cl_1 --yes
 ```
 
-A round is `{revision, trials: [{trial: {title, hypothesis, lever, intervention}}]}`.
-Docs `REWRITE_DOCS` proposals supply `after.pages` with URL and exact `edits`
+A round is `{revision, trials: [{trial: {title, hypothesis, changes}}]}`. One
+trial tests one hypothesis and may change several surfaces at once. Docs
+`REWRITE_DOCS` changes supply `after.pages` with URL and exact `edits`
 (`find`/`replace`), or a complete `body` and `rewriteReason`. Check the page's
 `source`: `scrape` means current fetched content, not the captured response.
+An `EDIT_SKILL` change carries the complete edited bundle in its own `files`.
 
 For CLI trials, inspect `cliIntervention.guidance` and `targets` in authoring
 and use `gauge run get <id> --logs` for the cited command evidence. `cli-change --file change.json`
 accepts v3 `{schemaVersion:3, target, rules, shippingIntent}` and returns a sealed
-bundle to put in `CLI_INTERVENTION.after`. It does not save or launch. The old
+bundle to use as a `CLI_INTERVENTION` change's `after`. It does not save or launch. The old
 catalog/invocation-ID workflow is retired. Skills use `skill-files` and the
 complete edited file bundle.
 
@@ -688,6 +691,14 @@ start fresh. Inspect
 `runs[].candidateExecution` for actual starting mode and `candidateDelivery`
 for exposure, observed artifacts, and evidence completeness. A score improvement
 does not prove the change was exercised. Report sample counts and failed sessions.
+
+A trial's `ledger` is its result: the findings the optimization targets, then
+every finding each rerun session recorded. Read whether each target came back,
+moved later in the session, or disappeared, and what is new. Record that reading
+with `judge`: a `--direction`, a `--summary`, and one `--target
+<observationId>=RESOLVED|RETURNED|MOVED|UNCLEAR` per target, or `--file` for the
+whole judgment including `newFindings`. The web app shows the reading; a new
+reading replaces the earlier one.
 
 Read `nextAction` on optimization detail; `watch` exits 4 when input is needed.
 Round save replaces pending drafts but never launches. Use `--yes` for approved

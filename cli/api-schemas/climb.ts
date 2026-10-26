@@ -3,8 +3,11 @@ import { candidateStartsSchema } from "./candidate-starts";
 import { cliRuleBundleSchema } from "./cli-rules";
 import {
   INTERVENTION_KINDS,
-  LEVER_INTERVENTIONS,
   LEVER_KINDS,
+  type LeverKind,
+  leversOfIntervention,
+  TRIAL_KINDS,
+  targetRefSchema,
 } from "./climb-kinds";
 import { agentConfigSchema, schedulableAgentSchema } from "./runConfig";
 import {
@@ -16,9 +19,17 @@ import { type WebFixture, webFixtureSchema } from "./web-fixtures";
 
 export const climbSubjectKindSchema = z.enum(["EVAL_SET", "VISIBILITY_PROMPT"]);
 export const leverKindSchema = z.enum(LEVER_KINDS);
+export const trialKindSchema = z.enum(TRIAL_KINDS);
 export const interventionKindSchema = z.enum(INTERVENTION_KINDS);
-const skill = z.object({ skillVersionId: z.string().min(1) }).strict();
+const skill = z
+  .object({
+    skillVersionId: z.string().min(1),
+    files: overrideFilesSchema.optional(),
+  })
+  .strict();
 const empty = z.object({}).strict();
+
+export { type TargetRef, targetRefSchema } from "./climb-kinds";
 
 function validateFixtureIntervention(
   value: Pick<WebFixture, "pages">,
@@ -36,49 +47,65 @@ function validateFixtureIntervention(
   }
 }
 
+const addSkill = z.object({ kind: z.literal("ADD_SKILL"), after: skill });
+const removeSkill = z.object({
+  kind: z.literal("REMOVE_SKILL"),
+  before: skill,
+  after: empty,
+});
+const editSkill = z.object({
+  kind: z.literal("EDIT_SKILL"),
+  before: skill,
+  after: skill,
+});
+const rewriteDocs = z.object({
+  kind: z.literal("REWRITE_DOCS"),
+  before: z.json().optional(),
+  after: z
+    .object({ pages: webFixtureSchema.shape.pages.unwrap().min(1) })
+    .strict()
+    .superRefine(validateFixtureIntervention),
+});
+const packageVersion = z.object({
+  kind: z.literal("PACKAGE_VERSION"),
+  after: z
+    .object({
+      ecosystem: ecosystemSchema,
+      name: z.string().min(1),
+      version: z.string().min(1),
+    })
+    .strict(),
+});
+const packageContent = z.object({
+  kind: z.literal("PACKAGE_CONTENT"),
+  after: z
+    .object({
+      ecosystem: ecosystemSchema,
+      name: z.string().min(1),
+      files: overrideFilesSchema,
+    })
+    .strict(),
+});
+const cliVersion = z.object({
+  kind: z.literal("CLI_VERSION"),
+  after: z
+    .object({ name: z.string().min(1), version: z.string().min(1) })
+    .strict(),
+});
+const cliIntervention = z.object({
+  kind: z.literal("CLI_INTERVENTION"),
+  after: cliRuleBundleSchema,
+});
+
 export const interventionSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("BASELINE"), after: empty }),
-  z.object({ kind: z.literal("ADD_SKILL"), after: skill }),
-  z.object({ kind: z.literal("REMOVE_SKILL"), before: skill, after: empty }),
-  z.object({ kind: z.literal("EDIT_SKILL"), before: skill, after: skill }),
-  z.object({
-    kind: z.literal("REWRITE_DOCS"),
-    before: z.json().optional(),
-    after: z
-      .object({ pages: webFixtureSchema.shape.pages.unwrap().min(1) })
-      .strict()
-      .superRefine(validateFixtureIntervention),
-  }),
-  z.object({
-    kind: z.literal("PACKAGE_VERSION"),
-    after: z
-      .object({
-        ecosystem: ecosystemSchema,
-        name: z.string().min(1),
-        version: z.string().min(1),
-      })
-      .strict(),
-  }),
-  z.object({
-    kind: z.literal("PACKAGE_CONTENT"),
-    after: z
-      .object({
-        ecosystem: ecosystemSchema,
-        name: z.string().min(1),
-        files: overrideFilesSchema,
-      })
-      .strict(),
-  }),
-  z.object({
-    kind: z.literal("CLI_VERSION"),
-    after: z
-      .object({ name: z.string().min(1), version: z.string().min(1) })
-      .strict(),
-  }),
-  z.object({
-    kind: z.literal("CLI_INTERVENTION"),
-    after: cliRuleBundleSchema,
-  }),
+  addSkill,
+  removeSkill,
+  editSkill,
+  rewriteDocs,
+  packageVersion,
+  packageContent,
+  cliVersion,
+  cliIntervention,
 ]);
 export type Intervention = z.infer<typeof interventionSchema>;
 type Covered = Exclude<
@@ -89,6 +116,103 @@ type Covered = Exclude<
   : never;
 export const interventionSchemaExhaustive: Covered = true;
 
+const target = { targetRef: targetRefSchema.optional() };
+export const docsLeverSchema = z.enum(["DOCS", "MARKETING_SITE"]);
+export const changeSchema = z.discriminatedUnion("kind", [
+  addSkill.extend(target),
+  removeSkill.extend(target),
+  editSkill.extend(target),
+  rewriteDocs.extend({
+    ...target,
+    lever: docsLeverSchema.optional(),
+  }),
+  packageVersion.extend(target),
+  packageContent.extend(target),
+  cliVersion.extend(target),
+  cliIntervention.extend(target),
+]);
+export type Change = z.infer<typeof changeSchema>;
+export const changesSchema = z.array(changeSchema);
+
+export function parseChanges(value: unknown): Change[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const parsed = changeSchema.safeParse(item);
+    return parsed.success ? [parsed.data] : [];
+  });
+}
+
+export function changeKinds(changes: readonly Change[]) {
+  return [...new Set(changes.map((change) => change.kind))];
+}
+
+export function leversOfChanges(changes: readonly Change[]): LeverKind[] {
+  const levers = new Set<LeverKind>();
+  for (const change of changes) {
+    const lever =
+      (change.kind === "REWRITE_DOCS" ? change.lever : undefined) ??
+      leversOfIntervention(change.kind)[0];
+    if (lever) levers.add(lever);
+  }
+  return LEVER_KINDS.filter((lever) => levers.has(lever));
+}
+
+export function changeConflicts(changes: readonly Change[]): string[] {
+  const conflicts: string[] = [];
+  const seen = new Map<string, number>();
+  const claim = (key: string, message: string) => {
+    const count = (seen.get(key) ?? 0) + 1;
+    seen.set(key, count);
+    if (count === 2) conflicts.push(message);
+  };
+  for (const change of changes) {
+    switch (change.kind) {
+      case "REWRITE_DOCS":
+        for (const page of change.after.pages)
+          claim(`page:${page.url}`, `Two changes rewrite ${page.url}`);
+        break;
+      case "CLI_INTERVENTION":
+        claim("cli", "Two changes set CLI rules; merge them into one");
+        break;
+      case "CLI_VERSION":
+        claim("cli-version", "Two changes pin a CLI version");
+        break;
+      case "PACKAGE_VERSION":
+      case "PACKAGE_CONTENT":
+        claim(
+          `package:${change.after.name}`,
+          `Two changes touch the package ${change.after.name}`,
+        );
+        break;
+      case "ADD_SKILL":
+        claim(
+          `skill:${change.after.skillVersionId}`,
+          "Two changes touch the same skill",
+        );
+        break;
+      case "EDIT_SKILL":
+      case "REMOVE_SKILL":
+        claim(
+          `skill:${change.before.skillVersionId}`,
+          "Two changes touch the same skill",
+        );
+        break;
+      default: {
+        const exhaustive: never = change;
+        throw new Error(String(exhaustive));
+      }
+    }
+  }
+  return conflicts;
+}
+
+export const MAX_TRIALS_PER_ROUND = 4;
+export const maxTrialsPerRoundSchema = z
+  .number()
+  .int()
+  .min(1)
+  .max(MAX_TRIALS_PER_ROUND);
+
 export const climbSettingsSchema = z
   .object({
     maxRounds: z.number().int().positive().default(5),
@@ -97,7 +221,15 @@ export const climbSettingsSchema = z
     targetScore: z.number().min(0).max(1).default(1),
     pinnedAgent: schedulableAgentSchema.optional(),
     pinnedModel: z.string().optional(),
-    maxTrialsPerRound: z.number().int().min(1).max(10).default(3),
+    maxTrialsPerRound: z
+      .preprocess(
+        (value) =>
+          typeof value === "number"
+            ? Math.min(value, MAX_TRIALS_PER_ROUND)
+            : value,
+        maxTrialsPerRoundSchema,
+      )
+      .default(MAX_TRIALS_PER_ROUND),
     continuedAtRound: z.number().int().nonnegative().optional(),
   })
   .strip()
@@ -142,6 +274,7 @@ export const CLIMB_ACTIVITY_KINDS = [
   "AUTHORED",
   "CONTINUED",
   "CANCELED",
+  "JUDGED",
 ] as const;
 export const climbActivityKindSchema = z.enum(CLIMB_ACTIVITY_KINDS);
 export type ClimbActivityKind = z.infer<typeof climbActivityKindSchema>;
@@ -231,8 +364,8 @@ export const climbConfigSnapshotSchema = z
     mcpSet: z.json().nullable(),
     connectionIds: z.array(z.string()),
     connectionSet: z.json().nullable(),
-    agentContext: z.json().nullable(),
-    agentContextDigest: z.string().nullable(),
+    agentContext: z.json().nullable().optional(),
+    agentContextDigest: z.string().nullable().optional(),
     webFixture: webFixtureSchema.nullable(),
     cliIntervention: cliRuleBundleSchema.nullable().default(null),
     sandboxOverrides: sandboxOverridesSchema.nullable(),
@@ -241,33 +374,17 @@ export const climbConfigSnapshotSchema = z
   .strict();
 export type ClimbConfigSnapshot = z.infer<typeof climbConfigSnapshotSchema>;
 
-export const targetRefSchema = z
-  .object({
-    kind: z.string().min(1),
-    id: z.string().optional(),
-    url: z.url().optional(),
-    package: z.string().optional(),
-  })
-  .strict();
-
 export const trialInputSchema = z
   .object({
     title: z.string().trim().min(1).max(200),
     hypothesis: z.string().max(4000).optional(),
-    lever: leverKindSchema,
-    targetRef: targetRefSchema.optional(),
-    intervention: interventionSchema,
+    changes: z.array(changeSchema).min(1).max(10),
     authorMode: z.enum(["MANUAL", "DIRECT", "PROPOSE"]).default("MANUAL"),
     startingPoints: candidateStartsSchema.optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
-    const allowed: readonly string[] = LEVER_INTERVENTIONS[value.lever];
-    if (!allowed.includes(value.intervention.kind))
-      ctx.addIssue({
-        code: "custom",
-        path: ["intervention", "kind"],
-        message: "This intervention does not change the selected lever",
-      });
+    for (const message of changeConflicts(value.changes))
+      ctx.addIssue({ code: "custom", path: ["changes"], message });
   });
 export type TrialInput = z.infer<typeof trialInputSchema>;

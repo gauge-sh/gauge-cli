@@ -3,12 +3,14 @@ import { candidateDeliverySchema } from "./candidate-delivery";
 import { candidateStartsSchema } from "./candidate-starts";
 import { cliRuleCoverageSchema } from "./cli-rule-evidence";
 import {
+  changeSchema,
   climbDirectionPatchSchema,
   climbDirectionSchema,
   climbSubjectKindSchema,
   interventionKindSchema,
   leverKindSchema,
-  trialInputSchema,
+  maxTrialsPerRoundSchema,
+  trialKindSchema,
 } from "./climb";
 import { schedulableAgentSchema } from "./runConfig";
 import { overrideFilesSchema } from "./sandbox-overrides";
@@ -103,7 +105,7 @@ export const optimizationSummarySchema = z.object({
   subjectKind: climbSubjectKindSchema,
   subjectId: z.string(),
   subjectName: z.string(),
-  lever: leverKindSchema.nullable(),
+  levers: z.array(leverKindSchema),
   round: z.number().int(),
   maxRounds: z.number().int(),
   before: z.number().nullable(),
@@ -184,7 +186,7 @@ const planShape = {
   effort: optimizationEffortSchema.optional(),
   sampleCount: z.number().int().min(1).max(100).optional(),
   maxRounds: z.number().int().min(1).max(100).optional(),
-  maxTrialsPerRound: z.number().int().min(1).max(10).optional(),
+  maxTrialsPerRound: maxTrialsPerRoundSchema.optional(),
 };
 
 function refinePlan(
@@ -286,39 +288,6 @@ export const optimizationEstimateSchema = z.object({
 });
 export type OptimizationEstimate = z.infer<typeof optimizationEstimateSchema>;
 
-export const diagnoseBodySchema = z
-  .object({
-    subjectKind: climbSubjectKindSchema,
-    subjectId: z.string().min(1),
-  })
-  .strict();
-export type DiagnoseBody = z.infer<typeof diagnoseBodySchema>;
-
-export const diagnosisSchema = z.object({
-  id: z.string(),
-  status: z.enum(["GENERATING", "READY", "FAILED"]),
-  subjectKind: climbSubjectKindSchema,
-  subjectId: z.string(),
-  runCount: z.number().int(),
-  summary: z.string().nullable(),
-  recommendedLever: leverKindSchema.nullable(),
-  recommendedTarget: z.unknown().nullable(),
-  clusters: z.array(
-    z.object({
-      title: z.string(),
-      failureMode: z.string(),
-      criterionIds: z.array(z.string()),
-      runIds: z.array(z.string()),
-      lever: leverKindSchema.nullable(),
-      targetRef: z.unknown().nullable(),
-      confidence: z.number(),
-    }),
-  ),
-  unsupportedLevers: z.array(leverKindSchema).default([]),
-  createdAt: z.string(),
-});
-export type Diagnosis = z.infer<typeof diagnosisSchema>;
-
 export const candidateExecutionSchema = z.object({
   runId: z.string(),
   startMode: z.enum(["checkpoint", "fresh"]),
@@ -347,7 +316,7 @@ export const trialRunSchema = z.object({
   status: z.string(),
   failureReason: z.string().nullable(),
   exitReason: z.string().nullable(),
-  candidateDelivery: candidateDeliverySchema.nullable().optional(),
+  candidateDelivery: z.array(candidateDeliverySchema).optional(),
   candidateExecution: candidateExecutionSchema.nullable().optional(),
   cliCoverage: cliRuleCoverageSchema.nullable().optional(),
   passed: z.boolean().nullable(),
@@ -368,6 +337,99 @@ export const trialRunSchema = z.object({
 });
 export type TrialRun = z.infer<typeof trialRunSchema>;
 
+export const trialLedgerSchema = z.object({
+  targets: z.array(
+    z.object({
+      observationId: z.string(),
+      runId: z.string(),
+      evidenceSeq: z.number().int().nullable(),
+      label: z.string(),
+      surface: z.unknown().nullable(),
+    }),
+  ),
+  sessions: z.array(
+    z.object({
+      runId: z.string(),
+      findings: z.array(
+        z.object({
+          id: z.string(),
+          kind: z.string(),
+          label: z.string(),
+          detail: z.string(),
+          effect: z.string(),
+          seq: z.number().int().nullable(),
+          targeted: z.boolean(),
+        }),
+      ),
+    }),
+  ),
+  funnel: z
+    .object({
+      of: z.number().int(),
+      considered: z.number().int(),
+      recommended: z.number().int(),
+      chosen: z.number().int(),
+      rankHistogram: z.record(z.string(), z.number().int()),
+    })
+    .nullable(),
+});
+export type TrialLedgerWire = z.infer<typeof trialLedgerSchema>;
+
+export const TRIAL_DIRECTIONS = [
+  "BETTER",
+  "WORSE",
+  "MIXED",
+  "UNCHANGED",
+  "UNCLEAR",
+] as const;
+export const TARGET_STATUSES = [
+  "RESOLVED",
+  "RETURNED",
+  "MOVED",
+  "UNCLEAR",
+] as const;
+
+export const trialJudgmentInputSchema = z
+  .object({
+    direction: z.enum(TRIAL_DIRECTIONS),
+    summary: z.string().trim().min(1).max(600),
+    targets: z
+      .array(
+        z
+          .object({
+            observationId: z.string().min(1),
+            status: z.enum(TARGET_STATUSES),
+            note: z.string().trim().max(300).optional(),
+          })
+          .strict(),
+      )
+      .max(20)
+      .default([]),
+    newFindings: z
+      .array(
+        z
+          .object({
+            runId: z.string().min(1),
+            label: z.string().trim().min(1).max(200),
+            seq: z.number().int().nonnegative().nullable().optional(),
+          })
+          .strict(),
+      )
+      .max(30)
+      .default([]),
+  })
+  .strict();
+export type TrialJudgmentInput = z.infer<typeof trialJudgmentInputSchema>;
+export const trialJudgmentSchema = trialJudgmentInputSchema.extend({
+  recordedAt: z.string(),
+  recordedByUserId: z.string().nullable(),
+});
+export type TrialJudgment = z.infer<typeof trialJudgmentSchema>;
+export function parseTrialJudgment(value: unknown): TrialJudgment | null {
+  const parsed = trialJudgmentSchema.nullable().safeParse(value ?? null);
+  return parsed.success ? parsed.data : null;
+}
+
 export const trialSchema = z.object({
   id: z.string(),
   climbId: z.string(),
@@ -377,8 +439,7 @@ export const trialSchema = z.object({
   parentKey: z.string().nullable(),
   title: z.string(),
   hypothesis: z.string().nullable(),
-  lever: leverKindSchema.nullable(),
-  kind: interventionKindSchema,
+  kind: trialKindSchema,
   status: z.enum(TRIAL_STATUSES),
   verdict: z.enum(TRIAL_VERDICTS).nullable(),
   score: z.number().nullable(),
@@ -389,9 +450,10 @@ export const trialSchema = z.object({
   adopted: z.boolean(),
   adoptedAt: z.string().nullable(),
   outcome: z.string().nullable(),
-  after: z.unknown(),
-  before: z.unknown(),
+  changes: z.array(changeSchema),
   startingPoints: candidateStartsSchema.optional(),
+  ledger: trialLedgerSchema.nullable().optional(),
+  judgment: trialJudgmentSchema.nullable().optional(),
   runs: z.array(trialRunSchema),
   createdAt: z.string(),
 });
@@ -490,7 +552,7 @@ export const trialDocumentSchema = z.object({
 });
 export const trialContentSchema = z.object({
   trialId: z.string(),
-  kind: interventionKindSchema,
+  kinds: z.array(interventionKindSchema),
   documents: z.array(trialDocumentSchema),
   copyableBody: z.string().nullable(),
   configSnapshot: z.unknown(),
@@ -499,8 +561,7 @@ export type TrialContent = z.infer<typeof trialContentSchema>;
 
 export const createTrialBodySchema = z
   .object({
-    trial: trialInputSchema,
-    files: overrideFilesSchema.optional(),
+    trial: z.unknown(),
     fork: z
       .object({ runId: z.string().min(1), boundarySeq: z.string().min(1) })
       .strict()
@@ -589,7 +650,7 @@ export type ResolveChatResponse = z.infer<typeof resolveChatResponseSchema>;
 export const continueOptimizationBodySchema = z
   .object({
     rounds: z.number().int().min(1).max(20).default(1),
-    maxTrialsPerRound: z.number().int().min(1).max(10).optional(),
+    maxTrialsPerRound: maxTrialsPerRoundSchema.optional(),
   })
   .strict();
 export type ContinueOptimizationBody = z.infer<

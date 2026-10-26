@@ -7,6 +7,8 @@ import type { optimizations } from "@withgauge/api-schemas";
 import { Command } from "commander";
 import {
   awaitingInput,
+  changeLabel,
+  judgmentBodyFromOpts,
   parseStatuses,
   parseSubject,
   parseTarget,
@@ -14,8 +16,16 @@ import {
   trialBodyFromOpts,
   trialTemplate,
   trialWarnings,
+  unjudgedTrials,
   watchStops,
 } from "./optimizations";
+
+type AuthoredTrial = {
+  title: string;
+  changes: Record<string, unknown>[];
+};
+const trialOf = (body: optimizations.CreateTrialBodyInput) =>
+  body.trial as AuthoredTrial;
 
 describe("parseSubject", () => {
   it("refuses none or both", () => {
@@ -108,6 +118,12 @@ describe("optimization command requests", () => {
       "POST",
       "",
       { subjectKind: "EVAL_SET", subjectId: "eval", fromRun: "run" },
+    ],
+    [
+      ["start", "--finding", "obs", "--name", "Pricing", "--yes"],
+      "POST",
+      "",
+      { fromFinding: "obs", name: "Pricing" },
     ],
     [
       ["cli-change", "climb", "--file", CHANGE_FILE],
@@ -352,32 +368,44 @@ describe("trialBodyFromOpts", () => {
       () => "# Start\n",
     );
     assert.equal(body.launch, false);
-    assert.equal(body.trial.lever, "DOCS");
-    assert.deepEqual(body.trial.intervention, {
-      kind: "REWRITE_DOCS",
-      after: {
-        pages: [{ url: "https://docs.acme.dev/start", body: "# Start\n" }],
+    assert.deepEqual(trialOf(body).changes, [
+      {
+        kind: "REWRITE_DOCS",
+        after: {
+          pages: [{ url: "https://docs.acme.dev/start", body: "# Start\n" }],
+        },
       },
-    });
+    ]);
   });
   it("takes a proposal file verbatim", () => {
     const proposal = {
       trial: {
         title: "t",
-        lever: "SKILL",
-        intervention: {
-          kind: "EDIT_SKILL",
-          before: { skillVersionId: "sv_1" },
-          after: { skillVersionId: "sv_1" },
-        },
+        changes: [
+          {
+            kind: "EDIT_SKILL",
+            before: { skillVersionId: "sv_1" },
+            after: { skillVersionId: "sv_1" },
+            files: [{ path: "SKILL.md", body: "x" }],
+          },
+        ],
       },
-      files: [{ path: "SKILL.md", body: "x" }],
     };
     const body = trialBodyFromOpts({ file: "p.json" }, () =>
       JSON.stringify(proposal),
     );
     assert.deepEqual(body.trial, proposal.trial);
-    assert.deepEqual(body.files, proposal.files);
+  });
+  it("names the file as the problem when it uses the retired shape", () => {
+    for (const legacy of [
+      { trial: { title: "t", lever: "DOCS", intervention: {} } },
+      { trial: { title: "t", changes: [] }, files: [] },
+    ])
+      assert.throws(
+        () =>
+          trialBodyFromOpts({ file: "p.json" }, () => JSON.stringify(legacy)),
+        /retired \{lever, intervention, files\} shape/,
+      );
   });
   it("picks one trial out of an array of them", () => {
     const proposals = [
@@ -386,11 +414,11 @@ describe("trialBodyFromOpts", () => {
     ];
     const read = () => JSON.stringify(proposals);
     assert.equal(
-      trialBodyFromOpts({ file: "p.json" }, read).trial.title,
+      trialOf(trialBodyFromOpts({ file: "p.json" }, read)).title,
       "first",
     );
     assert.equal(
-      trialBodyFromOpts({ file: "p.json", pick: "2" }, read).trial.title,
+      trialOf(trialBodyFromOpts({ file: "p.json", pick: "2" }, read)).title,
       "second",
     );
     assert.throws(
@@ -416,16 +444,18 @@ describe("trialBodyFromOpts", () => {
       (path) => `body of ${path}`,
       () => ["/tmp/skill/reference/api.md", "/tmp/skill/SKILL.md"],
     );
-    assert.deepEqual(body.trial.intervention, {
-      kind: "EDIT_SKILL",
-      before: { skillVersionId: "sv_1" },
-      after: { skillVersionId: "sv_1" },
-    });
-    assert.deepEqual(body.files, [
-      { path: "SKILL.md", body: "body of /tmp/skill/SKILL.md" },
+    assert.deepEqual(trialOf(body).changes, [
       {
-        path: "reference/api.md",
-        body: "body of /tmp/skill/reference/api.md",
+        kind: "EDIT_SKILL",
+        before: { skillVersionId: "sv_1" },
+        after: { skillVersionId: "sv_1" },
+        files: [
+          { path: "SKILL.md", body: "body of /tmp/skill/SKILL.md" },
+          {
+            path: "reference/api.md",
+            body: "body of /tmp/skill/reference/api.md",
+          },
+        ],
       },
     ]);
   });
@@ -468,11 +498,9 @@ describe("trialBodyFromOpts", () => {
   });
 
   it("prints a fillable template per change kind", () => {
-    assert.equal(
-      trialTemplate("edit_skill").trial.intervention.kind,
-      "EDIT_SKILL",
-    );
-    assert.ok(trialTemplate("EDIT_SKILL").files?.length);
+    const [skill] = trialOf(trialTemplate("edit_skill")).changes;
+    assert.equal(skill.kind, "EDIT_SKILL");
+    assert.ok((skill.files as unknown[]).length);
     assert.throws(() => trialTemplate("NOPE"), /--kind must be one of/);
     assert.throws(() => trialTemplate("ADD_SKILL"), /--kind must be one of/);
   });
@@ -501,7 +529,11 @@ it("watch exits on a blocked climb instead of polling forever", () => {
 });
 
 it("requires exactly one starting source before making a request", async () => {
-  for (const flags of [[], ["--from-run", "run", "--target", "claude-code"]]) {
+  for (const flags of [
+    [],
+    ["--from-run", "run", "--target", "claude-code"],
+    ["--finding", "obs", "--from-run", "run"],
+  ]) {
     const program = new Command()
       .option("--hosted", "use hosted", true)
       .option("--org <org>", "organization", "org");
@@ -511,7 +543,114 @@ it("requires exactly one starting source before making a request", async () => {
         ["optimizations", "start", "--eval", "eval", ...flags],
         { from: "user" },
       ),
-      /pass --from-run/,
+      /exactly one of --finding/,
     );
   }
+});
+
+it("refuses a subject with --finding", async () => {
+  const program = new Command()
+    .option("--hosted", "use hosted", true)
+    .option("--org <org>", "organization", "org");
+  register(program);
+  await assert.rejects(
+    program.parseAsync(
+      ["optimizations", "start", "--finding", "obs", "--eval", "eval"],
+      { from: "user" },
+    ),
+    /drop --eval/,
+  );
+});
+
+describe("judgmentBodyFromOpts", () => {
+  it("builds a judgment from flags", () => {
+    assert.deepEqual(
+      judgmentBodyFromOpts({
+        direction: "better",
+        summary: "The auth error is gone",
+        target: ["obs_1=resolved", "obs_2=MOVED:got to deploy"],
+      }),
+      {
+        direction: "BETTER",
+        summary: "The auth error is gone",
+        targets: [
+          { observationId: "obs_1", status: "RESOLVED" },
+          { observationId: "obs_2", status: "MOVED", note: "got to deploy" },
+        ],
+      },
+    );
+  });
+  it("lets flags override a file", () => {
+    const file = {
+      direction: "UNCLEAR",
+      summary: "s",
+      newFindings: [{ runId: "r1", label: "New wall" }],
+    };
+    assert.deepEqual(
+      judgmentBodyFromOpts({ file: "j.json", direction: "worse" }, () =>
+        JSON.stringify(file),
+      ),
+      { ...file, direction: "WORSE" },
+    );
+  });
+  it("refuses unknown values and a missing direction or summary", () => {
+    assert.throws(
+      () => judgmentBodyFromOpts({ direction: "GREAT", summary: "s" }),
+      /--direction must be one of/,
+    );
+    assert.throws(
+      () =>
+        judgmentBodyFromOpts({
+          direction: "BETTER",
+          summary: "s",
+          target: ["obs_1=FIXED"],
+        }),
+      /<observationId>=</,
+    );
+    assert.throws(
+      () => judgmentBodyFromOpts({ direction: "BETTER" }),
+      /--direction and --summary/,
+    );
+  });
+});
+
+describe("trial labels", () => {
+  const trial = (extra: Partial<optimizations.Trial>) =>
+    ({
+      key: "R1.1",
+      kind: "CHANGE",
+      status: "SETTLED",
+      changes: [],
+      judgment: null,
+      ...extra,
+    }) as optimizations.Trial;
+  it("names every change kind once", () => {
+    assert.equal(changeLabel(trial({ kind: "BASELINE" })), "BASELINE");
+    assert.equal(
+      changeLabel(
+        trial({
+          changes: [
+            { kind: "CLI_INTERVENTION" },
+            { kind: "EDIT_SKILL" },
+            { kind: "CLI_INTERVENTION" },
+          ] as optimizations.Trial["changes"],
+        }),
+      ),
+      "CLI_INTERVENTION,EDIT_SKILL",
+    );
+  });
+  it("lists settled change trials that have no reading", () => {
+    assert.deepEqual(
+      unjudgedTrials([
+        trial({}),
+        trial({ key: "B0", kind: "BASELINE" }),
+        trial({ key: "R1.2", status: "RUNNING" }),
+        trial({
+          key: "R1.3",
+          judgment: {} as optimizations.TrialJudgment,
+        }),
+      ]),
+      ["R1.1"],
+    );
+  });
 });

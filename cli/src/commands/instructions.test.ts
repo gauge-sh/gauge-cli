@@ -230,7 +230,8 @@ describe("gauge instructions", () => {
   it("keeps the complete optimization workflow in its named page", () => {
     const optimization = instructions("optimization");
     assert.match(optimization, /## The loop/);
-    assert.match(optimization, /gauge optimizations diagnose/);
+    assert.doesNotMatch(optimization, /diagnose/);
+    assert.match(optimization, /judge <id> <trial>/);
     assert.match(optimization, /--idempotency-key/);
     assert.match(optimization, /baselines --eval/);
     assert.match(optimization, /--from-run/);

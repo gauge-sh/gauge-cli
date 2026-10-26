@@ -244,6 +244,31 @@ const INSTALLED: Record<string, string> = {
 
 const check = (value: boolean) => (value ? "yes" : "");
 
+type InsightFinding = NonNullable<
+  RunInsightResponse["analysis"]
+>["observations"][number];
+
+const OWNERSHIP_LABELS: Record<string, string> = {
+  CATALOG: "owned",
+  INFERRED: "likely owned",
+  THIRD_PARTY: "third-party",
+};
+
+function isOptimizable(finding: InsightFinding): boolean {
+  return (
+    finding.surface?.ownership === "CATALOG" ||
+    finding.surface?.ownership === "INFERRED"
+  );
+}
+
+function findingSurfaceLine(finding: InsightFinding): string {
+  const surface = finding.surface;
+  if (!surface) return `id ${finding.id} · no surface`;
+  const target = surface.targetLabel ? ` ${surface.targetLabel}` : "";
+  const owner = OWNERSHIP_LABELS[surface.ownership] ?? surface.ownership;
+  return `id ${finding.id} · ${surface.lever}${target} · ${owner}${isOptimizable(finding) ? ", optimizable" : ""}`;
+}
+
 function printInsight(insight: RunInsightResponse): void {
   for (const pass of insight.passes) {
     console.log(passLine(PASS_LABELS[pass.kind] ?? pass.kind, pass));
@@ -265,6 +290,11 @@ function printInsight(insight: RunInsightResponse): void {
     console.log(`  ${finding.kind}: ${finding.label}`);
     console.log(`    ${finding.detail}`);
     console.log(`    Evidence: ${JSON.stringify(finding.evidence)}`);
+    console.log(`    ${findingSurfaceLine(finding)}`);
+    if (isOptimizable(finding))
+      console.log(
+        `    Optimize: gauge optimizations start --finding ${finding.id}`,
+      );
   }
 
   console.log(`\nProducts (${analysis.products.length})`);

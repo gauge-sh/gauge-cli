@@ -163,7 +163,7 @@ describe("comparison output", () => {
               trialId: "t1",
               key: "R1.1",
               title: "Tighter skill",
-              kind: "EDIT_SKILL",
+              kind: "CHANGE",
               runs: 2,
             },
           ],
@@ -172,7 +172,7 @@ describe("comparison output", () => {
     });
     assert.ok(
       lines.includes(
-        'candidate: 2 runs from optimization trial R1.1 "Tighter skill" (EDIT_SKILL). Inspect: gauge optimizations trial c1 t1',
+        'candidate: 2 runs from optimization trial R1.1 "Tighter skill" (CHANGE). Inspect: gauge optimizations trial c1 t1',
       ),
     );
   });

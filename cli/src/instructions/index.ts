@@ -113,9 +113,9 @@ Full guidance: \`gauge instructions session-analysis\`.
 
 ### Optimization
 
-Gauge measures trials; you author changes. First run \`gauge optimizations baselines\`
-for an eval or preference prompt to discover observed surfaces and eligible runs.
-Inspect source evidence, then start with \`--from-run\` to reuse the chosen baseline.
+Gauge measures trials; you author changes. To fix one owned finding from
+\`gauge run insight\`, start with \`--finding <id>\`. Otherwise run \`gauge optimizations baselines\`
+to discover eligible runs, then start with \`--from-run\`.
 Read authoring context, write a hypothesis, preview the complete change, save,
 and launch. Gauge resumes saved baseline states (checkpoints) when compatible, or starts fresh.
 Follow \`nextAction\`; watch exits 4 when input is needed. Verify actual change
@@ -187,16 +187,18 @@ Choose a run that encountered the surface you want to improve. Missing evidence 
 --from-run reuses its eligible baseline (possibly several runs) and inherits its model.
 Use --preference for preference prompts, or --target <agent:model> to establish a baseline.
 A new baseline may spend credits. Only use --yes for approved spending.
+To fix one owned finding, start --finding <findingId> alone: it becomes the target, and its
+session sets the baseline, subject, and model. run insight prints each finding's Optimize: line.
 
-    gauge optimizations watch <id>              # exit 4 = your turn, not failure
+    gauge optimizations watch <id>            # exit 4 = your turn, not failure
     gauge optimizations authoring <id>          # targets, guidance, revision
     gauge optimizations page <id> --url <url> -o json
 
 Follow nextAction: WAIT → watch; AUTHOR_TRIAL → author; LAUNCH_ROUND → launch.
 Check page.source: scrape is current content, not the captured baseline response.
-Write one hypothesis and the complete change in round.json, using the authoring revision.
-Docs use exact find/replace edits or body with rewriteReason; skills use the complete bundle.
-CLI: cli-change --file takes v3 {schemaVersion:3,target,rules,shippingIntent}; put its output in intervention.after.
+Write each trial in round.json as one hypothesis with changes: [...] across any surfaces, using the authoring revision.
+Docs use exact find/replace edits or body with rewriteReason; a skill edit carries its complete files.
+CLI: cli-change --file takes v3 {schemaVersion:3,target,rules,shippingIntent}; its output is a CLI_INTERVENTION change's after.
 
     gauge optimizations round preview <id> --file round.json -o json
     gauge optimizations round save <id> --file round.json --digest <previewDigest>
@@ -209,8 +211,11 @@ Gauge selects checkpoints automatically before the affected interaction, or star
 Omit startingPoints and fork flags; you do not select a checkpoint. Check candidateExecution,
 candidateDelivery (exposure, observedArtifacts, evidenceComplete), scores, counts, and failed sessions.
 Better scores alone are not proof. Keep eval/prompt/criteria fixed; repeat if inconclusive.
+The trial's ledger is its result: did each target come back, move later, or vanish; what is new?
+Record it: judge <id> <trial> --direction BETTER|WORSE|MIXED|UNCHANGED|UNCLEAR --summary <text>
+--target <observationId>=RESOLVED|RETURNED|MOVED|UNCLEAR. Unexercised change: UNCLEAR.
 Adopt <id> <trial> selects the winner; handoff <id> gives source instructions; complete <id> finishes.
-Neither deploys. Single-trial retries: trials add --idempotency-key. Optional: gauge optimizations diagnose.
+Neither deploys. Single-trial retries: trials add --idempotency-key.
 `;
 
 export const TOPICS: Record<string, Topic> = {

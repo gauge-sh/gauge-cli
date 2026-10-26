@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { INTERVENTION_KINDS } from "./climb-kinds";
+import { TRIAL_KINDS } from "./climb-kinds";
 import { listQuerySchema, listResponseSchema } from "./common";
 import { sessionAnalysisSchema } from "./sessionAnalysis";
 
@@ -71,7 +71,7 @@ export const runOptimizationTrialSchema = z.object({
   trialId: z.string(),
   key: z.string(),
   title: z.string(),
-  kind: z.enum(INTERVENTION_KINDS),
+  kind: z.enum(TRIAL_KINDS),
 });
 export type RunOptimizationTrial = z.infer<typeof runOptimizationTrialSchema>;
 

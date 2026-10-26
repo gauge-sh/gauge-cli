@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### Added
+
+- `gauge optimizations start --finding <findingId>` starts an optimization
+  that targets one owned finding. The finding's session sets the baseline,
+  subject, and model. The output prints the optimization chat path.
+- `gauge run insight` shows each finding's id, surface, target, and owner,
+  and prints a `start --finding` command for each owned finding.
+- `gauge optimizations judge <id> <trial>` records your reading of a settled
+  trial: a direction, a summary, and a status for each targeted finding.
+- `gauge optimizations trial` shows the trial's findings ledger and its
+  recorded reading. `get` names settled trials that have no reading yet.
+
+### Changed
+
+- **Breaking:** A trial now lists its `changes` across surfaces, in trial
+  files, round files, and `--json` output. A skill edit carries its `files`
+  inside the change. Trial and round files in the old `{lever, intervention,
+  files}` shape are refused; regenerate them with `trials template`.
+  Earlier CLI versions can no longer author trials.
+- `trials add` no longer takes `--lever`.
+- Round previews group each document under the change that writes it.
+
+### Removed
+
+- `gauge optimizations diagnose`. Optimizations start from session findings.
+
 ## 0.24.0 — 2026-10-21
 
 ### Added

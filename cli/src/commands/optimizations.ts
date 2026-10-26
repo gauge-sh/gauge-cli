@@ -1,18 +1,22 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import type { optimizations } from "@withgauge/api-schemas";
+import { leversOfChanges } from "@withgauge/api-schemas/climb";
 import type { Command } from "commander";
 import { CliError, createClient } from "../lib/client";
 import { confirmOrAbort } from "../lib/confirm";
 import { hostedOnly, resolveOrg, resolveOutput } from "../lib/context";
-import { parseAgentSpec } from "../lib/flags";
+import { collect, parseAgentSpec } from "../lib/flags";
 import { printItems, printJson } from "../lib/output";
 
 type Summary = optimizations.OptimizationSummary;
 type Detail = optimizations.OptimizationDetail;
+type FindingStartDetail = Detail & {
+  chat?: { chatId: string; href: string };
+};
 type Trial = optimizations.Trial;
 type TrialContent = optimizations.TrialContent;
-type Diagnosis = optimizations.Diagnosis;
+type Judgment = optimizations.TrialJudgment;
 
 const TERMINAL = new Set<string>(["DONE", "ARCHIVED"]);
 
@@ -144,7 +148,6 @@ type TrialOpts = {
   pick?: string;
   title?: string;
   hypothesis?: string;
-  lever?: string;
   editSkill?: string;
   skillDir?: string;
   page?: string;
@@ -220,23 +223,21 @@ export function trialBodyFromOpts(
         "the trial file must contain an object or a non-empty array of objects",
       );
     const record = chosen as Record<string, unknown>;
-    const body = (
-      "trial" in record ? record : { trial: record }
-    ) as optimizations.CreateTrialBodyInput;
+    const body = "trial" in record ? record : { trial: record };
+    assertChangesShape(body);
     return {
       ...body,
+      trial: body.trial,
       ...(idempotencyKey ? { idempotencyKey } : {}),
       launch,
     };
   }
   if (!opts.title) throw new CliError("usage", "--title is required");
-  const lever = opts.lever?.toUpperCase();
-  let intervention: Record<string, unknown>;
-  let files: { path: string; body: string }[] | undefined;
+  let change: Record<string, unknown>;
   if (opts.page || opts.bodyFile) {
     if (!opts.page || !opts.bodyFile)
       throw new CliError("usage", "--page and --body-file go together");
-    intervention = {
+    change = {
       kind: "REWRITE_DOCS",
       after: { pages: [{ url: opts.page, body: read(opts.bodyFile) }] },
     };
@@ -246,31 +247,40 @@ export function trialBodyFromOpts(
         "usage",
         "--edit-skill needs --skill-dir <path>: an edit sends the complete bundle",
       );
-    intervention = {
+    change = {
       kind: "EDIT_SKILL",
       before: { skillVersionId: opts.editSkill },
       after: { skillVersionId: opts.editSkill },
+      files: readSkillDir(opts.skillDir, read, walk),
     };
-    files = readSkillDir(opts.skillDir, read, walk);
   } else {
     throw new CliError(
       "usage",
       "describe the change: --edit-skill <id> --skill-dir <path>, --page <url> --body-file <path>, or --file <trial.json>",
     );
   }
-  const trial = {
-    title: opts.title,
-    hypothesis: opts.hypothesis,
-    lever: lever ?? (intervention.kind === "REWRITE_DOCS" ? "DOCS" : "SKILL"),
-    intervention,
-    authorMode: "MANUAL" as const,
-  } as unknown as optimizations.CreateTrialBodyInput["trial"];
   return {
-    trial,
-    ...(files ? { files } : {}),
+    trial: {
+      title: opts.title,
+      ...(opts.hypothesis ? { hypothesis: opts.hypothesis } : {}),
+      changes: [change],
+    },
     ...(idempotencyKey ? { idempotencyKey } : {}),
     launch,
   };
+}
+
+// The server's message for this shape blames the CLI version; a current CLI
+// reading an old file needs to hear that the file is the problem.
+function assertChangesShape(body: Record<string, unknown>): void {
+  const trial = body.trial;
+  if (!trial || typeof trial !== "object") return;
+  const legacy = ["lever", "intervention"].filter((key) => key in trial);
+  if (legacy.length || "files" in body)
+    throw new CliError(
+      "usage",
+      "this trial file uses the retired {lever, intervention, files} shape. A trial now lists its changes: {trial: {title, hypothesis, changes: [...]}}; a skill edit carries its files inside the change. See `gauge optimizations trials template --kind EDIT_SKILL`",
+    );
 }
 
 const TRIAL_TEMPLATES: Record<string, optimizations.CreateTrialBodyInput> = {
@@ -278,38 +288,46 @@ const TRIAL_TEMPLATES: Record<string, optimizations.CreateTrialBodyInput> = {
     trial: {
       title: "Name the env var in the first line",
       hypothesis: "The agent reads only the opening paragraph",
-      lever: "SKILL",
-      intervention: {
-        kind: "EDIT_SKILL",
-        before: { skillVersionId: "sv_REPLACE_ME" },
-        after: { skillVersionId: "sv_REPLACE_ME" },
-      },
-      authorMode: "MANUAL",
+      changes: [
+        {
+          kind: "EDIT_SKILL",
+          before: { skillVersionId: "sv_REPLACE_ME" },
+          after: { skillVersionId: "sv_REPLACE_ME" },
+          files: [
+            {
+              path: "SKILL.md",
+              body: "# Skill\n\nThe complete rewritten file.\n",
+            },
+          ],
+        },
+      ],
     },
-    files: [
-      { path: "SKILL.md", body: "# Skill\n\nThe complete rewritten file.\n" },
-    ],
   },
   REWRITE_DOCS: {
     trial: {
       title: "Move the auth note above the example",
       hypothesis: "The agent copies the example before reading the note",
-      lever: "DOCS",
-      intervention: {
-        kind: "REWRITE_DOCS",
-        after: {
-          pages: [
-            {
-              url: "https://example.com/docs/quickstart",
-              body: "The complete rewritten page body.",
-            },
-          ],
+      changes: [
+        {
+          kind: "REWRITE_DOCS",
+          after: {
+            pages: [
+              {
+                url: "https://example.com/docs/quickstart",
+                edits: [
+                  {
+                    find: "An exact excerpt that appears once on the page.",
+                    replace: "Its replacement.",
+                  },
+                ],
+              },
+            ],
+          },
         },
-      },
-      authorMode: "MANUAL",
+      ],
     },
   },
-} as unknown as Record<string, optimizations.CreateTrialBodyInput>;
+};
 
 export function trialTemplate(
   kind: string,
@@ -348,13 +366,19 @@ function toRow(o: Summary) {
   };
 }
 
+export function changeLabel(t: Pick<Trial, "kind" | "changes">): string {
+  if (t.kind === "BASELINE") return "BASELINE";
+  return [...new Set(t.changes.map((change) => change.kind))].join(",");
+}
+
 function trialRow(t: Trial) {
   return {
     key: t.key,
     round: t.roundNumber,
     title: t.title.length > 48 ? `${t.title.slice(0, 45)}...` : t.title,
-    surface: t.lever ?? "",
-    change: t.kind,
+    surface: leversOfChanges(t.changes).join(","),
+    change: changeLabel(t),
+    reading: t.judgment?.direction ?? "",
     status: t.status,
     score: pct(t.score),
     result: t.verdict ?? "",
@@ -395,7 +419,20 @@ function printDetail(o: Detail): void {
   for (const round of o.rounds)
     if (round.narrative)
       console.log(`round ${round.number}: ${round.narrative}`);
+  const unjudged = unjudgedTrials(trials);
+  if (unjudged.length && !TERMINAL.has(o.status))
+    console.log(
+      `judge:     ${unjudged.join(", ")} settled without a reading; record one with \`gauge optimizations judge ${o.id} <trial>\``,
+    );
   for (const line of trials.flatMap(trialWarnings)) console.error(line);
+}
+
+export function unjudgedTrials(trials: Trial[]): string[] {
+  return trials
+    .filter(
+      (t) => t.kind === "CHANGE" && t.status === "SETTLED" && !t.judgment,
+    )
+    .map((t) => t.key);
 }
 
 function runDetails(id: string) {
@@ -430,7 +467,9 @@ function printTrial(t: Trial): void {
   console.log(`key:        ${t.key} (round ${t.roundNumber}) — ${t.id}`);
   console.log(`title:      ${t.title}`);
   if (t.hypothesis) console.log(`hypothesis: ${t.hypothesis}`);
-  console.log(`change:     ${t.kind}${t.lever ? ` on ${t.lever}` : ""}`);
+  if (t.kind === "BASELINE") console.log("change:     BASELINE");
+  for (const change of t.changes)
+    console.log(`change:     ${change.kind}${changeTarget(change)}`);
   console.log(
     `status:     ${t.status}${t.verdict ? ` · ${t.verdict}` : ""}${t.adopted ? " · winner" : ""}`,
   );
@@ -456,7 +495,51 @@ function printTrial(t: Trial): void {
         );
     }
   }
+  if (t.ledger) printLedger(t.ledger);
+  if (t.judgment) printJudgment(t.judgment);
   for (const line of trialWarnings(t)) console.error(line);
+}
+
+function changeTarget(change: Trial["changes"][number]): string {
+  if (change.kind === "REWRITE_DOCS")
+    return ` on ${change.after.pages.map((page) => page.url).join(", ")}`;
+  const ref = change.targetRef;
+  const label = ref?.url ?? ref?.package ?? ref?.id;
+  return label ? ` on ${label}` : "";
+}
+
+function printLedger(ledger: NonNullable<Trial["ledger"]>): void {
+  if (ledger.targets.length) {
+    console.log("targets:");
+    for (const target of ledger.targets)
+      console.log(
+        `  ${target.observationId}: ${target.label} (baseline ${target.runId}${target.evidenceSeq === null ? "" : `@${target.evidenceSeq}`})`,
+      );
+  }
+  for (const session of ledger.sessions) {
+    console.log(`findings in ${session.runId}:`);
+    if (!session.findings.length) console.log("  (none)");
+    for (const finding of session.findings)
+      console.log(
+        `  ${finding.targeted ? "* " : ""}${finding.kind}${finding.seq === null ? "" : `@${finding.seq}`}: ${finding.label}`,
+      );
+  }
+  if (ledger.funnel)
+    console.log(
+      `funnel:     ${ledger.funnel.considered}/${ledger.funnel.of} considered · ${ledger.funnel.recommended} recommended · ${ledger.funnel.chosen} chosen`,
+    );
+}
+
+function printJudgment(judgment: Judgment): void {
+  console.log(`reading:    ${judgment.direction} — ${judgment.summary}`);
+  for (const target of judgment.targets)
+    console.log(
+      `  ${target.observationId}: ${target.status}${target.note ? ` — ${target.note}` : ""}`,
+    );
+  for (const finding of judgment.newFindings)
+    console.log(
+      `  new in ${finding.runId}${finding.seq == null ? "" : `@${finding.seq}`}: ${finding.label}`,
+    );
 }
 
 function printChange(content: TrialContent): void {
@@ -474,8 +557,11 @@ type RoundPreview = {
   previewDigest: string;
   trials: {
     title: string;
-    changes?: { path: string; hunks: string }[];
-    droppedFiles?: string[];
+    changes: {
+      kind: string;
+      documents: { path: string; hunks?: string }[];
+      droppedFiles?: string[];
+    }[];
   }[];
 };
 type RoundSaved = { trials: { id: string; key: string; title: string }[] };
@@ -483,30 +569,74 @@ type RoundSaved = { trials: { id: string; key: string; title: string }[] };
 function printRoundPreview(preview: RoundPreview): void {
   for (const trial of preview.trials) {
     console.log(trial.title);
-    for (const change of trial.changes ?? []) {
-      console.log(`=== ${change.path}`);
-      console.log(change.hunks);
+    for (const change of trial.changes) {
+      console.log(`--- ${change.kind}`);
+      for (const doc of change.documents) {
+        console.log(`=== ${doc.path}`);
+        if (doc.hunks) console.log(doc.hunks);
+      }
+      for (const path of change.droppedFiles ?? [])
+        console.log(`  ${path}: dropped`);
     }
-    for (const path of trial.droppedFiles ?? [])
-      console.log(`  ${path}: dropped`);
   }
   console.log(`previewDigest ${preview.previewDigest}`);
 }
 
-function printDiagnosis(d: Diagnosis): void {
-  console.log(`id:          ${d.id}`);
-  console.log(`status:      ${d.status} over ${d.runCount} sessions`);
-  console.log(`summary:     ${d.summary ?? "(none)"}`);
-  console.log(`recommended: ${d.recommendedLever ?? "no single lever"}`);
-  if (d.unsupportedLevers.length)
-    console.log(`not yet supported: ${d.unsupportedLevers.join(", ")}`);
-  if (d.clusters.length) {
-    console.log("opportunities:");
-    for (const cluster of d.clusters)
-      console.log(
-        `  - ${cluster.title} [${cluster.lever ?? "?"} · ${Math.round(cluster.confidence * 100)}%] ${cluster.failureMode}`,
-      );
+const DIRECTIONS = ["BETTER", "WORSE", "MIXED", "UNCHANGED", "UNCLEAR"];
+const TARGET_STATUSES = ["RESOLVED", "RETURNED", "MOVED", "UNCLEAR"];
+
+type JudgeOpts = {
+  file?: string;
+  direction?: string;
+  summary?: string;
+  target?: string[];
+};
+
+export function judgmentBodyFromOpts(
+  opts: JudgeOpts,
+  read: (path: string) => string = readText,
+): optimizations.TrialJudgmentInput {
+  let body: Record<string, unknown> = {};
+  if (opts.file) {
+    try {
+      body = JSON.parse(read(opts.file));
+    } catch {
+      throw new CliError("usage", "the judgment file must contain valid JSON");
+    }
+    if (!body || typeof body !== "object" || Array.isArray(body))
+      throw new CliError("usage", "the judgment file must contain an object");
   }
+  if (opts.direction) {
+    const direction = opts.direction.toUpperCase();
+    if (!DIRECTIONS.includes(direction))
+      throw new CliError(
+        "usage",
+        `--direction must be one of ${DIRECTIONS.join(", ")}`,
+      );
+    body.direction = direction;
+  }
+  if (opts.summary) body.summary = opts.summary;
+  if (opts.target?.length)
+    body.targets = opts.target.map((raw) => {
+      const match = /^([^=]+)=([A-Za-z]+)(?::(.*))?$/.exec(raw);
+      const status = match?.[2].toUpperCase();
+      if (!match || !status || !TARGET_STATUSES.includes(status))
+        throw new CliError(
+          "usage",
+          `--target "${raw}" must be <observationId>=<${TARGET_STATUSES.join("|")}>[:note]`,
+        );
+      return {
+        observationId: match[1],
+        status,
+        ...(match[3] ? { note: match[3] } : {}),
+      };
+    });
+  if (!body.direction || !body.summary)
+    throw new CliError(
+      "usage",
+      "a judgment needs --direction and --summary, or a --file that has both",
+    );
+  return body as optimizations.TrialJudgmentInput;
 }
 
 function addSubjectOptions(command: Command): Command {
@@ -525,7 +655,7 @@ function addTargetOption(command: Command): Command {
 export function register(program: Command): void {
   const group = hostedOnly(program.command("optimizations"))
     .description(
-      "Start, steer, and read optimizations: Gauge changes one owned surface per trial and reports the best measured change against the baseline",
+      "Start, steer, and read optimizations: each trial tests one hypothesis with changes across owned surfaces, measured against the baseline",
     );
 
   group
@@ -632,31 +762,19 @@ export function register(program: Command): void {
       else printDetail(detail);
     });
 
-  addSubjectOptions(
-    group
-      .command("diagnose")
-      .description(
-        "Improvement opportunities for an eval or preference prompt from its judged sessions",
-      ),
-  ).action(async (opts: SubjectOpts, cmd: Command) => {
-    const org = resolveOrg(cmd);
-    const diagnosis = await createClient().post<Diagnosis>(
-      `${basePath(org)}/diagnoses`,
-      parseSubject(opts),
-    );
-    if (resolveOutput(cmd) === "json") printJson(diagnosis);
-    else printDiagnosis(diagnosis);
-  });
-
   addTargetOption(
     addSubjectOptions(
       group
         .command("start")
         .description(
-          "Reuse a selected baseline with --from-run, or establish one with --target",
+          "Start from one owned finding with --finding, reuse a baseline with --from-run, or establish one with --target",
         ),
     ),
   )
+    .option(
+      "--finding <findingId>",
+      "target this owned finding; its session is the baseline and sets the subject and model (ids: gauge run insight <run>)",
+    )
     .option(
       "--from-run <runId>",
       "reuse the eligible baseline containing this run; inherits its model",
@@ -666,15 +784,46 @@ export function register(program: Command): void {
     .action(
       async (
         opts: SubjectOpts &
-          TargetOpts & { name?: string; yes?: boolean; fromRun?: string },
+          TargetOpts & {
+            name?: string;
+            yes?: boolean;
+            fromRun?: string;
+            finding?: string;
+          },
         cmd: Command,
       ) => {
         const org = resolveOrg(cmd);
-        if (!!opts.target === !!opts.fromRun)
+        if ([opts.finding, opts.target, opts.fromRun].filter(Boolean).length !== 1)
           throw new CliError(
             "usage",
-            "pass --from-run <runId> or --target <agent[:model]>, not both; discover runs with `gauge optimizations baselines`",
+            "pass exactly one of --finding <findingId>, --from-run <runId>, or --target <agent[:model]>; find owned findings with `gauge run insight <run>`",
           );
+        if (opts.finding) {
+          if (opts.eval || opts.preference)
+            throw new CliError(
+              "usage",
+              "--finding sets the subject from the finding's session; drop --eval/--preference",
+            );
+          await confirmOrAbort(
+            `Start an optimization targeting finding ${opts.finding}? Its session is the baseline.`,
+            opts.yes,
+          );
+          const detail = await createClient().post<FindingStartDetail>(
+            basePath(org),
+            { fromFinding: opts.finding, name: opts.name },
+          );
+          if (resolveOutput(cmd) === "json") printJson(detail);
+          else {
+            console.log(
+              `Started ${detail.id} "${detail.name}" on ${subjectLabel(detail.subjectKind)} ${detail.subjectName}, targeting finding ${opts.finding}.`,
+            );
+            console.log(
+              `Next: \`gauge optimizations authoring ${detail.id}\`, then preview, save, and launch a round.`,
+            );
+            if (detail.chat) console.log(`Chat: ${detail.chat.href}`);
+          }
+          return;
+        }
         const subject = parseSubject(opts);
         await confirmOrAbort(
           opts.fromRun
@@ -1014,7 +1163,7 @@ export function register(program: Command): void {
   group
     .command("cli-change <id>")
     .description(
-      "Validate and seal v3 {schemaVersion:3, target, rules, shippingIntent}; use the output as intervention.after in a round file. Saves nothing",
+      "Validate and seal v3 {schemaVersion:3, target, rules, shippingIntent}; use the output as the after of a CLI_INTERVENTION change. Saves nothing",
     )
     .requiredOption("--file <path>", "the change JSON; '-' for stdin")
     .action(async (id: string, opts: { file: string }, cmd: Command) => {
@@ -1029,7 +1178,7 @@ export function register(program: Command): void {
   const round = group
     .command("round")
     .description(
-      "Preview and save the round waiting to launch. A round file is {revision, trials: [{trial: {title, hypothesis, lever, intervention}, files?}]}; revision comes from `authoring`",
+      "Preview and save the round waiting to launch. A round file is {revision, trials: [{trial: {title, hypothesis, changes: [...]}}]}; revision comes from `authoring`",
     );
 
   round
@@ -1092,12 +1241,11 @@ export function register(program: Command): void {
     )
     .option(
       "--file <path>",
-      "authored trial JSON, as `trials template` prints it: one {trial, files?} or an array; '-' for stdin",
+      "authored trial JSON, as `trials template` prints it: one {trial: {title, hypothesis, changes}} or an array; '-' for stdin",
     )
     .option("--pick <n>", "which trial to take from an array (default 1)")
     .option("--title <text>", "what the change is")
     .option("--hypothesis <text>", "why it should help")
-    .option("--lever <lever>", "DOCS, MARKETING_SITE, SKILL, SDK, CLI")
     .option(
       "--edit-skill <id>",
       "skill version to rewrite (with --skill-dir); see `gauge optimizations skill-files <id>`",
@@ -1121,9 +1269,10 @@ export function register(program: Command): void {
       async (id: string, opts: TrialOpts & { yes?: boolean }, cmd: Command) => {
         const org = resolveOrg(cmd);
         const body = trialBodyFromOpts(opts);
+        const title = (body.trial as { title?: string } | null)?.title;
         if (body.launch !== false)
           await confirmOrAbort(
-            `Run trial "${body.trial.title}" on ${id} now? Spends credits.`,
+            `Run trial "${title ?? "untitled"}" on ${id} now? Spends credits.`,
             opts.yes,
           );
         const result = await createClient().post<{
@@ -1265,6 +1414,34 @@ export function register(program: Command): void {
         );
         if (resolveOutput(cmd) === "json") printJson(detail);
         else console.log(`Marked ${trialId} as the winner.`);
+      },
+    );
+
+  group
+    .command("judge <id> <trialId>")
+    .description(
+      "Record your reading of a settled trial against the goal; it replaces any earlier reading",
+    )
+    .option("--direction <direction>", DIRECTIONS.join(", "))
+    .option("--summary <text>", "one or two sentences in product terms")
+    .option(
+      "--target <observationId=STATUS[:note]>",
+      `judge one targeted finding: ${TARGET_STATUSES.join(", ")}; repeatable`,
+      collect,
+      [] as string[],
+    )
+    .option(
+      "--file <path>",
+      "the whole judgment {direction, summary, targets, newFindings}; flags override it; '-' for stdin",
+    )
+    .action(
+      async (id: string, trialId: string, opts: JudgeOpts, cmd: Command) => {
+        const judgment = await createClient().put<Judgment>(
+          `${trialPath(resolveOrg(cmd), id, trialId)}/judgment`,
+          judgmentBodyFromOpts(opts),
+        );
+        if (resolveOutput(cmd) === "json") printJson(judgment);
+        else printJudgment(judgment);
       },
     );
 

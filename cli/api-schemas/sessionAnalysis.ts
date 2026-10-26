@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { targetRefSchema } from "./climb-kinds";
 
 export const ANALYSIS_SCHEMA_VERSION = 1 as const;
 
@@ -46,6 +47,29 @@ export const sessionProductSchema = z.object({
 });
 export type SessionProduct = z.infer<typeof sessionProductSchema>;
 
+export const SURFACE_LEVERS = [
+  "DOCS",
+  "MARKETING_SITE",
+  "SKILL",
+  "CLI",
+] as const;
+export const SURFACE_OWNERSHIPS = [
+  "CATALOG",
+  "INFERRED",
+  "THIRD_PARTY",
+] as const;
+
+export const observationSurfaceSchema = z
+  .object({
+    lever: z.enum(SURFACE_LEVERS),
+    evidenceSeq: z.number().int().nonnegative(),
+    ownership: z.enum(SURFACE_OWNERSHIPS),
+    target: targetRefSchema.nullish(),
+    targetLabel: z.string().nullish(),
+  })
+  .strict();
+export type ObservationSurface = z.infer<typeof observationSurfaceSchema>;
+
 export const sessionObservationSchema = z.object({
   id: z.string(),
   kind: z.enum(["FRICTION", "OBJECTION", "OPPORTUNITY"]),
@@ -70,6 +94,7 @@ export const sessionObservationSchema = z.object({
   ]),
   tags: z.array(z.string()),
   evidence: z.array(evidenceRefSchema),
+  surface: observationSurfaceSchema.nullable(),
 });
 export type SessionObservation = z.infer<typeof sessionObservationSchema>;
 
@@ -152,6 +177,7 @@ export const findingSubmissionSchema = sessionObservationSchema
     subject: z.string().trim().min(1).max(200),
     tags: z.array(z.string().trim().min(1).max(64)).max(32).default([]),
     evidence: z.array(portableEvidenceRefSchema).min(1).max(100),
+    surface: observationSurfaceSchema.nullable().default(null),
   })
   .strict();
 export type FindingSubmission = z.infer<typeof findingSubmissionSchema>;
