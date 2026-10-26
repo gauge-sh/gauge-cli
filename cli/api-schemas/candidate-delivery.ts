@@ -7,7 +7,7 @@ export const candidateDeliverySchema = z.object({
   candidateDigest: z.string(),
   installed: z.boolean(),
   evidenceComplete: z.boolean(),
-  exposure: z.enum(["exercised", "not_exercised", "unknown"]),
+  exposure: z.enum(["exercised", "partial", "not_exercised", "unknown"]),
   deliveryFailures: z.number().int().nonnegative(),
   observedArtifacts: z.array(z.string()).max(512),
   expectedArtifacts: z.array(z.string()).max(512),

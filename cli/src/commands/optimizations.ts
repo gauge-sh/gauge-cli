@@ -463,6 +463,24 @@ export function trialWarnings(t: Trial): string[] {
   return lines;
 }
 
+export function exposureLine(
+  delivery: NonNullable<Trial["runs"][number]["candidateDelivery"]>[number],
+): string {
+  const missed = delivery.expectedArtifacts.filter(
+    (artifact) => !delivery.observedArtifacts.includes(artifact),
+  );
+  switch (delivery.exposure) {
+    case "exercised":
+      return `exposure: exercised (${delivery.surface})`;
+    case "partial":
+      return `exposure: partial — saw ${delivery.observedArtifacts.join(", ")}; missed ${missed.join(", ")}`;
+    case "not_exercised":
+      return `exposure: not exercised — missed ${missed.join(", ") || delivery.surface}`;
+    default:
+      return "exposure: unknown (delivery evidence incomplete)";
+  }
+}
+
 function printTrial(t: Trial): void {
   console.log(`key:        ${t.key} (round ${t.roundNumber}) — ${t.id}`);
   console.log(`title:      ${t.title}`);
@@ -489,6 +507,8 @@ function printTrial(t: Trial): void {
         );
       else if (run.cliCoverage?.instrumentationFailed)
         console.log("      warning: command evidence is incomplete");
+      for (const delivery of run.candidateDelivery ?? [])
+        console.log(`      ${exposureLine(delivery)}`);
       for (const criterion of run.criteria)
         console.log(
           `      ${criterion.passed === null ? "?" : criterion.passed ? "✓" : "✗"} ${criterion.name}`,

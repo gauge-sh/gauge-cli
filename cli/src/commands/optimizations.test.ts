@@ -8,6 +8,7 @@ import { Command } from "commander";
 import {
   awaitingInput,
   changeLabel,
+  exposureLine,
   judgmentBodyFromOpts,
   parseStatuses,
   parseSubject,
@@ -560,6 +561,39 @@ it("refuses a subject with --finding", async () => {
     ),
     /drop --eval/,
   );
+});
+
+describe("exposureLine", () => {
+  const delivery = {
+    runId: "run",
+    attempt: 1,
+    surface: "docs" as const,
+    candidateDigest: "digest",
+    installed: true,
+    evidenceComplete: true,
+    deliveryFailures: 0,
+    expectedArtifacts: ["https://a.test/x", "https://a.test/y"],
+  };
+  it("names the pages a partial session saw and missed", () => {
+    assert.equal(
+      exposureLine({
+        ...delivery,
+        exposure: "partial",
+        observedArtifacts: ["https://a.test/x"],
+      }),
+      "exposure: partial — saw https://a.test/x; missed https://a.test/y",
+    );
+  });
+  it("names the missed pages when the change was not exercised", () => {
+    assert.equal(
+      exposureLine({
+        ...delivery,
+        exposure: "not_exercised",
+        observedArtifacts: [],
+      }),
+      "exposure: not exercised — missed https://a.test/x, https://a.test/y",
+    );
+  });
 });
 
 describe("judgmentBodyFromOpts", () => {
