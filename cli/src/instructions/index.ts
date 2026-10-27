@@ -2,6 +2,7 @@ import { CliError } from "../lib/client";
 import { type GaugeState, header, instructionMode } from "../lib/gaugeState";
 import { EVAL } from "./eval";
 import { INIT } from "./init";
+import { ISSUES } from "./issues";
 import { PREFERENCE } from "./preference";
 import { RUN, RUN_LOCAL } from "./run";
 import { SESSION_ANALYSIS, SESSION_ANALYSIS_LOCAL } from "./sessionAnalysis";
@@ -65,7 +66,7 @@ identify inputs, pilot representative tasks, analyze evidence, fix, rerun, compa
 - \`gauge run\` starts and reads runs. \`gauge eval\` and \`gauge preference\`
   save what it runs again: \`gauge instructions eval|preference\`.
 - Pass \`-o json\` on reads and parse it. Tables are for people.
-- Confirm before launches spend credits. Use \`--yes\` for work already approved.
+- Confirm before launches. Use \`--yes\` for work already approved.
 - Retry writes with their supported idempotency flag; blind retries can launch
   duplicate paid sessions.
 - Report measured results with sample counts and evidence, including limits.
@@ -113,14 +114,13 @@ Full guidance: \`gauge instructions session-analysis\`.
 
 ### Optimization
 
-An optimization improves one issue. The Gauge app shows issues as Findings.
-\`gauge issues list\` ranks issues by impact
-(\`--reasons\` for Agent Preference); \`gauge run insight\` shows each finding's issue.
-Create an optimization, then read \`authoring\` for the source sessions' findings and
+Optimizations can help hill climb your agent surfaces to improve Agent Preference
+and Agent Experience. Start from an issue (\`gauge instructions issues\`), one
+finding, or a goal. Create an optimization, then read \`authoring\` for the source sessions' findings and
 the editing practices. Copy each page, skill, or CLI rule set you change into
 the tree with \`file add\`, edit it locally, and save it with \`file write\`. Keep your
 diagnosis and plan in \`notes\`. Ask before \`launch\`: it reruns the source sessions
-with the tree and spends credits. \`watch\` waits for the reruns and shows which
+with the tree. \`watch\` waits for the reruns and shows which
 findings resolved, returned, or appeared. Record the outcome with \`finish\`.
 
 Full guidance: \`gauge instructions optimization\`.
@@ -167,7 +167,7 @@ To switch this repo to hosted, run \`gauge onboard\`, then \`gauge init --hosted
 
 const OPTIMIZATIONS = `---
 name: gauge-optimizations
-description: Optimize an issue. Edit the pages, skills, and CLI rules agent
+description: Hill climb agent surfaces. Edit the pages, skills, and CLI rules agent
   sessions used, rerun those sessions, and compare their findings.
 ---
 
@@ -175,8 +175,7 @@ description: Optimize an issue. Edit the pages, skills, and CLI rules agent
 
 An optimization is a tree of files plus the sessions it came from. You edit the
 tree; Gauge reruns the source sessions with it injected. Nothing deploys. Use -o json.
-An issue is the same finding across many sessions. The Gauge app shows issues as
-Findings, so a user who names a Finding means an issue.
+Choose what to improve: \`gauge instructions issues\`.
 
 ## The loop
 
@@ -207,7 +206,7 @@ the tree rerun as the source session had them.
 
 ## Rerun and compare
 
-    gauge optimizations launch <id> --run <run> --yes   # spends credits; ask first
+    gauge optimizations launch <id> --run <run> --yes   # ask first
     gauge optimizations watch <id>                      # waits for reruns and analysis
 
 Check that launch lists every edit in your notes as changed. Rerun only the
@@ -240,6 +239,7 @@ export const TOPICS: Record<string, Topic> = {
     hosted: SESSION_ANALYSIS,
     local: SESSION_ANALYSIS_LOCAL,
   },
+  issues: { name: "gauge-issues", hosted: ISSUES, command: "issues" },
   optimization: {
     name: "gauge-optimizations",
     hosted: OPTIMIZATIONS,

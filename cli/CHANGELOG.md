@@ -25,8 +25,8 @@
 
 - `gauge issues list` ranks issues (the same finding across many sessions) by
   impact, and `gauge issues get <id>` lists an issue's findings and runs.
-  `gauge run insight` shows each finding's id and issue. The Gauge app shows
-  issues as Findings; help and instructions say so.
+  `gauge run insight` shows each finding's id and issue. `gauge instructions
+  issues` explains issues, also called findings, and how to choose one.
 - `gauge run trace <id> --seq <n>` prints the trace around a seq,
   `gauge run web <id>` lists every URL the agent fetched, and
   `gauge run commands <id>` prints the shell output the agent saw.

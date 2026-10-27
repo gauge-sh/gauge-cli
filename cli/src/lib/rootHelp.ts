@@ -48,7 +48,7 @@ const GROUPS: [string, Record<string, string>][] = [
     {
       stats: "Analytics over your runs",
       dashboards: "Saved dashboards",
-      issues: "The same finding across many sessions (Findings in the app)",
+      issues: "The same finding across many sessions (also called findings)",
     },
   ],
   [

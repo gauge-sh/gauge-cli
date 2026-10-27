@@ -359,7 +359,7 @@ function printPageView(view: PageView): void {
 
 export function register(program: Command): void {
   const group = hostedOnly(program.command("optimizations")).description(
-    "Optimize an issue: edit the pages, skills, and CLI rules its sessions used, rerun those sessions, and compare findings",
+    "Hill climb your agent surfaces: edit the pages, skills, and CLI rules agent sessions used, rerun those sessions, and compare findings",
   );
 
   group
@@ -583,7 +583,7 @@ export function register(program: Command): void {
   group
     .command("launch <id>")
     .description(
-      "Rerun the source sessions with the tree injected (spends credits)",
+      "Rerun the source sessions with the tree injected",
     )
     .option("--run <runId...>", "rerun only these source runs")
     .option("--note <text>", "one line on what this launch tests")
@@ -596,7 +596,7 @@ export function register(program: Command): void {
       ) => {
         const path = itemPath(await resolveOrg(cmd), id);
         await confirmOrAbort(
-          `Rerun ${opts.run?.length ? plural(opts.run.length, "source session") : "every source session"} of ${id} with the tree? Spends credits.`,
+          `Rerun ${opts.run?.length ? plural(opts.run.length, "source session") : "every source session"} of ${id} with the tree?`,
           opts.yes,
         );
         const res = await createClient().post<LaunchResult>(`${path}/launch`, {

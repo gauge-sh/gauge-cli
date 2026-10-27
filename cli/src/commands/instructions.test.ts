@@ -157,6 +157,7 @@ describe("gauge instructions", () => {
       "eval",
       "preference",
       "session-analysis",
+      "issues",
       "optimization",
     ]);
   });
@@ -184,7 +185,7 @@ describe("gauge instructions", () => {
     assert.match(all, /gauge auth login/);
     assert.match(all, /gauge orgs use <org>/);
     assert.match(all, /-o json/);
-    assert.match(all, /Confirm before launches spend credits/);
+    assert.match(all, /Confirm before launches\./);
     assert.doesNotMatch(all, /Migration prompt and criteria|## The loop/);
     for (const topic of TOPIC_NAMES) {
       const body = documentBody(TOPICS[topic].hosted).trim();
@@ -225,6 +226,16 @@ describe("gauge instructions", () => {
         instructions().includes(`\`gauge instructions ${topic}\``),
         topic,
       );
+  });
+
+  it("keeps the issue workflow in its named page", () => {
+    const issues = instructions("issues");
+    assert.match(issues, /Findings is an alternative term for\s+issues/);
+    assert.match(issues, /gauge issues list --reasons/);
+    assert.match(issues, /gauge issues get <id>/);
+    assert.match(issues, /optimizations create --issue/);
+    assert.match(instructions(), /`gauge instructions issues`/);
+    assert.match(instructions("optimization"), /`gauge instructions issues`/);
   });
 
   it("keeps the complete optimization workflow in its named page", () => {

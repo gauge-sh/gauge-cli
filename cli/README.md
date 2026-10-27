@@ -288,7 +288,8 @@ migration example. Use `gauge instructions eval` and `gauge instructions prefere
 preference prompts, and `gauge instructions session-analysis` to investigate
 product choices, source exposure, and interventions, from individual traces to
 larger cohorts.
-Use `gauge instructions optimization` for the full optimization workflow.
+Use `gauge instructions issues` to choose what to improve and
+`gauge instructions optimization` for the full optimization workflow.
 `gauge instructions --list` shows available topics.
 
 Run `gauge --help` (or `gauge <command> --help`) for the full command set:
@@ -754,7 +755,7 @@ gauge optimizations file read op_1 page:https://docs.acme.dev/auth --query "API 
 gauge optimizations file edit op_1 --page https://docs.acme.dev/auth --edits edits.json
 gauge optimizations file write op_1 --skill acme --path SKILL.md --from SKILL.md
 gauge optimizations notes op_1 --from notes.md
-gauge optimizations launch op_1 --yes         # spends credits
+gauge optimizations launch op_1 --yes
 gauge optimizations watch op_1
 gauge optimizations finish op_1 --from result.json --yes
 ```

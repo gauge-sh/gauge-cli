@@ -54,7 +54,7 @@ export function impactLine(issue: Pick<IssueRow, "impact" | "wentTo">) {
 
 export function register(program: Command): void {
   const group = hostedOnly(program.command("issues")).description(
-    "The same finding across many sessions, by impact. The Gauge app shows issues as Findings",
+    "The same finding across many sessions, by impact. Also called findings",
   );
 
   group
