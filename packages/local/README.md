@@ -20,8 +20,9 @@ docker pull ghcr.io/gauge-sh/gauge-runtime:0.1.0
 ```
 
 The package also includes Dockerfiles for building a custom runtime and the
-optional transparent gateway. See [web fixtures](https://github.com/gauge-sh/gauge-cli/blob/main/docs/local-web-fixtures.md)
-for the CLI surface, network and certificate contract, and lifecycle details.
+optional web-fixture gateway. See [web fixture inputs](https://github.com/gauge-sh/gauge-cli/blob/main/docs/local-web-fixtures.md)
+for the fixture format and how the gateway handles networking, certificates,
+and cleanup.
 
 ## API
 

@@ -1,17 +1,23 @@
 # Web fixture inputs
 
-Use the same named input for local and hosted runs:
+A web fixture controls what an agent receives when it fetches specific HTTPS
+URLs during a session. Use one to test changes to content an agent encounters,
+such as a docs page, without publishing them first. A fixture can:
 
-```json
-{
-  "version": 2,
-  "inputs": {
-    "docs": { "type": "web-fixture", "path": "fixtures/docs.json" }
-  }
-}
-```
+- **Replace pages**: serve exact content for specific URLs.
+- **Scope a site section**: return 404 for any page under a path prefix that
+  the fixture doesn't provide, instead of falling back to the live site.
+- **Route an origin**: send every request for one origin to another, such as a
+  preview deployment.
 
-The JSON file uses the existing version 1 fixture format:
+The agent requests the real URL and sees the fixture's response. It needs no
+proxy settings, and its prompt doesn't have to mention the fixture.
+
+The same input works in local and hosted runs.
+
+## Quick start
+
+Write the fixture as JSON, for example `fixtures/docs.json`:
 
 ```json
 {
@@ -27,27 +33,42 @@ The JSON file uses the existing version 1 fixture format:
 }
 ```
 
-Select it with a case's `config.inputs: [docs]`. Omitting `config.inputs`
-selects all named inputs; `inputs: []` selects none.
+Declare it as a named input in `gauge.json`:
+
+```json
+{
+  "version": 2,
+  "inputs": {
+    "docs": { "type": "web-fixture", "path": "fixtures/docs.json" }
+  }
+}
+```
+
+Cases select it with `config.inputs: [docs]`. A case without `config.inputs`
+selects every named input, and `inputs: []` selects none.
 
 ```sh
-gauge run --verify --local
-gauge local runtime pull
-gauge run --dry-run --local -o json
+gauge run --verify --local          # check the project files; no Docker needed
+gauge local runtime pull            # download the runtime and gateway images
+gauge run --dry-run --local -o json # show each case's fixture routes and digest
 gauge run --local
-gauge run --local --input docs=fixtures/candidate.json
-# The same input contract on a compatible hosted backend:
+gauge run --local --input docs=fixtures/candidate.json  # use a different file
 gauge run --hosted --input docs=fixtures/candidate.json
 ```
 
-`--verify` validates project files without Docker. `--dry-run` validates and
-snapshots selected files, reports conflicts and image availability, and starts
-no containers. A launch takes its own immutable snapshot. Local preview JSON
-includes each case's fixture digest, page URLs, scopes, and origin mappings;
-the attempt's session specification retains the compiled fixture and digest.
-Input archive digests are retained in the normal input provenance on both backends.
+Each launch takes its own snapshot of the selected fixture files. Editing a
+file after launch doesn't affect running sessions. The dry run reports each
+case's fixture digest, page URLs, scopes, and origin mappings without starting
+any containers. Each attempt's session spec records the fixture it used and
+its digest.
 
-For a live preview, use an origin mapping instead of pages on that origin:
+For a runnable end-to-end example, see
+[`examples/web-fixture`](../examples/web-fixture/README.md).
+
+## Routing an origin to a preview
+
+To send all traffic for a site to a preview deployment, map its origin instead
+of listing pages:
 
 ```json
 {
@@ -61,123 +82,166 @@ For a live preview, use an origin mapping instead of pages on that origin:
 }
 ```
 
-The gateway changes the upstream origin, Host header, and TLS server name.
-It preserves the request method, encoded path, query, body, and response stream.
-It verifies the upstream's certificate. Response bodies, redirects, cookies,
-and embedded absolute URLs are passed through unchanged, so previews should
-serve content compatible with the canonical site URL.
+The gateway sends each request to the upstream with the same method, encoded
+path, query, and body, and streams the response back. It sets the Host header
+and TLS server name to the upstream's and verifies the upstream's certificate.
+Response bodies, redirects, cookies, and absolute URLs inside pages pass
+through unchanged, so the preview should serve content that works under the
+original site's URL.
 
-## Contract
+## Fixture format
 
 | Field | Meaning |
 | --- | --- |
 | `version` | Must be `1`. |
-| `pages` | Exact URL replacements for GET/HEAD. `status` defaults to 200; `contentType` defaults to `text/html`; `body` is UTF-8 text. |
-| `scopes` | A path and its descendants must have a captured page. Missing content never falls back to the live site. Each scope needs a page on its origin. |
-| `origins` | Map a complete HTTPS origin to another HTTPS origin, preserving paths and queries. |
-| `searches` | Omit or supply `[]`; search mocks are not supported. |
+| `pages` | Exact responses for GET and HEAD requests. Each page has a `url` and `body` (UTF-8 text), plus an optional `status` (default 200) and `contentType` (default `text/html`). |
+| `scopes` | URL prefixes where every page must come from the fixture. A request for a missing page under a scope gets a 404; it never reaches the live site. Each scope needs at least one page on the same origin. |
+| `origins` | Map one HTTPS origin to another, preserving paths and queries. |
+| `searches` | Not supported. Omit it or use `[]`. |
 
-URLs must use HTTPS, without credentials or custom ports. Page queries match
-exactly; fragments are discarded. Scopes have no query or fragment. Origins
-have no path. At least one page or origin mapping is required. Files and merged
-fixtures are limited to 1 MB. Statuses must be 200–599; 204, 205, and 304 require
-an empty body. Content types must be printable ASCII.
+Rules:
 
-Inputs selected together must not declare duplicate pages, overlapping scopes,
-or an origin mapping overlapping pages/scopes/another mapping. Conflicts fail
-before execution; ordering does not resolve them. Unknown fields, arbitrary
-body transformations, and separate URL rewrite rules are rejected.
+- URLs must use HTTPS, with no credentials or custom ports.
+- Page URLs match exactly, including the query. Fragments are ignored.
+- Scopes have no query or fragment, and origins have no path.
+- A fixture needs at least one page or origin mapping.
+- Each file, and the combined fixture for a case, is limited to 1 MB.
+- `status` must be 200–599. Statuses 204, 205, and 304 require an empty body.
+- `contentType` must be printable ASCII.
+- Unknown fields are rejected. Fixtures replace whole responses; they don't
+  modify live responses or define separate URL rewrite rules.
 
-Outside declared routes traffic passes through. Non-GET/HEAD requests are not
-page replacements; scopes still block them when there is no supported response.
-Local synthetic replies reject body-bearing requests by closing the flow
-without buffering the upload. Ordinary uploads, downloads, SSE, and origin
-proxy responses stream through the gateway.
+### Combining inputs
 
-Git and Actions sources use the existing file-input machinery. Interactive CLI
-runs package working-tree files or `--input` overrides. Local execution needs
-every selected fixture supplied locally; resolving GitHub deployments and PR
-comments remains hosted-only. Existing `website` inputs retain their hosted
-preview resolution and produce the same origin mappings as `web-fixture` inputs.
+When a case selects several fixture inputs, they are combined into one fixture
+for that case. The run fails before any session starts if two inputs conflict:
+duplicate pages, overlapping scopes, or an origin mapping that overlaps another
+mapping, a page, or a scope. Input order never resolves a conflict.
 
-## Local implementation and lifecycle
+### Requests outside the fixture
 
-Only sessions selecting a web fixture use a gateway. Other local sessions keep
-their existing Docker networking.
+Traffic that matches no page, scope, or origin mapping passes through to the
+live site unchanged, including uploads, downloads, and streaming responses
+such as server-sent events.
+
+Requests other than GET and HEAD are never served from pages. Under a scope,
+they get a 404 like any other missing page. A request with a body that would
+receive a fixture response is closed without reading the upload.
+
+### Sources
+
+Fixture files are read like other file inputs: from the working tree in
+interactive runs, from `--input` overrides, or from a Git or GitHub Actions
+source. Local runs need every selected fixture available as a local file.
+
+`website` inputs, which resolve a preview from a GitHub deployment or PR
+comment, remain hosted-only. They produce the same kind of origin mapping as a
+`web-fixture` input.
+
+## How local runs serve fixtures
+
+Only sessions that select a web fixture use a gateway; other local sessions
+keep their normal Docker networking.
 
 ```mermaid
 flowchart LR
-  CLI -->|durable launch record, then handoff| Worker
+  CLI -->|writes the launch record, then hands off| Worker[session worker]
   Worker -->|creates and owns| Gateway[mitmproxy gateway]
-  Worker -->|creates after gateway readiness| Agent[stock agent container]
+  Worker -->|creates once the gateway is ready| Agent[agent container]
   Agent -->|shared network namespace: TCP 80/443| Gateway
   Gateway -->|verified upstream TLS| Internet
 ```
 
-The worker owns startup, monitoring, and teardown. The CLI records all container
-names before handing off; the parent never creates session containers. The CLI's
-existing runtime compatibility probe remains a separate, credential-free preflight.
-Session startup is
-sequential: gateway configuration, namespace rules and readiness, public CA
-distribution, then workload startup. A stopped, networkless helper container
-provides the selected workload image's existing CA store and is immediately
-removed. It never executes a process or receives credentials.
+Each session gets its own gateway container running
+[mitmproxy](https://mitmproxy.org/). The agent container joins the gateway's
+network namespace. Inside that namespace, the gateway redirects outbound TCP
+ports 80 and 443 to mitmproxy, then drops its privileges. The agent container
+runs nothing extra for routing, runs with all Linux capabilities dropped, and
+cannot gain privileges.
 
-The workload runs no routing agent, init script, or privileged helper. Docker
-joins it to the gateway's network namespace. The gateway installs namespace-only
-iptables rules and drops privileges before starting mitmproxy. The workload
-has all Linux capabilities dropped and cannot gain privileges. Proxy UID 65532
-is reserved and cannot be the host workload UID.
+### Certificates
 
-The public CA and combined trust bundle are mounted read-only. The runtime's
-existing public roots are preserved; Node and common language/tool CA variables
-point to the appropriate public certificates. The private CA key stays in the
-gateway container's filesystem and is destroyed with that container.
+Each session generates its own certificate authority (CA), whose private key
+never leaves the gateway container and is deleted with it. The agent container
+gets two read-only files:
 
-Neither container restarts automatically. Gateway loss or an uncheckable gateway
-ends the attempt. There is no reconnection, config reload, or prompt replay.
-Cancellation joins pending startup work before removing resources. Cleanup removes
-the workload, gateway, and trust helper before deleting temporary credentials.
-It checks container ownership and tolerates already-absent resources. A failed
-cleanup retains `cleanupPending` and the launch record for explicit retry through
-the normal local cancel/cleanup commands. A fresh rerun uses new identities.
+- A trust bundle at the system path, made of the agent image's existing root
+  certificates plus the session CA.
+- The session CA's public certificate on its own.
 
-`gateway.log` in the session directory records fixture hits, scoped misses, and
-origin rewrites, along with proxy diagnostics. It records no request/response
-bodies or authorization headers. The retained log is bounded to the last 10,000
-lines. Private certificates are not retained as artifacts.
+Environment variables point common tools at them: `NODE_EXTRA_CA_CERTS` uses
+the public certificate, and `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`,
+`CURL_CA_BUNDLE`, `GIT_SSL_CAINFO`, and similar variables use the bundle. To
+read the image's existing roots, the worker creates a stopped container with
+no network from the agent image, copies the store out, and removes it. That
+container never runs a process or receives credentials.
 
-## Boundaries and development
+### Lifecycle
 
-Interception covers HTTP/TLS over TCP ports 80 and 443. IPv6 is disabled in the
-shared namespace, and UDP 443 is rejected to encourage clients to fall back from
-QUIC to TCP. Loopback is excluded so stock harness control servers continue to
-work. This is a fixture mechanism, not a general network isolation boundary.
-Custom certificate stores, certificate pinning, and nonstandard TLS ports are
-outside this initial contract.
+The detached session worker creates, monitors, and removes every container in
+the session. The CLI writes all container names to the launch record before
+handing off, so cleanup can find whatever was created. Startup runs in order:
+gateway, network rules, readiness check, certificates, then the agent. The
+agent never starts if an earlier step fails.
 
-The original hostname must resolve before a client connects; a synthetic page
-does not provide DNS. Use existing public hostnames for normal CLI runs. Local
-Docker must support shared Linux network namespaces, NET_ADMIN for the gateway,
-and host bind mounts. A setup failure stops before the agent starts. The
-qualification workflow tests native Linux amd64 and arm64; Docker Desktop needs
-separate qualification before claiming platform parity.
+- Neither container restarts automatically. If the gateway exits or its health
+  can't be checked, the attempt fails. There's no reconnection, configuration
+  reload, or prompt replay; rerun to start a fresh session.
+- Cancelling during startup waits for in-progress steps to stop before
+  removing anything.
+- Cleanup removes the agent container, gateway, and certificate helper, then
+  deletes temporary credentials. It checks that each container belongs to the
+  session, and resources that are already gone don't cause an error.
+- If cleanup fails, the session keeps `cleanupPending` and its launch record,
+  and the normal local cancel and cleanup commands retry it.
 
-Build and test from the repository root:
+### Gateway log
+
+`gateway.log` in the session directory records fixture hits, scoped misses,
+and origin rewrites, along with proxy diagnostics. It never records request or
+response bodies or authorization headers. It keeps the last 10,000 lines.
+Private certificates are not kept.
+
+## Limits
+
+- Interception covers HTTP and HTTPS on TCP ports 80 and 443. IPv6 is
+  disabled inside the session, and UDP 443 is rejected so clients fall back
+  from QUIC to TCP. Loopback traffic is not intercepted.
+- Web fixtures change what an agent receives; they don't isolate it from the
+  network.
+- Tools that use their own certificate store or pin certificates, and TLS on
+  other ports, aren't covered.
+- The original hostname must resolve in DNS: a fixture page doesn't create a
+  DNS record. Use real public hostnames.
+- Docker must support shared Linux network namespaces, the `NET_ADMIN`
+  capability for the gateway, and host bind mounts. UID 65532 is reserved for
+  the gateway, so the CLI can't run as that user.
+- Native Linux amd64 and arm64 are tested. Docker Desktop is not yet.
+
+## Development
+
+The CLI pins a published gateway image by digest. To test a local build, build
+it under another tag and select it with `--gateway-image`:
 
 ```sh
-docker build -t ghcr.io/gauge-sh/gauge-gateway:0.1.0 packages/local/gateway
-# Use the supported runtime as the fixture workload's base:
+docker build -t gauge-gateway:dev packages/local/gateway
+gauge run --local --gateway-image gauge-gateway:dev
+```
+
+A custom image must carry the label `sh.gauge.contract=gateway-1`. Each launch
+records the resolved image ID.
+
+To run the gateway tests from the repository root:
+
+```sh
+docker build -t gauge-gateway:dev packages/local/gateway
+# Use the supported runtime as the base for the test workload:
 docker tag "$(node -p 'const m=require("./cli/runtime-manifest.json"); `${m.repository}@${m.digest}`')" gauge-runtime:dev
 docker build -t gauge-session-fixture:test packages/local/test/runtime-fixture
 npm run build
-GAUGE_DOCKER_FIXTURES=1 npx vitest run packages/local/test/gateway.it.test.ts packages/local/test/lifecycle.it.test.ts
+GAUGE_DOCKER_FIXTURES=1 GAUGE_GATEWAY_IMAGE=gauge-gateway:dev \
+  npx vitest run packages/local/test/gateway.it.test.ts packages/local/test/lifecycle.it.test.ts
 ```
 
-`--gateway-image` selects a development/custom image carrying contract label
-`sh.gauge.contract=gateway-1`; launch freezes the resolved image ID. The public
-gateway is released independently of the agent runtime. A `gateway-vX.Y.Z` tag
-qualifies both native architectures, publishes an immutable index, and verifies
-anonymous consumption. Commit the resulting qualified gateway manifest before
-releasing the CLI. The CLI release check rejects an unpinned gateway manifest.
+The gateway image is released separately from the CLI and the agent runtime.
 See [RELEASING.md](../RELEASING.md#gateway).

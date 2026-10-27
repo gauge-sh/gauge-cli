@@ -78,8 +78,12 @@ async function fixture(t: test.TestContext, prompt: string, samples = 6) {
   };
   t.after(async () => {
     const batches = await readdir(join(root, ".gauge/batches")).catch(() => []);
-    for (const batch of batches)
+    for (const batch of batches) {
       await invoke("run", "cancel", "--batch", batch).catch(() => {});
+      // Cancellation stops sessions before the supervisor finishes persisting
+      // results. Let the batch settle before removing its workspace.
+      await invoke("run", "wait", "--batch", batch);
+    }
     await invoke("cleanup").catch(() => {});
     await rm(root, { recursive: true, force: true });
   });
