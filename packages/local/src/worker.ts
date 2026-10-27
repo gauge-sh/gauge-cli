@@ -1,12 +1,13 @@
 import { spawn } from "node:child_process";
 import { appendFileSync, renameSync, writeFileSync } from "node:fs";
-import { open, readFile, readdir, rm, rmdir } from "node:fs/promises";
+import { open, readFile, readdir, rm, rmdir, type FileHandle } from "node:fs/promises";
 import { createServer } from "node:net";
 import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { NativeSession, type EvidencePayload } from "@withgauge/agent-adapters";
 import { AgentDriver } from "./driver.js";
 import { DockerCli } from "./docker.js";
+import { cleanupGateway, prepareGateway } from "./gateway.js";
 import { preserveWorkspace } from "./workspace.js";
 import { captureScript } from "./scripts.js";
 import { terminal, type LaunchRecord, type Question, type SessionCommand, type SessionStatus } from "./types.js";
@@ -16,11 +17,22 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 export async function runHostSession(directory: string): Promise<void> {
   const launch: LaunchRecord = JSON.parse(await readFile(join(directory, "session.json"), "utf8"));
   const { spec } = launch;
+  if (launch.version === 2) {
+    const deadline = Date.now() + 10_000;
+    while (true) {
+      try { await readFile(join(launch.credentialDir, "handoff")); break; }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT" || Date.now() >= deadline) throw new Error("Session handoff did not complete; stop this session to clean up");
+        await sleep(50);
+      }
+    }
+  }
   let status: SessionStatus = { state: "preparing", turn: 0, driverPid: process.pid, updatedAt: new Date().toISOString() };
   let native: NativeSession | undefined;
   let fatal: Error | undefined;
   let finish: "completed" | "canceled" | undefined;
   let closing = false;
+  let gatewayReady = false;
   let turnDeadline = Infinity;
   let remainingTurnMs = spec.limits.turnTimeoutS * 1000;
   let waitingSince = Date.now();
@@ -150,16 +162,31 @@ export async function runHostSession(directory: string): Promise<void> {
   process.on("SIGTERM", signal);
   process.on("SIGINT", signal);
   const boot = (async () => {
+    if (launch.version === 2) {
+      if (spec.gateway) {
+        await prepareGateway(launch, () => closing || !!finish || !!fatal);
+        gatewayReady = true;
+      }
+      if (closing || finish || fatal) return;
+      if (!launch.workload || await new DockerCli().create(launch.workload) !== "created") throw new Error("Session container already exists or its launch specification is missing");
+      if (closing || finish || fatal) return;
+    }
     await driver.start();
     if (closing || finish || fatal) return;
     native = new NativeSession(spec.agent.kind, driver.sessionId);
     persist({ sessionId: driver.sessionId, workspaceCommit: driver.baseCommit });
     await prompt(spec.prompt.text);
-  })().catch((e) => { if (!closing) fatal = e instanceof Error ? e : new Error(String(e)); });
+  })().catch((e) => { if (!closing && !finish) fatal = e instanceof Error ? e : new Error(String(e)); });
 
   try {
+    let nextGatewayCheck = 0;
     while (!finish && !fatal) {
       const now = Date.now();
+      if (launch.gatewayName && gatewayReady && now >= nextGatewayCheck) {
+        nextGatewayCheck = now + 1_000;
+        try { if (!await new DockerCli().ready(launch.gatewayName)) fatal = new Error("Gateway exited or became unhealthy; rerun to start a fresh session"); }
+        catch (error) { fatal = new Error(`Gateway health could not be verified: ${String(error)}`); }
+      }
       if (status.state === "running" && now > turnDeadline) fatal = new Error("agent turn timed out");
       if (["waiting", "blocked"].includes(status.state) && spec.limits.responseTimeoutS !== null && now - waitingSince > spec.limits.responseTimeoutS * 1000)
         fatal = new Error("supervisor response timed out");
@@ -171,12 +198,25 @@ export async function runHostSession(directory: string): Promise<void> {
     closing = true;
     let artifacts: SessionStatus["artifacts"];
     let cleanupPending = false;
-    if (driver.baseCommit) {
-      const out = await open(join(directory, "diff.patch.tmp"), "w", 0o600);
-      const err = await open(join(directory, "capture.stderr.log"), "a", 0o600);
+    // Stop preparation before removing anything it could still create. Driver
+    // stop releases its protocol waits; gateway preparation checks cancellation
+    // between bounded Docker operations.
+    if (status.state === "preparing") {
       try {
+        await new DockerCli().assertSessionOwner(launch.containerName, launch.credentialDir);
+        await driver.stop();
+      }
+      catch (error) { fatal ??= error instanceof Error ? error : new Error(String(error)); }
+    }
+    await boot;
+    if (driver.baseCommit && status.state !== "preparing") {
+      let out: FileHandle | undefined;
+      let err: FileHandle | undefined;
+      try {
+        out = await open(join(directory, "diff.patch.tmp"), "w", 0o600);
+        err = await open(join(directory, "capture.stderr.log"), "a", 0o600);
         await new Promise<void>((yes, no) => {
-          const child = spawn("docker", ["exec", launch.containerName, "sh", "-c", captureScript(driver.baseCommit!)], { stdio: ["ignore", out.fd, err.fd] });
+          const child = spawn("docker", ["exec", launch.containerName, "sh", "-c", captureScript(driver.baseCommit!)], { stdio: ["ignore", out!.fd, err!.fd] });
           const timer = setTimeout(() => { child.kill("SIGKILL"); no(new Error("diff capture timed out")); }, 20_000);
           child.once("error", (e) => { clearTimeout(timer); no(e); });
           child.once("close", (code) => { clearTimeout(timer); code === 0 ? yes() : no(new Error(`diff capture exited ${code}`)); });
@@ -184,15 +224,17 @@ export async function runHostSession(directory: string): Promise<void> {
         renameSync(join(directory, "diff.patch.tmp"), join(directory, "diff.patch"));
         artifacts = { diff: "diff.patch" };
       } catch (e) { fatal ??= e instanceof Error ? e : new Error(String(e)); }
-      finally { await out.close(); await err.close(); }
+      finally { await out?.close().catch(() => {}); await err?.close().catch(() => {}); }
     }
     try {
+      await new DockerCli().assertSessionOwner(launch.containerName, launch.credentialDir);
       await driver.stop();
       if (!artifacts?.diff) {
         const workspace = await preserveWorkspace(directory, launch.credentialDir);
         if (workspace) artifacts = { workspace };
       }
       await new DockerCli().remove(launch.containerName);
+      await cleanupGateway(launch, directory);
       for (const entry of await readdir(launch.credentialDir)) {
         if (entry !== basename(launch.socketPath)) await rm(join(launch.credentialDir, entry), { recursive: true, force: true });
       }
@@ -201,7 +243,6 @@ export async function runHostSession(directory: string): Promise<void> {
       fatal = new Error(`${fatal ? `${fatal.message}; ` : ""}cleanup incomplete: ${String(e)}; run stopSession again`);
     }
     persist({ state: fatal ? "failed" : finish ?? "failed", detail: fatal?.message, artifacts, question: undefined, cleanupPending });
-    await boot;
     await commands;
     await new Promise<void>((yes) => server.close(() => yes()));
     try { await rmdir(launch.credentialDir); }

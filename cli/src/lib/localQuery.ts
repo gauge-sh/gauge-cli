@@ -249,9 +249,9 @@ export function compileLocalQuery(input: query.QuerySpecInput): {
   if (!catalog)
     throw new CliError(
       "usage",
-      `Dataset "${name}" is not supported by the local backend. Available: runs, findings.`,
+      `Dataset "${name}" is not available for local runs. Available: runs, findings.`,
       {
-        hint: "Run gauge query datasets --local to discover local capabilities, or use --hosted for hosted datasets.",
+        hint: "Run `gauge query datasets --local` to see available datasets, or use --hosted to query runs on Gauge.",
       },
     );
   const dimensions = input.dimensions ?? [];
@@ -280,7 +280,7 @@ export function compileLocalQuery(input: query.QuerySpecInput): {
       "usage",
       `${kind} "${field}" is not supported by the local ${name} dataset.`,
       {
-        hint: `Run gauge query fields --dataset ${name} --local to discover supported fields; hosted capabilities may differ.`,
+        hint: `Run \`gauge query fields --dataset ${name} --local\` to see which fields you can query for local runs.`,
       },
     );
   };

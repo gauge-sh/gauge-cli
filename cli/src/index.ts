@@ -5,6 +5,7 @@ import * as actions from "./commands/actions";
 import * as auth from "./commands/auth";
 import * as billing from "./commands/billing";
 import * as brands from "./commands/brands";
+import * as chat from "./commands/chat";
 import * as cleanup from "./commands/cleanup";
 import * as configCommand from "./commands/config";
 import * as connections from "./commands/connections";
@@ -67,7 +68,7 @@ program
   .version(CLI_VERSION)
   .option(
     "--org <org>",
-    "organization slug or public id (default: gauge.json org, then user defaultOrg)",
+    "organization slug or id, for Gauge Chat and Gauge Agents (default: gauge.json orgId, then your saved default)",
   )
   .addOption(
     new Option("-o, --output <format>", "output format")
@@ -121,6 +122,7 @@ for (const group of [
   usage,
   stats,
   query,
+  chat,
   configCommand,
   telemetry,
   feedback,

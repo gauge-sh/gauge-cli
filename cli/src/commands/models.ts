@@ -40,7 +40,7 @@ export function register(program: Command): void {
         else printItems(agents, "table");
         return;
       }
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       const response =
         await createClient().get<executionTargets.ExecutionTargetsResponse>(
           executionTargetsPath(org),

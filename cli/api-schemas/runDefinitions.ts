@@ -72,6 +72,7 @@ export const runDefinitionFileConfigSchema = z
   .object({
     version: z.literal(2).default(2),
     org: z.string().min(1).optional(),
+    orgId: z.string().uuid().optional(),
     checks: runDefinitionChecksSchema.optional(),
     cases: z
       .array(inputPathSchema)

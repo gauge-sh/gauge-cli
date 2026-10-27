@@ -16,7 +16,7 @@ export function register(program: Command): void {
     .command("list")
     .description("List credentials with the ids --connection accepts")
     .action(async (_opts: unknown, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       const res = await createClient().get<connections.ListConnectionsResponse>(
         connectionsPath(org),
       );

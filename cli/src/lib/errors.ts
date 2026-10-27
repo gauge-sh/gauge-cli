@@ -7,10 +7,11 @@ import type { ModeSource } from "./gaugeState";
 import { style } from "./output";
 
 export type ErrorReport = {
-  code: CliErrorCode | "internal";
+  code: CliErrorCode | "internal" | (string & {});
   message: string;
+  details?: Record<string, unknown>;
   hint?: string;
-  docs: string;
+  docs?: string;
   feedback?: string;
   exitCode: number;
 };
@@ -29,9 +30,12 @@ export function errorReport(
       ? localModeError(command, context.local, error.hint)
       : describe(error);
   const quiet = base.message === "aborted" || command === "feedback";
+  // DOCS_URL covers Agents commands.
+  const isChat = command === "chat" || command.startsWith("chat ");
+  const docs = base.docs ?? (isChat ? undefined : DOCS_URL);
   return {
     ...base,
-    docs: base.docs ?? DOCS_URL,
+    ...(docs ? { docs } : {}),
     ...(quiet
       ? {}
       : {
@@ -47,10 +51,10 @@ function localModeError(
 ): Omit<ErrorReport, "docs" | "feedback"> & { docs?: string } {
   return {
     code: "usage",
-    message: `\`gauge ${command}\` requires hosted Gauge; the selected backend is local (${source}).`,
+    message: `\`gauge ${command}\` requires hosted Gauge, but ${source === "flag" ? "you passed --local" : source === "workspace" ? "this project is set to run locally" : source === "user" ? "your saved setting is local" : "the CLI is using local mode"}.`,
     hint:
       hint ??
-      "Pass --hosted for this command, or use `gauge init --hosted` to change this workspace's preference. Authentication is separate: `gauge auth login`.",
+      "Pass --hosted for this command, or run `gauge init --hosted` to use hosted Gauge in this project. Sign in with `gauge auth login` if needed.",
     exitCode: exitCodeFor("usage"),
   };
 }
@@ -60,8 +64,9 @@ function describe(
 ): Omit<ErrorReport, "docs" | "feedback"> & { docs?: string } {
   if (error instanceof CliError)
     return {
-      code: error.code,
+      code: error.apiCode ?? error.code,
       message: readable(error.message),
+      ...(error.details ? { details: error.details } : {}),
       hint: error.hint,
       docs: error.docs,
       exitCode: error.exitCode,
@@ -140,7 +145,7 @@ export function renderError(report: ErrorReport, json: boolean): string {
   return `${[
     `${red("error:")} ${report.message}`,
     ...(report.hint ? [report.hint] : []),
-    dim(`Docs: ${report.docs}`),
+    ...(report.docs ? [dim(`Docs: ${report.docs}`)] : []),
     ...(report.feedback ? [dim(`Hit friction? ${report.feedback}`)] : []),
   ].join("\n")}\n`;
 }

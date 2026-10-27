@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { websiteUrlSchema } from "./websiteInputs";
+import { websiteUrlSchema, withinWebsiteScope } from "./websiteInputs";
 
 export const MAX_WEB_FIXTURE_BYTES = 1_000_000;
 
@@ -113,3 +113,46 @@ export const webFixtureSchema = z
   });
 
 export type WebFixture = z.infer<typeof webFixtureSchema>;
+
+/** Portable gateway inputs deliberately exclude search mocks and body transforms. */
+export const webFixtureInputSchema = webFixtureSchema.safeExtend({
+  searches: z.array(z.never()).max(0).default([]),
+  pages: z.array(pageFixtureSchema.safeExtend({
+    url: z.url().refine((raw) => {
+      const url = new URL(raw);
+      return url.protocol === "https:" && !url.port && !url.username && !url.password;
+    }, "Expected an HTTPS URL without credentials or a custom port").transform(normalizeWebFixtureUrl),
+    status: z.int().min(200).max(599).default(200),
+    contentType: z.string().trim().min(1).regex(/^[\x20-\x7e]+$/).default("text/html"),
+    body: z.string().refine((body) => !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(body), "Body must be valid Unicode"),
+  }).strict().refine((page) => ![204, 205, 304].includes(page.status) || page.body === "",
+    "This HTTP status requires an empty body")).default([]),
+}).strict().refine((fixture) => fixture.pages.length > 0 || (fixture.origins?.length ?? 0) > 0, "Web fixture must contain pages or origin mappings");
+
+export function parseWebFixtureInput(text: string): WebFixture {
+  if (new TextEncoder().encode(text).byteLength > MAX_WEB_FIXTURE_BYTES)
+    throw new Error(`Web fixture exceeds ${MAX_WEB_FIXTURE_BYTES} bytes`);
+  return webFixtureInputSchema.parse(JSON.parse(text));
+}
+
+/** Resolve all conflicts before any consumer starts; input order never wins. */
+export function mergeWebFixtures(fixtures: readonly WebFixture[]): WebFixture | undefined {
+  if (!fixtures.length) return undefined;
+  const scopes: string[] = [];
+  for (const [index, fixture] of fixtures.entries()) {
+    for (const scope of fixture.scopes ?? []) {
+      if (scopes.some((other) => withinWebsiteScope(scope, other) || withinWebsiteScope(other, scope)))
+        throw new Error("Web fixture scopes overlap in this case");
+      if (fixtures.some((other, otherIndex) => otherIndex !== index &&
+        other.pages.some((page) => withinWebsiteScope(page.url, scope))))
+        throw new Error("Web fixture scope overlaps another input's pages");
+      scopes.push(scope);
+    }
+  }
+  return webFixtureSchema.parse({
+    version: 1, scopes,
+    origins: fixtures.flatMap((f) => f.origins ?? []),
+    searches: fixtures.flatMap((f) => f.searches),
+    pages: fixtures.flatMap((f) => f.pages),
+  });
+}

@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "inputs": {
+    "example-site": {
+      "type": "web-fixture",
+      "path": "fixtures/example-site.json"
+    }
+  }
+}

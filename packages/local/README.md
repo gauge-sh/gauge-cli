@@ -19,7 +19,10 @@ npm install @withgauge/local-execution@0.1.0
 docker pull ghcr.io/gauge-sh/gauge-runtime:0.1.0
 ```
 
-The package also includes the Dockerfile for building a custom runtime.
+The package also includes Dockerfiles for building a custom runtime and the
+optional web-fixture gateway. See [web fixture inputs](https://github.com/gauge-sh/gauge-cli/blob/main/docs/local-web-fixtures.md)
+for the fixture format and how the gateway handles networking, certificates,
+and cleanup.
 
 ## API
 
@@ -54,7 +57,7 @@ if (status.state === "waiting") {
 
 | Operation | Meaning |
 | --- | --- |
-| `startSession(options)` | Start one container and its detached host driver; return once the driver is reachable. |
+| `startSession(options)` | Start a detached host driver; it owns container creation and cleanup. Return once the driver is reachable. |
 | `getSessionStatus(directory)` | Read preparing/running/waiting/blocked/terminal status. |
 | `sendPrompt(directory, expectedTurn, text)` | Continue the same harness; reject stale or concurrent sends. |
 | `answerQuestion(directory, questionId, answer)` | Deliver a native harness response to a pending request. |

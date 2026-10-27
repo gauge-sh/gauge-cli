@@ -4,6 +4,7 @@ import { Command } from "commander";
 import { register } from "./mcp";
 
 type Call = { path: string; body: any; signal?: AbortSignal | null };
+const ORG_ID = "8c7f0e1a-1111-4222-8333-944455556666";
 function useApi(
   t: TestContext,
   options: {
@@ -40,6 +41,10 @@ function useApi(
       const path = new URL(String(url)).pathname;
       const body = init?.body ? JSON.parse(String(init.body)) : undefined;
       calls.push({ path, body, signal: init?.signal });
+      if (path === "/api/v1/orgs")
+        return Response.json({
+          data: [{ id: ORG_ID, slug: "acme", name: "Acme" }],
+        });
       if (path.endsWith("/mcp-authorizations"))
         return Response.json({
           kind: "redirect",
@@ -72,7 +77,7 @@ function useApi(
   );
   return { calls, output, progress };
 }
-async function gauge(args: string[]) {
+async function gauge(args: string[], org = ORG_ID) {
   const root = new Command()
     .option("--org <org>")
     .option("--hosted")
@@ -83,7 +88,7 @@ async function gauge(args: string[]) {
   await root.parseAsync(
     [
       "--org",
-      "acme",
+      org,
       "--hosted",
       "-o",
       "json",
@@ -98,6 +103,17 @@ async function gauge(args: string[]) {
 }
 const http = ["--url", "https://app.withgauge.com/mcp"];
 describe("gauge mcp add", () => {
+  it("resolves an organization slug before authorizing and saving", async (t) => {
+    const api = useApi(t);
+    await gauge([...http, "--oauth", "--no-browser"], "acme");
+    assert.deepEqual(api.calls.map((call) => call.path), [
+      "/api/v1/orgs",
+      `/api/v1/orgs/${ORG_ID}/mcp-authorizations`,
+      `/api/v1/orgs/${ORG_ID}/mcp-authorizations/pending`,
+      `/api/v1/orgs/${ORG_ID}/mcp-servers`,
+    ]);
+    assert.equal(api.calls[3].body.connectionId, "connected");
+  });
   it("authorizes first, then saves exactly that connection and emits one JSON result", async (t) => {
     const api = useApi(t);
     await gauge([...http, "--oauth", "--no-browser"]);

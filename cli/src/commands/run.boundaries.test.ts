@@ -68,8 +68,8 @@ Use the product documentation to complete the task.
     assert.equal(result.code, 2, result.stdout + result.stderr);
     const { error } = JSON.parse(result.stderr || result.stdout);
     assert.equal(error.code, "usage");
-    assert.match(error.message, /website.*requires hosted Gauge/);
-    assert.match(error.hint, /--hosted.*not discovery/);
+    assert.match(error.message, /Website.*requires hosted Gauge/);
+    assert.match(error.hint, /--hosted.*rather than testing whether it finds your site/);
     assert.doesNotMatch(error.hint, /--input|login|npm pack/);
   }
   const override = await invoke(["run", "--hosted", "--dry-run", "--input", "docs=./missing"]);

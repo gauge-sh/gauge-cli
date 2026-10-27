@@ -60,7 +60,7 @@ export function register(program: Command): void {
         cmd: Command,
       ) => {
         const type = providerArg(provider);
-        const org = resolveOrg(cmd);
+        const org = await resolveOrg(cmd);
         const key = await readKeyInput(opts);
         const res = await createClient().put<SetProviderKeyResponse>(
           `${keysPath(org)}/${type}`,
@@ -75,7 +75,7 @@ export function register(program: Command): void {
     .command("list")
     .description("List configured provider keys")
     .action(async (_opts: unknown, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       const res = await createClient().get<ListResponse<ProviderKey>>(
         keysPath(org),
       );
@@ -97,7 +97,7 @@ export function register(program: Command): void {
     .description("Remove a provider key")
     .action(async (provider: string, _opts: unknown, cmd: Command) => {
       const type = providerArg(provider);
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       await createClient().delete(`${keysPath(org)}/${type}`);
       if (resolveOutput(cmd) !== "json") console.log(`Removed ${type} key`);
     });
@@ -108,7 +108,7 @@ export function register(program: Command): void {
       "Switch back to Gauge-managed metered billing (remove provider keys first)",
     )
     .action(async (_opts: unknown, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       await createClient().delete(keysPath(org));
       if (resolveOutput(cmd) !== "json")
         console.log("BYOK disabled — runs are Gauge-managed and metered again");

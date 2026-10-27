@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+## 0.25.0 — 2026-10-26
+
+### Added
+
+- `gauge chat` commands to manage topics, prompts, tags, and brands, and read
+  reports, answers, and citations. Sign in with `gauge auth login` or use an
+  organization API key from Settings → API Keys.
+- One login for Chat and Agents. The CLI keeps you signed in automatically.
+- `web-fixture` inputs serve exact HTTPS pages, block missing pages under a
+  scope, or route a site's origin to a preview, in both local and hosted runs.
+  Declare one in `gauge.json`, select it with `config.inputs`, and override it
+  with `--input name=path.json`. See [web fixture inputs](../docs/local-web-fixtures.md).
+- Local runs that select a web fixture start a gateway container alongside the
+  agent. The agent image needs no changes or proxy settings. `gauge local
+  runtime inspect` and `pull` now cover the gateway image, and
+  `--gateway-image` selects a custom build.
+
+### Changed
+
+- Choose an organization once for both Chat and Agents with `gauge orgs use`.
+- **Upgrade:** Signing in updates your old saved default automatically if you
+  have only one organization. Otherwise, choose from `gauge orgs` with
+  `gauge orgs use <slug>`. Add `--project` to update an old project setting.
+  Projects updated this way require CLI 0.25.0 or later.
+- `gauge whoami` shows which account or API key you are using. `gauge auth
+  status` checks your login or API key and its permissions.
+- `gauge auth logout` signs out this CLI installation.
+- Command telemetry requests send a `gauge-cli/<version>` User-Agent, matching
+  Gauge API requests.
+- Errors and help explain organization selection, sign-in recovery, permissions,
+  and local runs in plain language, with commands to resolve the problem.
+
 ## 0.24.0 — 2026-10-21
 
 ### Added

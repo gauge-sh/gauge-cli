@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import type { RunDefinitionSubmission } from "@withgauge/api-schemas/runDefinitions";
 
 test("CLI uploads a local candidate, launches without Git, and returns failed results as one JSON document", async (t) => {
-  const runPath = "/api/v1/orgs/acme/run-definitions/run";
+  const runPath = "/api/v1/orgs/8c7f0e1a-1111-4222-8333-944455556666/run-definitions/run";
   const root = await realpath(await mkdtemp(join(tmpdir(), "gauge-ci-test-")));
   t.after(() => rm(root, { recursive: true, force: true }));
   await mkdir(join(root, "gauge-cases"));
@@ -23,7 +23,7 @@ test("CLI uploads a local candidate, launches without Git, and returns failed re
     join(root, "gauge.json"),
     JSON.stringify({
       version: 2,
-      org: "acme",
+      orgId: "8c7f0e1a-1111-4222-8333-944455556666",
       inputs: { skill: { type: "skill", path: "old.zip" } },
     }),
   );
@@ -85,7 +85,7 @@ test("CLI uploads a local candidate, launches without Git, and returns failed re
         return;
       }
       assert.equal(req.headers.authorization, "Bearer test-token");
-      if (req.url === "/api/v1/orgs/acme/run-definitions/uploads") {
+      if (req.url === "/api/v1/orgs/8c7f0e1a-1111-4222-8333-944455556666/run-definitions/uploads") {
         declared = JSON.parse(bytes.toString());
         assert.ok(declared);
         res.end(
@@ -104,12 +104,12 @@ test("CLI uploads a local candidate, launches without Git, and returns failed re
             requestedRuns: 1,
           }),
         );
-      } else if (req.url === "/api/v1/orgs/acme/run-definitions/plan") {
+      } else if (req.url === "/api/v1/orgs/8c7f0e1a-1111-4222-8333-944455556666/run-definitions/plan") {
         const definition = JSON.parse(bytes.toString());
         assert.equal(definition.inputSnapshots, undefined, "local filesystem paths stay in the CLI");
         assert.equal(definition.resources[0].source.sha256, declared?.sha256);
         res.end(JSON.stringify({ source: definition.source, expectedRuns: 1, resources: [], cases: [] }));
-      } else if (req.url === "/api/v1/orgs/acme/run-requests/request1")
+      } else if (req.url === "/api/v1/orgs/8c7f0e1a-1111-4222-8333-944455556666/run-requests/request1")
         res.end(JSON.stringify(result));
       else {
         res.statusCode = 404;
@@ -180,7 +180,7 @@ test("CLI uploads a local candidate, launches without Git, and returns failed re
   assert.equal(input.use.root, ".");
   const wait = await invoke([
     "--org",
-    "acme",
+    "8c7f0e1a-1111-4222-8333-944455556666",
     "run",
     "wait",
     "request1",
@@ -193,10 +193,10 @@ test("CLI uploads a local candidate, launches without Git, and returns failed re
   assert.equal(wait.stderr, "");
   assert.deepEqual(failures, []);
   assert.deepEqual(calls, [
-    "POST /api/v1/orgs/acme/run-definitions/uploads",
+    "POST /api/v1/orgs/8c7f0e1a-1111-4222-8333-944455556666/run-definitions/uploads",
     "PUT /upload",
     `POST ${runPath}`,
-    "GET /api/v1/orgs/acme/run-requests/request1",
+    "GET /api/v1/orgs/8c7f0e1a-1111-4222-8333-944455556666/run-requests/request1",
   ]);
   const preview = await invoke([
     "run", "--input", "skill=./built", "--dry-run", "-o", "json",

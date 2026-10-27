@@ -70,12 +70,12 @@ describe("errors", () => {
     const report = errorReport(noOrg, "eval list", { local: "workspace" });
     assert.equal(
       report.message,
-      "`gauge eval list` requires hosted Gauge; the selected backend is local (workspace).",
+      "`gauge eval list` requires hosted Gauge, but this project is set to run locally.",
     );
     assert.match(report.hint ?? "", /Pass --hosted.*`gauge init --hosted`/);
     assert.match(
       errorReport(noOrg, "eval list", { local: "default" }).hint ?? "",
-      /Authentication is separate: `gauge auth login`/,
+      /Sign in with `gauge auth login` if needed/,
     );
     assert.equal(
       errorReport(noOrg, "eval list").message,

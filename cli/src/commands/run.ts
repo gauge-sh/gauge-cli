@@ -449,6 +449,7 @@ type LaunchOpts = {
   dryRun?: boolean;
   detach?: boolean;
   runtimeImage?: string;
+  gatewayImage?: string;
   requireExperiment?: string;
   schema?: boolean;
   example?: boolean;
@@ -474,7 +475,7 @@ async function loadWorkingTree(
     { spec },
   );
   try {
-    const org = resolveOrg(cmd, loaded.org);
+    const org = await resolveOrg(cmd, loaded.org);
     if (upload) await confirmOrAbort("Run these cases now?", opts.yes);
     await uploadLocalInputs(createClient(), org, loaded.uploads);
     return {
@@ -771,8 +772,12 @@ async function runLocalCases(
         ...(await planLocal(local.definition, {
           profile: opts.profile,
           runtimeImage: opts.runtimeImage,
+          gatewayImage: opts.gatewayImage,
         })),
         inputSnapshots: local.inputSnapshots,
+        webFixtures: Object.fromEntries(Object.entries(local.webFixtures).map(([path, { fixture, digest }]) => [path, {
+          digest, pages: fixture.pages.map((p) => p.url), scopes: fixture.scopes ?? [], origins: fixture.origins ?? [],
+        }])),
         unattachedInputs: local.unattachedInputs,
       };
       if (json) printJson(plan);
@@ -788,7 +793,7 @@ async function runLocalCases(
         local.definition,
         local.uploads,
         join(root, ".gauge"),
-        { profile: opts.profile, runtimeImage: opts.runtimeImage, measurement },
+        { profile: opts.profile, runtimeImage: opts.runtimeImage, gatewayImage: opts.gatewayImage, measurement },
       );
       if (json) printJson(detached);
       else
@@ -816,6 +821,7 @@ async function runLocalCases(
         measurement,
         profile: opts.profile,
         runtimeImage: opts.runtimeImage,
+        gatewayImage: opts.gatewayImage,
         onStart: (batchId) =>
           console.error(
             `Batch ${batchId}\nStatus: gauge run status --batch ${batchId} --local\nWait: gauge run wait --batch ${batchId} --local\nStop: gauge run cancel --batch ${batchId} --local`,
@@ -861,6 +867,7 @@ function printLocalPlan(
   console.log(
     `Runtime: ${plan.runtime.reference}${plan.runtime.imageId ? ` (${plan.runtime.imageId})` : ""}. Compatibility probe runs at launch.`,
   );
+  if (plan.gateway) console.log(`Gateway: ${plan.gateway.reference}${plan.gateway.imageId ? ` (${plan.gateway.imageId})` : ""}`);
   for (const item of plan.cases)
     console.log(
       `  ${item.path}: ${item.sessions.map((s) => `${s.agent} ${s.model} ×${s.samples}`).join(", ")}; ${item.criteria} criteria`,
@@ -877,8 +884,8 @@ function printLocalPlan(
 const WAIT_POLL_MS = 5_000;
 const LOCAL_WAIT_POLL_MS = 2_000;
 
-function runRequestPath(cmd: Command, id: string): string {
-  return `/api/v1/orgs/${encodeURIComponent(resolveOrg(cmd))}/run-requests/${encodeURIComponent(id)}`;
+async function runRequestPath(cmd: Command, id: string): Promise<string> {
+  return `/api/v1/orgs/${encodeURIComponent(await resolveOrg(cmd))}/run-requests/${encodeURIComponent(id)}`;
 }
 
 function printRunRequest(result: runRequests.RunRequestResponse): void {
@@ -915,7 +922,7 @@ async function waitForRequest(
   id: string,
   opts: { check?: boolean },
 ): Promise<void> {
-  const path = runRequestPath(cmd, id);
+  const path = await runRequestPath(cmd, id);
   const client = createClient();
   const json = resolveOutput(cmd) === "json";
   let lastStatus = "";
@@ -1055,6 +1062,7 @@ export function register(program: Command): void {
       "--runtime-image <image>",
       "use a compatible custom Docker image for local runs (tag, digest, or image ID)",
     )
+    .option("--gateway-image <image>", "use a compatible custom gateway image for local web fixtures")
     .option("--verify", "check this repo's eval files; start no sessions")
     .option(
       "--dry-run",
@@ -1088,10 +1096,10 @@ export function register(program: Command): void {
           opts.example)
       )
         throw new CliError("usage", "--detach requires a local run");
-      if (opts.runtimeImage && gaugeState(cmd).mode !== "local")
+      if ((opts.runtimeImage || opts.gatewayImage) && gaugeState(cmd).mode !== "local")
         throw new CliError(
           "usage",
-          "--runtime-image works only on local runs; pass --local",
+          "--runtime-image and --gateway-image work only on local runs; pass --local",
         );
       await launch(cmd, opts);
     });
@@ -1213,7 +1221,7 @@ export function register(program: Command): void {
         await listPreferencePromptRuns(command, opts.preference, opts);
         return;
       }
-      const org = resolveOrg(command);
+      const org = await resolveOrg(command);
       const page = await createClient().get<RunListResponse>(
         `/api/v1/orgs/${encodeURIComponent(org)}/runs`,
         {
@@ -1254,7 +1262,7 @@ export function register(program: Command): void {
         if (!session)
           throw new CliError(
             "usage",
-            `Local run ${id} was not found. Use gauge run repair --local if its artifacts exist.`,
+            `Local run ${id} was not found. If its files are still in .gauge/runs, run \`gauge run repair --local\` to restore it to the run list.`,
           );
         if (opts.logs) {
           const path = join(
@@ -1269,7 +1277,7 @@ export function register(program: Command): void {
           if (!existsSync(path))
             throw new CliError(
               "usage",
-              "This run has no transcript artifact yet.",
+              "This run has no saved transcript yet.",
             );
           process.stdout.write(readFileSync(path, "utf8"));
         } else printJson({ ...session, analysis: getLocalAnalysis(dir, id) });
@@ -1373,7 +1381,7 @@ export function register(program: Command): void {
   run
     .command("repair")
     .description(
-      "Rebuild local session summaries from artifacts; preserve saved measurements and analysis",
+      "Restore local runs to the run list from their saved files, keeping measurements and analysis",
     )
     .action((_opts: unknown, command: Command) => {
       if (gaugeState(command).mode !== "local")
@@ -1470,7 +1478,7 @@ export function register(program: Command): void {
             );
           const result =
             await createClient().get<runRequests.RunRequestResponse>(
-              runRequestPath(command, id),
+              await runRequestPath(command, id),
             );
           if (resolveOutput(command) === "json") printJson(result);
           else printRunRequest(result);
@@ -1613,7 +1621,7 @@ ${style("1")(" EXAMPLES")}
           warnings = localCompareWarnings;
         } else {
           result = await createClient().post<RunCompareResponse>(
-            `/api/v1/orgs/${encodeURIComponent(resolveOrg(cmd))}/runs/compare`,
+            `/api/v1/orgs/${encodeURIComponent(await resolveOrg(cmd))}/runs/compare`,
             body,
           );
           warnings = compareWarnings;

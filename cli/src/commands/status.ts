@@ -18,7 +18,7 @@ export function register(program: Command): void {
   hostedOnly(program.command("status"))
     .description("One-shot org summary: actions, Agent Preference, agent experience")
     .action(async (_opts: unknown, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       const s = await createClient().get<summary.HomeSummary>(
         `/api/v1/orgs/${encodeURIComponent(org)}/summary`,
       );

@@ -93,5 +93,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const runtime = JSON.parse(await readFile("runtime-manifest.json", "utf8"));
   validateRuntimeManifest(runtime);
   validateRuntimeSource(runtime, fileURLToPath(new URL("../../", import.meta.url)));
+  const gateway = JSON.parse(await readFile("gateway-manifest.json", "utf8"));
+  validateRuntimeManifest(gateway, { gateway: true });
+  validateRuntimeSource(gateway, fileURLToPath(new URL("../../", import.meta.url)));
   console.log(`release metadata is consistent for ${tag}`);
 }

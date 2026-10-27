@@ -27,9 +27,10 @@ export function validateRuntimeIndex(manifest, index, candidates, revision) {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const path = new URL("../cli/runtime-manifest.json", import.meta.url);
+  const gateway = process.argv.includes("--gateway");
+  const path = new URL(gateway ? "../cli/gateway-manifest.json" : "../cli/runtime-manifest.json", import.meta.url);
   const manifest = JSON.parse(await readFile(path, "utf8"));
-  validateRuntimeManifest(manifest, { published: false });
+  validateRuntimeManifest(manifest, { published: false, gateway });
   const revision = process.env.GITHUB_SHA;
   const candidates = await Promise.all(manifest.platforms.map(platform =>
     readFile(join(process.argv[2], `${platform.split("/")[1]}.json`), "utf8").then(JSON.parse)));
@@ -45,6 +46,6 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const index = JSON.parse(execFileSync("docker", ["buildx", "imagetools", "inspect", image, "--format", "{{json .Manifest}}"], { encoding: "utf8" }));
   validateRuntimeIndex(manifest, index, candidates, revision);
   const pinned = { ...manifest, digest: index.digest, revision };
-  validateRuntimeManifest(pinned);
+  validateRuntimeManifest(pinned, { gateway });
   await writeFile(path, `${JSON.stringify(pinned, null, 2)}\n`);
 }

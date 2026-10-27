@@ -1,7 +1,13 @@
 import type { MeResponse } from "@withgauge/api-schemas/me";
 import type { CreateOrgResponse } from "@withgauge/api-schemas/orgs";
-import { deviceLogin } from "../commands/auth";
+import { deviceLogin, useOnlyOrg } from "../commands/auth";
 import { ApiClient, CliError } from "./client";
+import {
+  type DirectoryOrg,
+  createdOrganization,
+  fetchDirectory,
+  legacySelection,
+} from "./orgDirectory";
 import { readConfig, updateConfig } from "./config";
 import {
   credentialsPath,
@@ -29,6 +35,7 @@ export type SeedResult = {
 export type AccountResult = {
   user: MeResponse["user"];
   org: string;
+  organization: DirectoryOrg;
   createdOrg: CreateOrgResponse | null;
   seeded: SeedResult | null;
 };
@@ -81,6 +88,7 @@ export async function ensureAccount(
       if (login.credentials) saveCredentials(login.credentials);
       else saveToken(login.token);
     });
+    useOnlyOrg(login.me, login.token.startsWith("gauge_cli_"), log);
     client = new ApiClient();
     // Chat membership does not imply an Agents workspace exists or has the same slug.
     // Keep the successful shared login even if Agents onboarding is unavailable.
@@ -90,9 +98,10 @@ export async function ensureAccount(
     );
   }
 
+  const directory = await fetchDirectory();
   const wantNewOrg =
     opts.new === true || opts.orgName !== undefined || me.orgs.length === 0;
-  let org: string;
+  let organization: DirectoryOrg;
   let createdOrg: CreateOrgResponse | null = null;
   const website = opts.website ?? websiteFromEmail(me.user.email);
   if (wantNewOrg) {
@@ -101,20 +110,35 @@ export async function ensureAccount(
       name,
       website,
     });
-    org = createdOrg.slug;
+    organization = await createdOrganization(createdOrg.slug);
   } else {
-    org = readConfig().defaultOrg ?? me.orgs[0]?.slug ?? "";
-    if (!org)
+    const config = readConfig();
+    if (!config.orgId && config.defaultOrg) legacySelection("config");
+    const linkedIds = new Set(
+      me.orgs.map((org) => org.canonicalGaugeOrganizationId).filter(Boolean),
+    );
+    const available = directory.filter((org) => linkedIds.has(org.id));
+    const selected = config.orgId
+      ? available.find((org) => org.id === config.orgId)
+      : available.length === 1
+        ? available[0]
+        : undefined;
+    if (selected) organization = selected;
+    else
       throw new CliError(
-        "internal",
-        "No workspace available; re-run with --org-name to create one.",
+        "usage",
+        "Select a Gauge Agents organization before onboarding.",
+        {
+          hint: "Run `gauge orgs`, then `gauge orgs use <slug>`.",
+        },
       );
   }
-  updateConfig({ defaultOrg: org });
+  const org = organization.id;
+  updateConfig({ orgId: org, defaultOrg: undefined });
   log(
     createdOrg
-      ? `Created workspace ${createdOrg.name} (${org}).`
-      : `Using workspace ${org}.`,
+      ? `Created workspace ${organization.name} (${organization.slug}).`
+      : `Using workspace ${organization.name} (${organization.slug}).`,
   );
 
   let seeded: SeedResult | null = null;
@@ -135,5 +159,5 @@ export async function ensureAccount(
       );
     }
   }
-  return { user: me.user, org, createdOrg, seeded };
+  return { user: me.user, org, organization, createdOrg, seeded };
 }

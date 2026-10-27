@@ -1,0 +1,167 @@
+name: Gateway qualification
+on:
+  pull_request:
+    paths: ["packages/local/**", "cli/api-schemas/web-fixtures.ts", "cli/src/commands/run.lifecycle.test.ts", ".github/workflows/gateway.yml"]
+  push:
+    tags: ["gateway-v*"]
+permissions:
+  contents: read
+concurrency:
+  group: gateway-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - run: npm ci && npm ci --prefix cli
+      - run: npm run build
+      - name: Validate release source and version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          git merge-base --is-ancestor HEAD origin/main
+          node scripts/validate-runtime-release.mjs --gateway --bootstrap "$GITHUB_REF_NAME"
+      - name: Build native candidate and fixture workload
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          test "$(docker version --format '{{.Server.Os}}/{{.Server.Arch}}')" = "linux/$ARCH"
+          docker build --provenance=false --label "org.opencontainers.image.revision=$GITHUB_SHA" -t gauge-gateway:test packages/local/gateway
+          runtime=$(node -p 'const m=require("./cli/runtime-manifest.json"); `${m.repository}@${m.digest}`')
+          docker pull "$runtime"
+          docker tag "$runtime" gauge-runtime:dev
+          docker build -t gauge-session-fixture:test packages/local/test/runtime-fixture
+      - name: Qualify routing, trust, and lifecycle
+        env:
+          GAUGE_DOCKER_FIXTURES: "1"
+          GAUGE_GATEWAY_IMAGE: gauge-gateway:test
+        run: |
+          docker run --rm --network none --entrypoint python -v "$PWD/packages/local/gateway:/tests:ro" -w /tests gauge-gateway:test -m unittest test_fixtures
+          npx vitest run packages/local/test/gateway.it.test.ts packages/local/test/lifecycle.it.test.ts
+      - name: Qualify the packaged CLI fixture flow
+        working-directory: cli
+        env:
+          GAUGE_DOCKER_FIXTURES: "1"
+          GAUGE_GATEWAY_IMAGE: gauge-gateway:test
+        run: npx tsx --test --test-name-pattern='packaged CLI freezes fixture' src/commands/run.lifecycle.test.ts
+      - uses: docker/login-action@v3
+        if: startsWith(github.ref, 'refs/tags/') && github.repository == 'gauge-sh/gauge-cli'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish immutable native candidate
+        if: startsWith(github.ref, 'refs/tags/') && github.repository == 'gauge-sh/gauge-cli'
+        env:
+          ARCH: ${{ matrix.arch }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          repository=$(node -p 'require("./cli/gateway-manifest.json").repository')
+          version=$(node -p 'require("./cli/gateway-manifest.json").version')
+          image="$repository:$version-$ARCH"
+          exists=$(node scripts/runtime-tag.mjs "$version-$ARCH" --gateway)
+          if [ "$exists" = 'exists=true' ]; then
+            docker pull "$image"
+            test "$(docker image inspect "$image" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$GITHUB_SHA"
+          else
+            docker tag gauge-gateway:test "$image"
+            docker push "$image"
+          fi
+          docker image inspect "$image" | jq --arg repo "$repository" --arg platform "linux/$ARCH" '.[0] | {platform: $platform, revision: .Config.Labels["org.opencontainers.image.revision"], digest: (.RepoDigests[] | select(startswith($repo + "@")) | split("@")[1])}' > "$RUNNER_TEMP/$ARCH.json"
+      - uses: actions/upload-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/') && github.repository == 'gauge-sh/gauge-cli'
+        with:
+          name: gateway-${{ matrix.arch }}
+          path: ${{ runner.temp }}/${{ matrix.arch }}.json
+  index:
+    if: startsWith(github.ref, 'refs/tags/') && github.repository == 'gauge-sh/gauge-cli'
+    needs: native
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: gateway-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/native-images
+      - name: Publish or verify index
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/publish-runtime-index.mjs "$RUNNER_TEMP/native-images" --gateway
+      - uses: actions/upload-artifact@v4
+        with:
+          name: candidate-gateway-manifest
+          path: cli/gateway-manifest.json
+  consumer:
+    needs: index
+    strategy:
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: candidate-gateway-manifest
+          path: cli
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - run: npm ci && npm ci --prefix cli && npm run build
+      - name: Qualify anonymous published image
+        run: |
+          image=$(node -p 'const m=require("./cli/gateway-manifest.json"); `${m.repository}@${m.digest}`')
+          docker pull "$image"
+          runtime=$(node -p 'const m=require("./cli/runtime-manifest.json"); `${m.repository}@${m.digest}`')
+          docker pull "$runtime"
+          docker tag "$runtime" gauge-runtime:dev
+          docker build -t gauge-session-fixture:test packages/local/test/runtime-fixture
+          GAUGE_GATEWAY_IMAGE="$image" GAUGE_DOCKER_FIXTURES=1 npx vitest run packages/local/test/gateway.it.test.ts
+  qualified:
+    needs: consumer
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: candidate-gateway-manifest
+          path: gateway
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qualified-gateway-manifest
+          path: gateway/gateway-manifest.json
+      - name: Require reviewed CLI pin
+        run: echo 'Commit the qualified manifest as cli/gateway-manifest.json in a reviewed PR before creating a CLI release.'

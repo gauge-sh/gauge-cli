@@ -1,5 +1,5 @@
 import { type ErrorCode, errorEnvelopeSchema } from "@withgauge/api-schemas";
-import { CLI_VERSION } from "../version";
+import { CLI_VERSION, USER_AGENT } from "../version";
 import { readConfig } from "./config";
 import { resolveToken } from "./credentials";
 import {
@@ -12,9 +12,7 @@ import {
 
 export const DEFAULT_API_URL = "https://agents.withgauge.com";
 
-export { CLI_VERSION };
-
-export const USER_AGENT = `gauge-cli/${CLI_VERSION}`;
+export { CLI_VERSION, USER_AGENT };
 
 export type CliErrorCode = ErrorCode | "usage" | "network";
 
@@ -35,6 +33,9 @@ export type CliErrorOptions = {
   hint?: string;
   docs?: string;
   needsAccount?: boolean;
+  // Overrides the displayed code without changing the CLI exit code.
+  apiCode?: string;
+  details?: Record<string, unknown>;
 };
 
 export class CliError extends Error {
@@ -43,6 +44,8 @@ export class CliError extends Error {
   readonly hint?: string;
   readonly docs?: string;
   readonly needsAccount: boolean;
+  readonly apiCode?: string;
+  readonly details?: Record<string, unknown>;
 
   constructor(
     code: CliErrorCode,
@@ -56,10 +59,15 @@ export class CliError extends Error {
     this.hint = options.hint;
     this.docs = options.docs;
     this.needsAccount = options.needsAccount ?? false;
+    this.apiCode = options.apiCode;
+    this.details = options.details;
   }
 }
 
-export type Query = Record<string, string | number | boolean | undefined>;
+export type Query = Record<
+  string,
+  string | number | boolean | readonly string[] | undefined
+>;
 
 export type SseEvent = { event?: string; data: string };
 
@@ -108,8 +116,8 @@ export class ApiClient {
     return this.request<T>("PUT", path, { body, query });
   }
 
-  async delete<T>(path: string, query?: Query): Promise<T> {
-    return this.request<T>("DELETE", path, { query });
+  async delete<T>(path: string, query?: Query, body?: unknown): Promise<T> {
+    return this.request<T>("DELETE", path, { body, query });
   }
 
   async sse(
@@ -158,12 +166,14 @@ export class ApiClient {
   private url(path: string, query?: Query): URL {
     const url = new URL(`${this.baseUrl}${path}`);
     for (const [key, value] of Object.entries(query ?? {})) {
-      if (value !== undefined) url.searchParams.set(key, String(value));
+      if (Array.isArray(value))
+        for (const item of value) url.searchParams.append(key, item);
+      else if (value !== undefined) url.searchParams.set(key, String(value));
     }
     return url;
   }
 
-  private headers(extra?: Record<string, string>): Record<string, string> {
+  protected headers(extra?: Record<string, string>): Record<string, string> {
     if (!this.token && !this.authOptional) {
       throw new CliError(
         "unauthorized",
@@ -273,15 +283,21 @@ export class ApiClient {
     return text as T;
   }
 
-  private async toError(res: Response): Promise<CliError> {
+  protected async toError(res: Response): Promise<CliError> {
     const wait = res.status === 429 ? retryAfterSeconds(res) : undefined;
     const hint = wait === undefined ? undefined : `Try again in ${wait} s.`;
     try {
       const parsed = errorEnvelopeSchema.safeParse(await res.clone().json());
       if (parsed.success) {
-        return new CliError(parsed.data.error.code, parsed.data.error.message, {
-          hint,
-        });
+        const { code, message } = parsed.data.error;
+        if (
+          code === "not_found" &&
+          message.startsWith("Organization not found")
+        ) {
+          const explained = await explainMissingOrg(res.url);
+          if (explained) return explained;
+        }
+        return new CliError(code, message, { hint });
       }
     } catch {}
     const what =
@@ -298,6 +314,18 @@ export class ApiClient {
   }
 }
 
+async function explainMissingOrg(url: string): Promise<CliError | undefined> {
+  const match = url && /\/api\/v1\/orgs\/([^/?#]+)/.exec(new URL(url).pathname);
+  if (!match) return undefined;
+  try {
+    // orgDirectory imports this module.
+    const { missingAgentsOrg } = await import("./orgDirectory");
+    return await missingAgentsOrg(decodeURIComponent(match[1]));
+  } catch {
+    return undefined;
+  }
+}
+
 export function createChatClient(options: ApiClientOptions = {}): ApiClient {
   return new ApiClient({
     baseUrl: storedSharedCredentials()?.authUrl ?? resolveAuthUrl(),
@@ -309,7 +337,7 @@ export function createClient(options?: ApiClientOptions): ApiClient {
   return new ApiClient(options);
 }
 
-function retryAfterSeconds(res: Response): number | undefined {
+export function retryAfterSeconds(res: Response): number | undefined {
   const value = res.headers.get("retry-after");
   if (!value) return undefined;
   const seconds = Number(value);
@@ -319,7 +347,7 @@ function retryAfterSeconds(res: Response): number | undefined {
   return Math.max(0, Math.ceil((at - Date.now()) / 1000));
 }
 
-function codeForStatus(status: number): CliErrorCode {
+export function codeForStatus(status: number): CliErrorCode {
   switch (status) {
     case 400:
       return "invalid_request";

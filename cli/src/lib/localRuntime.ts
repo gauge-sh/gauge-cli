@@ -1,11 +1,16 @@
 import { execFileSync, spawn } from "node:child_process";
 import manifest from "../../runtime-manifest.json";
+import gatewayManifest from "../../gateway-manifest.json";
 import { CliError } from "./client";
 
 export const RUNTIME_MANIFEST = manifest;
 export const RUNTIME_IMAGE = manifest.digest
   ? `${manifest.repository}@${manifest.digest}`
   : `${manifest.repository}:${manifest.version}`;
+export const GATEWAY_IMAGE = gatewayManifest.digest
+  ? `${gatewayManifest.repository}@${gatewayManifest.digest}`
+  : `${gatewayManifest.repository}:${gatewayManifest.version}`;
+type ImageManifest = { repository: string; contract: string; platforms: string[] };
 
 export type RuntimeInspection = {
   reference: string;
@@ -30,6 +35,7 @@ const dockerRead: DockerRead = (args) =>
 export function inspectLocalRuntime(
   image = RUNTIME_IMAGE,
   docker: DockerRead = dockerRead,
+  manifest: ImageManifest = RUNTIME_MANIFEST,
 ): RuntimeInspection {
   const result: RuntimeInspection = {
     reference: image,
@@ -77,8 +83,8 @@ export function inspectLocalRuntime(
   return result;
 }
 
-export function requireLocalRuntime(image = RUNTIME_IMAGE): RuntimeInspection & { imageId: string } {
-  const result = inspectLocalRuntime(image);
+export function requireLocalRuntime(image = RUNTIME_IMAGE, manifest?: ImageManifest): RuntimeInspection & { imageId: string } {
+  const result = inspectLocalRuntime(image, undefined, manifest);
   if (!result.ready) {
     const problem = result.problem!;
     throw new CliError(problem.code === "image_missing" || problem.code === "docker_unavailable" ? "not_found" : "usage", problem.message, { hint: problem.hint });
@@ -94,19 +100,23 @@ export function runtimeProblem(): CliError | undefined {
   }
 }
 
-export async function pullLocalRuntime(): Promise<RuntimeInspection> {
-  const before = inspectLocalRuntime();
+export const inspectLocalGateway = (image = GATEWAY_IMAGE, docker?: DockerRead) => inspectLocalRuntime(image, docker, gatewayManifest);
+export const requireLocalGateway = (image = GATEWAY_IMAGE) => requireLocalRuntime(image, gatewayManifest);
+export const pullLocalGateway = () => pullLocalRuntime(GATEWAY_IMAGE, gatewayManifest);
+
+export async function pullLocalRuntime(image = RUNTIME_IMAGE, manifest: ImageManifest = RUNTIME_MANIFEST): Promise<RuntimeInspection> {
+  const before = inspectLocalRuntime(image, undefined, manifest);
   if (!before.dockerPlatform || !manifest.platforms.includes(before.dockerPlatform)) {
     const problem = before.problem!;
     throw new CliError(problem.code === "docker_unavailable" ? "not_found" : "usage", problem.message, { hint: problem.hint });
   }
   const platform = before.dockerPlatform;
   await new Promise<void>((resolve, reject) => {
-    const child = spawn("docker", ["pull", "--platform", platform, RUNTIME_IMAGE], { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn("docker", ["pull", "--platform", platform, image], { stdio: ["ignore", "pipe", "pipe"] });
     child.stdout.pipe(process.stderr);
     child.stderr.pipe(process.stderr);
     child.once("error", () => reject(new CliError("not_found", "Docker could not start.", { hint: "Install and start Docker, then retry." })));
-    child.once("exit", (code) => code === 0 ? resolve() : reject(new CliError("network", `Could not pull ${RUNTIME_IMAGE}.`, { hint: "Check the network and public registry availability, then retry gauge local runtime pull." })));
+    child.once("exit", (code) => code === 0 ? resolve() : reject(new CliError("network", `Could not pull ${image}.`, { hint: "Check the network and public registry availability, then retry gauge local runtime pull." })));
   });
-  return requireLocalRuntime();
+  return requireLocalRuntime(image, manifest);
 }

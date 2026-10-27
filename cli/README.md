@@ -1,14 +1,15 @@
 # @withgauge/cli
 
 `gauge` — the [Gauge](https://agents.withgauge.com) command-line interface.
-Manage your eval sets, Agent Preference prompts, and agent runs, and watch runs
-live from your terminal.
+Access Gauge Chat data, manage eval sets and Agent Preference prompts, and
+watch agent runs live from your terminal.
 
 ```sh
 npm install -g @withgauge/cli
 gauge update              # update the CLI to the latest published version
 gauge onboard             # sign in and create a workspace (account only)
 gauge auth login          # (or just sign in)
+gauge orgs                # list your organizations and the products each uses
 gauge orgs use <org>      # set your default organization
 gauge init                # initialize a workspace; local is the default
 gauge init --hosted       # set a private hosted backend preference
@@ -16,6 +17,47 @@ gauge init --cases        # optionally scaffold shared gauge-cases/
 ```
 
 Requires Node.js ≥ 22.13.
+
+## Organizations
+
+Run `gauge orgs` to see your organizations and whether each has Chat, Agents,
+or both. Use the value in the `slug` column to choose one:
+
+```sh
+gauge orgs use acme                 # save your default organization
+gauge orgs use acme --project       # save this project's organization
+gauge chat tags list --org acme     # choose an organization for one command
+```
+
+The selection works for both products. A command's `--org` takes priority,
+followed by its run specification, the project setting, then your default.
+Chat can pick your organization automatically if you have only one; Agents
+commands need a saved selection or `--org`.
+
+**Upgrading:** If your account has only one organization, `gauge auth login`
+updates your old saved default automatically. Otherwise, run `gauge orgs`, then
+`gauge orgs use <slug>` to choose your default. This includes defaults that an
+older CLI selected automatically when you signed in or created an organization.
+For an old project setting, run `gauge orgs use <slug> --project`.
+Everyone using an updated project needs
+CLI 0.25.0 or later; restore the previous `gauge.json` before using an older
+CLI. If an older run specification contains an `org` name, pass `--org` to
+choose the organization for that run.
+
+Chat commands using an API key default to the key's organization, regardless
+of your saved selection. Agency keys can use `--org` to choose a client.
+
+## Checking your account
+
+`gauge whoami` shows the account or API key you are using and its organizations.
+`gauge auth status` checks whether your login or API key works and shows its
+source, permissions, and expiry. See [signing in](../docs/shared-cli-auth.md)
+for login, logout, and API-key setup.
+
+For scripts, add `-o json`: `whoami` returns `user`, `apiKey`, and `orgs`;
+`auth status` returns `authenticated`, `source`, `apiUrl`, `authUrl`, and
+`credential` (`kind`, `scopes`, `expiresAt`). Older Agents tokens do not report
+organizations, permissions, or expiry.
 
 ## Workspace and local storage
 
@@ -129,7 +171,8 @@ The UUID is independent of login and is never linked to your Gauge account.
 This is pseudonymous usage tracking: an installation can be recognized across
 commands, but no personal identity is sent. HTTP requests necessarily expose a
 source IP to the receiving infrastructure; event properties mask IP addresses,
-disable GeoIP enrichment, and disable person-profile creation.
+disable GeoIP enrichment, and disable person-profile creation. Requests
+identify themselves with a `gauge-cli/<version>` User-Agent.
 
 Preferences live in `~/.config/gauge/telemetry.json` and the UUID in
 `~/.config/gauge/telemetry-id` (respecting `XDG_CONFIG_HOME`). They are shared
@@ -170,6 +213,7 @@ contains the execution preference. Git is optional for workspace initialization.
 |---|---|---|
 | Skill, npm package (CLI or SDK), and `files` inputs | yes | yes |
 | Docs supplied as `files` inputs | yes | yes |
+| Web fixture JSON: exact pages, scopes, and origin proxying | yes | yes |
 | Eval and Agent Preference cases in `gauge-cases/` | yes (you read the sessions) | yes (judged) |
 | `run`, `run list`, `run compare --local`, `models list`, `cleanup`, `feedback` | yes | yes |
 | Binary, website, and MCP inputs | no | yes |
@@ -290,6 +334,14 @@ leaves out. For npm inputs it contains the `.tgz`; the raw
 tarball has a different hash and size. Each launch takes a fresh snapshot.
 Each case owns its agents, models, consumer repository/ref, Persona and criteria.
 The optional `config.inputs` selects named inputs; all attach by default.
+
+A `web-fixture` input controls what agents receive from specific HTTPS URLs:
+exact pages, 404s for missing pages under a scope, or an origin routed to a
+preview. Declare it as `"docs": { "type": "web-fixture", "path": "fixtures/docs.json" }`,
+select it with `config.inputs`, and override it with `--input docs=path.json`
+on either backend. Local runs serve fixtures through a gateway container;
+`gauge local runtime inspect` and `pull` cover its image. See
+[web fixture inputs](https://github.com/gauge-sh/gauge-cli/blob/main/docs/local-web-fixtures.md).
 
 `verify` reads the repository's current files, including non-ignored untracked files,
 without login, network access, a PR, built CI artifacts, or sandbox compute. It checks
@@ -796,6 +848,33 @@ index or background indexing process is maintained.
 Every read supports `-o json` for scripting. `GAUGE_API_TOKEN` overrides
 stored credentials (useful in CI). Exit codes: `0` ok · `1` error ·
 `2` usage · `3` billing-blocked · `4` needs your input (`optimizations watch`).
+
+## Gauge Chat
+
+`gauge chat` manages tracked AI-visibility prompts and reads Gauge Chat data.
+Sign in with `gauge auth login`, or use an [API key](../docs/shared-cli-auth.md#api-keys-for-scripts-and-ci)
+for scripts and CI. Choose your [organization](#organizations), then use
+`--category` to select a category or `gauge chat categories use <category>`
+to save a default. If there is only one category, it is selected automatically.
+Chat commands do not use the Agents `--local` and `--hosted` flags.
+
+```sh
+gauge chat topics create "Pricing" --if-exists
+gauge chat prompts add --file prompts.txt --topic pricing --dry-run -o json
+gauge chat query --dataset answers -d brand -m visibility,shareOfVoice --last-days 30
+gauge chat query fields --dataset citations
+gauge chat answers list --since 2026-10-01 --all --max 500 -o json
+```
+
+`prompts add` reads arguments or a file of lines, JSON Lines, or a JSON array,
+sends batches of 500 (previewing every batch before a multi-batch write), and
+reports `created`, `already_exists`, or `would_create` per prompt. List commands
+return `{data, nextCursor}` with `-o json`; `--all` follows cursors up to `--max`.
+Errors carry the API code (`insufficient_scope`, `limit_exceeded`,
+`incompatible_dimension`, `rate_limited`…) and details such as `retryAfter`.
+Invalid requests exit 2 and plan limits exit 3. Query rate metrics are 0-1
+fractions, as in `gauge query`. Rate limits apply per token and organization:
+600 requests/min and 60 queries/min.
 
 ## Support
 

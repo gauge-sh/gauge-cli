@@ -35,6 +35,10 @@ first release:
    unchanged when the source repository changes.
    See [GitHub package permissions](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility)
    and [connecting a package to a repository](https://docs.github.com/en/packages/learn-github-packages/connecting-a-repository-to-a-package).
+4. Keep `ghcr.io/gauge-sh/gauge-gateway` public and connected to
+   `gauge-sh/gauge-cli` with Actions write access, like the runtime package.
+   If a new package is ever created private, the workflow's anonymous-pull
+   jobs fail until it is made public; then rerun them.
 
 Source and Git history are separate review surfaces. When creating a repository
 with a fresh history, copy the reviewed source tree rather than pushing old
@@ -79,3 +83,36 @@ publishing. Tags must use versions that have not already been published.
 Changing the runtime source requires another runtime release and reviewed
 manifest pin. CLI-only changes can reuse a qualified runtime when its source
 revision remains available and the runtime source has not changed.
+
+## Gateway
+
+Each CLI release also pins the local web-fixture gateway image in
+`cli/gateway-manifest.json`. The gateway is released independently of the
+runtime through `.github/workflows/gateway.yml`, using the same steps:
+
+1. On `main`, choose a new gateway version in `cli/gateway-manifest.json` with
+   `digest` and `revision` set to `null`. Commit it and push
+   `gateway-v<version>` pointing to the reviewed commit.
+2. The workflow qualifies `packages/local/gateway` on both native
+   architectures against the pinned runtime, publishes the images and index,
+   and verifies anonymous pulls.
+3. Commit the `qualified-gateway-manifest` artifact as
+   `cli/gateway-manifest.json` through a reviewed PR before releasing the CLI.
+
+If a native image push fails with a transient registry error such as
+`unknown blob`, rerun the failed jobs. A platform tag that was never written
+is published normally on rerun, and one that exists is reused only when it
+was built from the same commit.
+
+The same workflow runs qualification without publishing on pull requests that
+change `packages/local/`. Because gateway qualification uses the pinned
+runtime, release and pin a changed runtime first. Changing
+`packages/local/gateway` requires another gateway release and reviewed pin.
+
+## Hosted compatibility checks
+
+Before publishing, check login, organization selection, and API-key access
+against the deployed Chat and Agents services using the candidate package.
+Use approved accounts for analytical reads and disposable fixtures for writes;
+remove test memberships and revoke credentials afterward. Package checks do
+not replace testing the CLI inside hosted sessions.

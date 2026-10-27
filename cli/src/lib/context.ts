@@ -2,21 +2,59 @@ import type { Command } from "commander";
 import { CliError } from "./client";
 import { readConfig } from "./config";
 import { gaugeState } from "./gaugeState";
+import {
+  type OrgSource,
+  isUuid,
+  legacySelection,
+  resolveSelection,
+} from "./orgDirectory";
 import type { OutputFormat } from "./output";
 
-export function resolveOrg(command: Command, fileOrg?: string): string {
+export type OrgSelection = { value: string; source: OrgSource };
+
+export function selectedOrg(
+  command: Command,
+  fileOrg?: string,
+): OrgSelection | undefined {
   const { org } = command.optsWithGlobals<{ org?: string }>();
-  if (org) return org;
-  if (fileOrg) return fileOrg;
-  const projectOrg = gaugeState(command).config?.org;
-  if (typeof projectOrg === "string" && projectOrg) return projectOrg;
-  const { defaultOrg } = readConfig();
-  if (defaultOrg) return defaultOrg;
-  throw new CliError(
-    "usage",
-    "No organization selected. Pass --org <org> or set a default with `gauge orgs use <slug>`.",
-    { needsAccount: true },
-  );
+  if (org) return { value: org, source: "flag" };
+  if (fileOrg) return { value: fileOrg, source: "file" };
+  const project = gaugeState(command).config;
+  if (typeof project?.orgId === "string" && project.orgId) {
+    if (!isUuid(project.orgId))
+      throw new CliError(
+        "usage",
+        "The organization saved in gauge.json is not valid.",
+        { hint: "Run `gauge orgs`, then `gauge orgs use <slug> --project` to choose this project's organization." },
+      );
+    return { value: project.orgId, source: "project" };
+  }
+  if (project?.org) legacySelection("project");
+  const { orgId, defaultOrg } = readConfig();
+  if (orgId) {
+    if (!isUuid(orgId))
+      throw new CliError(
+        "usage",
+        "Your saved organization is not valid.",
+        { hint: "Run `gauge orgs`, then `gauge orgs use <slug>` to choose your organization." },
+      );
+    return { value: orgId, source: "config" };
+  }
+  if (defaultOrg) legacySelection("config");
+  return undefined;
+}
+
+const NO_ORG_MESSAGE =
+  "No organization selected. Pass --org <org> or set a default with `gauge orgs use <org>`.";
+
+export async function resolveOrg(
+  command: Command,
+  fileOrg?: string,
+): Promise<string> {
+  const selection = selectedOrg(command, fileOrg);
+  if (!selection)
+    throw new CliError("usage", NO_ORG_MESSAGE, { needsAccount: true });
+  return (await resolveSelection(selection.value, selection.source)).id;
 }
 
 export function resolveOutput(command: Command): OutputFormat {

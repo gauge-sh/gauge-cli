@@ -11,7 +11,7 @@ test("packaged local profile commands manage references without an account", (t)
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const cli = fileURLToPath(new URL("../../dist/index.js", import.meta.url));
   const invoke = (...args: string[]) => {
-    const r = spawnSync(process.execPath, [cli, ...args, "-o", "json"], { encoding: "utf8", env: { ...process.env, XDG_CONFIG_HOME: root, GAUGE_API_TOKEN: "", GAUGE_TELEMETRY: "0", TEST_KEY: "private-test-key" }, timeout: 15_000 });
+    const r = spawnSync(process.execPath, [cli, ...args, "-o", "json"], { encoding: "utf8", env: { ...process.env, XDG_CONFIG_HOME: root, GAUGE_API_TOKEN: "", GAUGE_TELEMETRY_DISABLED: "1", TEST_KEY: "private-test-key" }, timeout: 15_000 });
     assert.ok(!`${r.stdout}${r.stderr}`.includes("private-test-key"));
     return r;
   };

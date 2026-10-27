@@ -1,7 +1,7 @@
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { promisify } from "node:util";
 import { StringDecoder } from "node:string_decoder";
 import { BASE_COMMIT_MARKER, splitModel, WORKSPACE_DIR } from "./scripts.js";
+import { DockerCli } from "./docker.js";
 import type { Question, SessionSpec } from "./types.js";
 
 type Json = Record<string, any>;
@@ -260,7 +260,7 @@ export class AgentDriver {
     this.stopping = true;
     this.fail(new Error("session stopped"));
     this.prepared?.();
-    await promisify(execFile)("docker", ["stop", "--time", "2", this.containerName], { timeout: 15_000 });
+    await new DockerCli().stop(this.containerName, 2);
     this.eventStream?.kill();
     this.child?.kill();
   }
