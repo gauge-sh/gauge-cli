@@ -1,5 +1,5 @@
 import { type ErrorCode, errorEnvelopeSchema } from "@withgauge/api-schemas";
-import { CLI_VERSION } from "../version";
+import { CLI_VERSION, USER_AGENT } from "../version";
 import { readConfig } from "./config";
 import { resolveToken } from "./credentials";
 import {
@@ -12,9 +12,7 @@ import {
 
 export const DEFAULT_API_URL = "https://agents.withgauge.com";
 
-export { CLI_VERSION };
-
-export const USER_AGENT = `gauge-cli/${CLI_VERSION}`;
+export { CLI_VERSION, USER_AGENT };
 
 export type CliErrorCode = ErrorCode | "usage" | "network";
 

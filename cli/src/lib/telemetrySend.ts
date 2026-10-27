@@ -1,3 +1,4 @@
+import { USER_AGENT } from "../version";
 import { configDir } from "./config";
 import type { CommandEvent } from "./telemetry";
 import { installationId, telemetryStatus } from "./telemetryState";
@@ -18,7 +19,10 @@ export async function sendTelemetry(
     if (!(await telemetryStatus(directory)).enabled) return;
     const response = await (options.fetch ?? fetch)(CAPTURE_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": USER_AGENT,
+      },
       redirect: "error",
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       body: JSON.stringify({

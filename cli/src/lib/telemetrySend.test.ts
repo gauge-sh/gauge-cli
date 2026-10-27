@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { it, type TestContext } from "node:test";
 import { promisify } from "node:util";
+import { USER_AGENT } from "../version";
 import {
   installationId,
   setTelemetryEnabled,
@@ -66,6 +67,10 @@ it("sends exactly the allowlisted payload and reuses identity", async (t) => {
     assert.equal(String(url), "https://us.i.posthog.com/i/v0/e/?ip=0");
     assert.equal(options?.redirect, "error");
     assert.ok(options?.signal);
+    assert.equal(
+      new Headers(options?.headers).get("user-agent"),
+      USER_AGENT,
+    );
     payloads.push(JSON.parse(String(options?.body)));
     return new Response(null, { status: 200 });
   };

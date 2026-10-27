@@ -28,6 +28,8 @@
 - `gauge whoami` shows which account or API key you are using. `gauge auth
   status` checks your login or API key and its permissions.
 - `gauge auth logout` signs out this CLI installation.
+- Command telemetry requests send a `gauge-cli/<version>` User-Agent, matching
+  Gauge API requests.
 
 ## 0.24.0 — 2026-10-21
 
