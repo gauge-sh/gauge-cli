@@ -636,8 +636,8 @@ do not test discovery of the canonical docs. Static verification validates
 configuration; it does not prove backend support, delivery, or an eval pass.
 
 Editor schemas are published at
-`https://agents.withgauge.com/schemas/gauge/v2.8.0/gauge.json` and
-`https://agents.withgauge.com/schemas/gauge/v2.8.0/case.json`. Associate them in editor
+`https://agents.withgauge.com/schemas/gauge/v2.10.0/gauge.json` and
+`https://agents.withgauge.com/schemas/gauge/v2.10.0/case.json`. Associate them in editor
 settings; `gauge.json` does not accept a `$schema` field. These release URLs are
 immutable. Cases default to `gauge-cases/`, or use explicit `cases` paths.
 
