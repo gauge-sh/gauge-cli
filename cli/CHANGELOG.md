@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.25.1 — 2026-10-27
+
+### Added
+
+- `gauge mcp add --oauth` authorizes an HTTP MCP server in your browser and
+  saves its connection for hosted runs. Use `--connection <id>` to reuse a
+  saved connection, or `--no-browser` to open the authorization URL yourself.
+
 ### Fixed
 
 - Selecting an organization by public slug now checks access even when it is
