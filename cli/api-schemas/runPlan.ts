@@ -84,6 +84,7 @@ export const binaryUseSchema = z
 export const inputUseSchema = z.discriminatedUnion("type", [
   binaryUseSchema,
   websiteUseSchema,
+  z.object({ type: z.literal("web-fixture"), path: inputPathSchema.regex(/^[^*?{}[\]]+$/) }).strict(),
   z
     .object({
       type: z.literal("files"),

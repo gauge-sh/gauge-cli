@@ -39,6 +39,11 @@ export const runDefinitionInputSchema = z.discriminatedUnion("type", [
     .extend({ source: definitionInputSourceSchema.default({ type: "git" }) })
     .strict(),
   websiteUseSchema.extend({ source: websiteSourceSchema }).strict(),
+  z.object({
+    type: z.literal("web-fixture"),
+    source: definitionInputSourceSchema.default({ type: "git" }),
+    path: inputPathSchema.regex(/^[^*?{}[\]]+$/).describe("Explicit path to a version 1 web fixture JSON file."),
+  }).strict(),
   z
     .object({
       type: z.literal("npm-package"),
@@ -119,6 +124,8 @@ export function compileDefinitionInput(
           }
         : input.type === "npm-package"
           ? { type: "npm-package", package: input.path, install: input.install }
+          : input.type === "web-fixture"
+            ? { type: "web-fixture", path: input.path }
           : input.type === "skill"
             ? { type: "skill", root: input.path }
             : { type: "files", paths: input.paths },

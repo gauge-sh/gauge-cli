@@ -7,7 +7,7 @@ function hillclimbSteps(hosted: boolean): Step[] {
       command: "gauge instructions hillclimb",
       details: [
         "Inspect this project and the user's goal. Suggest representative tasks, including a mistake or boundary case; explain what they measure.",
-        "Choose inputs and the execution backend deliberately. Website preview routing needs hosted execution; supplied docs files or a direct preview URL test content, not canonical-site discovery.",
+        "Choose inputs and the execution backend deliberately. Web fixture JSON supports HTTPS page replacement and origin mapping locally or hosted. GitHub-resolved website previews need hosted execution; supplied docs files do not replace the canonical site.",
       ],
     },
     {

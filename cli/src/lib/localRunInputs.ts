@@ -35,6 +35,7 @@ import {
   type RunPlanResource,
 } from "@withgauge/api-schemas/runPlan";
 import { create as tar } from "tar";
+import { readWebFixtureArchive, freezeWebFixtures } from "./webFixtureInputs";
 import { type CaseSpec, caseSpecCases, caseSpecDigest } from "./caseSpec";
 import { type ApiClient, CliError } from "./client";
 import { noCasesError } from "./docs";
@@ -203,7 +204,10 @@ async function selectLocalInput(
       `Input must be an ordinary file or directory: ${supplied}`,
     );
   let use = resource.use;
-  if (use.type === "skill") {
+  if (use.type === "web-fixture") {
+    if (!info.isFile()) throw new CliError("usage", "Supply a web fixture JSON file");
+    use = { type: "web-fixture", path: basename(path) };
+  } else if (use.type === "skill") {
     if (info.isFile() && !isSkillArchive(path))
       throw new CliError(
         "usage",
@@ -300,9 +304,11 @@ export async function packLocalInput(
     throw new CliError("usage", "Input archive exceeds 512 MiB");
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(output)) hash.update(chunk);
+  const sha256 = `sha256:${hash.digest("hex")}`;
+  if (use.type === "web-fixture") await readWebFixtureArchive(output, use.path, sha256);
   return {
     use,
-    upload: { path: output, bytes, sha256: `sha256:${hash.digest("hex")}` },
+    upload: { path: output, bytes, sha256 },
     files,
   };
 }
@@ -495,21 +501,25 @@ export async function loadLocalRunDefinition(
         resources.push(original);
       }
     }
-    if (!spec)
-      return {
-        ...compileRunDefinitionFromBlobs({
+    if (!spec) {
+      const compiled = compileRunDefinitionFromBlobs({
           repoUrl,
           commit,
           resources,
           blobs,
           casePaths: cases,
           verification: "LOCAL",
-        }),
+        });
+      const webFixtures = await freezeWebFixtures({ ...compiled.definition, resources: resources.filter((r) => r.source.type === "upload") }, uploads);
+      return {
+        ...compiled,
+        webFixtures,
         uploads,
         inputSnapshots,
         unattachedInputs,
         cleanup,
       };
+    }
     const definition: RunDefinitionSubmission = {
       version: 2,
       source: {
@@ -524,6 +534,7 @@ export async function loadLocalRunDefinition(
     if (!local) runDefinitionSubmissionSchema.parse(definition);
     return {
       definition,
+      webFixtures: await freezeWebFixtures({ ...definition, resources: resources.filter((r) => r.source.type === "upload") }, uploads),
       org: config.orgId ?? config.org,
       uploads,
       inputSnapshots,
@@ -555,6 +566,7 @@ function workingTreeInput(
     case "files":
     case "binary":
       return root;
+    case "web-fixture":
     case "skill":
       return join(root, input.path);
     case "npm-package": {

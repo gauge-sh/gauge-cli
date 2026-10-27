@@ -1,0 +1,11 @@
+{
+  "version": "0.1.0",
+  "repository": "ghcr.io/gauge-sh/gauge-gateway",
+  "digest": "sha256:ab5489cfe65feb717a79d7be6bd76be8bf915f3e44a5e832cee313772e590e1c",
+  "contract": "gateway-1",
+  "platforms": [
+    "linux/amd64",
+    "linux/arm64"
+  ],
+  "revision": "cdb3a7985666fbb6287be5b2b041aff327c874d7"
+}

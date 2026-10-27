@@ -20,10 +20,10 @@ const MODES = `## Local or hosted
 
 | Workflow | Local | Hosted |
 |---|---|---|
-| Skill, npm package (CLI or SDK), and docs-as-files inputs | yes | yes |
+| Skill, npm package (CLI or SDK), docs-as-files, and web fixture inputs | yes | yes |
 | Eval and preference cases in gauge-cases/ | yes, your coding agent analyzes | yes, judged |
 | \`run\`, \`run list\`, \`run compare\`, \`models list\`, \`cleanup\`, \`feedback\` | yes | yes |
-| Binary, website preview routing, and MCP inputs | no | yes |
+| Binary, GitHub-resolved website, and MCP inputs | no | yes |
 | Saved eval sets and preference prompts | yes | yes |
 | Project inputs and previews on saved measurement launches | yes | use case files/specs |
 | Structured findings and queries | yes, supported fields | yes |

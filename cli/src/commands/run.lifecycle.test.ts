@@ -91,10 +91,10 @@ async function fixture(t: test.TestContext, prompt: string, samples = 6) {
       await readFile(join(directory, "session.json"), "utf8"),
     );
     assert.equal(existsSync(record.credentialDir), false);
-    assert.equal(
+    for (const name of [record.containerName, record.gatewayName, record.trustContainerName].filter(Boolean)) assert.equal(
       execFileSync(
         docker,
-        ["ps", "-aq", "--filter", `name=^/${record.containerName}$`],
+        ["ps", "-aq", "--filter", `name=^/${name}$`],
         { encoding: "utf8" },
       ).trim(),
       "",
@@ -103,6 +103,26 @@ async function fixture(t: test.TestContext, prompt: string, samples = 6) {
   };
   return { root, env, invoke, status, sessionDir, clean };
 }
+
+test("packaged CLI freezes fixture overrides and uses the gateway in a detached batch", { skip: !enabled, timeout: 60_000 }, async (t) => {
+  const f = await fixture(t, "HANG", 1);
+  await writeFile(join(f.root, "gauge.json"), JSON.stringify({ version: 2, inputs: { docs: { type: "web-fixture", path: "missing.json" } } }));
+  await writeFile(join(f.root, "docs.json"), JSON.stringify({ version: 1, pages: [{ url: "https://example.com/docs", body: "frozen CLI fixture" }] }));
+  const image = process.env.GAUGE_GATEWAY_IMAGE ? ["--gateway-image", process.env.GAUGE_GATEWAY_IMAGE] : [];
+  const plan = await f.invoke("run", "--dry-run", "--input", "docs=docs.json", ...image);
+  assert.equal(plan.gateway.ready, true);
+  assert.deepEqual(plan.webFixtures["gauge-cases/task.md"].pages, ["https://example.com/docs"]);
+  const batch = await f.invoke("run", "--detach", "--input", "docs=docs.json", ...image);
+  await writeFile(join(f.root, "docs.json"), "changed after launch");
+  const status = await until(f.status, (s) => s.runs.length === 1 && s.runs[0].state === "running");
+  const id = status.runs[0].id;
+  const launch = JSON.parse(await readFile(join(f.sessionDir(id), "session.json"), "utf8"));
+  assert.equal(launch.spec.gateway.digest, plan.webFixtures["gauge-cases/task.md"].digest);
+  assert.equal(execFileSync("docker", ["exec", launch.containerName, "curl", "-fsS", "--noproxy", "*", "--max-time", "10", "--resolve", "example.com:443:192.0.2.1", "https://example.com/docs"], { encoding: "utf8" }), "frozen CLI fixture");
+  await f.invoke("run", "cancel", "--batch", batch.batchId);
+  await f.clean(id);
+  assert.match(await readFile(join(f.sessionDir(id), "gateway.log"), "utf8"), /"action": "hit"/);
+});
 
 test(
   "foreground Ctrl+C stops active sessions and never starts the rest",

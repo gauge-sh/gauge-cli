@@ -1,4 +1,5 @@
 import type { EvidencePayload } from "@withgauge/agent-adapters";
+import type { ContainerSpec } from "./docker.js";
 export type AgentKind = "claude-code" | "codex" | "opencode" | "pi";
 export type AuthMode = "setup_token" | "api_key" | "access_token";
 export type ResourceRef = {
@@ -13,6 +14,17 @@ export interface SessionSpec {
   auth: { mode: AuthMode };
   workspace: { repo: string; ref: string } | null;
   resources: ResourceRef[];
+  gateway?: {
+    image: string;
+    digest: string;
+    fixture: {
+      version: 1;
+      pages: { url: string; body: string; status: number; contentType: string }[];
+      scopes?: string[];
+      origins?: { origin: string; upstream: string }[];
+      searches: unknown[];
+    };
+  };
   prompt: { text: string };
   limits: { turnTimeoutS: number; responseTimeoutS: number | null; maxTurns: number };
 }
@@ -37,12 +49,15 @@ export type SessionCommand =
   | { action: "cancel" };
 export interface CommandReceipt { accepted: boolean; error?: string }
 export interface LaunchRecord {
-  version: 1;
+  version: 1 | 2;
   containerName: string;
   credentialDir: string;
   socketPath: string;
   spec: SessionSpec;
   credentialExpiresAt?: string;
+  workload?: ContainerSpec;
+  gatewayName?: string;
+  trustContainerName?: string;
 }
 export const terminal = (state: SessionStatus["state"]): boolean =>
   state === "completed" || state === "failed" || state === "canceled" || state === "interrupted";

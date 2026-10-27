@@ -7,6 +7,7 @@ import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveSessionCredential, type CredentialSources } from "./credentials.js";
 import { DockerCli } from "./docker.js";
+import { cleanupGateway, validateGateway } from "./gateway.js";
 import { preserveWorkspace } from "./workspace.js";
 import { readJson, writeJsonAtomic } from "./fsAtomic.js";
 import { agentEnv, harnessCommand, prepareScript, shellQuote } from "./scripts.js";
@@ -42,6 +43,10 @@ function driverExited(status: SessionStatus | null | undefined): boolean {
 }
 
 export function validateSpec(spec: SessionSpec): void {
+  if (spec.gateway) {
+    validateGateway(spec.gateway);
+    if (process.getuid?.() === 65532) throw new Error("Host UID 65532 is reserved for the local gateway");
+  }
   if (!["claude-code", "codex", "pi", "opencode"].includes(spec.agent.kind)) throw new Error("unsupported agent");
   if (!spec.image || !spec.agent.model || !spec.prompt.text) throw new Error("image, model and prompt are required");
   if (spec.workspace) {
@@ -74,9 +79,8 @@ export async function startSession(options: StartSessionOptions): Promise<Sessio
   const credential = await resolveSessionCredential(options.spec, { ...options.credentials, now: new Date() });
   await mkdir(dirname(directory), { recursive: true });
   await mkdir(directory, { mode: 0o700 });
-  const engine = new DockerCli();
   let credentialDir: string | undefined;
-  let created = false;
+  let handedOff = false;
   const containerName = `gauge-session-${randomUUID()}`;
   try {
     const runtime = options.runtimeDirectory ?? tmpdir();
@@ -85,9 +89,10 @@ export async function startSession(options: StartSessionOptions): Promise<Sessio
     await chmod(credentialDir, 0o700);
     await mkdir(join(credentialDir, "workspace"), { mode: 0o700 });
     const record: LaunchRecord = {
-      version: 1, containerName, credentialDir,
+      version: 2, containerName, credentialDir,
       socketPath: join(credentialDir, "control.sock"), spec: options.spec,
       credentialExpiresAt: credential.expiresAt?.toISOString(),
+      ...(options.spec.gateway ? { gatewayName: `${containerName}-gateway`, trustContainerName: `${containerName}-trust` } : {}),
     };
     if (Buffer.byteLength(record.socketPath) > 100) throw new Error("runtimeDirectory is too long for a Unix socket");
     await writeJsonAtomic(join(directory, "session.json"), record);
@@ -103,14 +108,15 @@ export async function startSession(options: StartSessionOptions): Promise<Sessio
     }
     const script = [prepareScript(options.spec), ...credential.exports,
       `exec ${harnessCommand(options.spec).map(shellQuote).join(" ")}`].join("\n");
-    const result = await engine.create({
+    record.workload = {
       name: containerName, image: options.spec.image, interactive: true,
       user: `${process.getuid!()}:${process.getgid!()}`,
       labels: { "sh.gauge.session": containerName }, mounts,
       env: { ...agentEnv(options.spec.agent.kind), HOME: "/gauge/session/home" }, command: ["sh", "-c", script],
-    });
-    if (result !== "created") throw new Error("session container already exists");
-    created = true;
+    };
+    await writeJsonAtomic(join(directory, "session.json"), record);
+    const initial = { state: "preparing", turn: 0, updatedAt: new Date().toISOString(), cleanupPending: true };
+    await writeJsonAtomic(join(directory, "status.json"), { ...initial, driverPid: process.pid });
     const log = await open(join(directory, "driver.log"), "a", 0o600);
     try {
       const child = spawn(process.execPath, [fileURLToPath(new URL("./worker.js", import.meta.url)), directory], {
@@ -120,7 +126,10 @@ export async function startSession(options: StartSessionOptions): Promise<Sessio
       });
       const spawned = new Promise<void>((yes, no) => { child.once("spawn", yes); child.once("error", no); });
       await spawned;
+      handedOff = true;
       child.unref();
+      await writeJsonAtomic(join(directory, "status.json"), { ...initial, driverPid: child.pid });
+      await writeFile(join(credentialDir, "handoff"), "ready\n", { mode: 0o600 });
     } finally { await log.close(); }
     const deadline = Date.now() + 10_000;
     while (Date.now() < deadline) {
@@ -133,7 +142,8 @@ export async function startSession(options: StartSessionOptions): Promise<Sessio
     }
     throw new Error("host session process did not start; see driver.log");
   } catch (error) {
-    if (created) { await engine.stop(containerName, 2); await engine.remove(containerName); }
+    // Once spawned, only the worker (or explicit orphan cleanup) owns resources.
+    if (handedOff) throw error;
     if (credentialDir) await rm(credentialDir, { recursive: true, force: true });
     await writeJsonAtomic(join(directory, "status.json"), { state: "failed", turn: 0, updatedAt: new Date().toISOString(), detail: String(error) });
     throw error;
@@ -163,7 +173,7 @@ export async function request<T>(socketPath: string, command: unknown): Promise<
 async function launchRecord(directory: string): Promise<LaunchRecord> {
   const record = await readJson<LaunchRecord>(join(directory, "session.json"));
   if (!record) throw new SessionNotFoundError();
-  if (record.version !== 1) throw new Error("Unsupported session record version");
+  if (record.version !== 1 && record.version !== 2) throw new Error("Unsupported session record version");
   return record;
 }
 
@@ -231,23 +241,36 @@ async function cleanupOrphan(directory: string, record: LaunchRecord): Promise<v
       !isAbsolute(record.credentialDir) || !/^gauge-[A-Za-z0-9]+$/.test(basename(record.credentialDir)) ||
       record.socketPath !== join(record.credentialDir, "control.sock"))
     throw new Error("Refusing cleanup: invalid Gauge runtime ownership record");
+  if (record.gatewayName && (record.gatewayName !== `${record.containerName}-gateway` || record.trustContainerName !== `${record.containerName}-trust`))
+    throw new Error("Refusing cleanup: invalid gateway ownership record");
   try {
     if (!(await lstat(record.credentialDir)).isDirectory())
       throw new Error("Refusing cleanup: Gauge runtime is not a directory");
   } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
   const engine = new DockerCli();
-  await engine.assertSessionOwner(record.containerName, record.credentialDir);
-  await engine.stop(record.containerName, 2);
-  const workspace = await preserveWorkspace(directory, record.credentialDir);
-  await engine.remove(record.containerName);
-  await rm(record.credentialDir, { recursive: true, force: true });
-  const saved = await readJson<SessionStatus>(join(directory, "status.json"));
-  await writeJsonAtomic(join(directory, "status.json"), {
-    ...saved, state: saved && terminal(saved.state) ? saved.state : "interrupted",
-    turn: saved?.turn ?? 0, updatedAt: new Date().toISOString(), question: undefined, cleanupPending: false,
-    detail: saved && terminal(saved.state) ? saved.detail : "Interrupted session cleaned up explicitly",
-    artifacts: workspace ? { ...saved?.artifacts, workspace } : saved?.artifacts,
-  });
+  try {
+    await engine.assertSessionOwner(record.containerName, record.credentialDir);
+    await engine.stop(record.containerName, 2);
+    const workspace = await preserveWorkspace(directory, record.credentialDir);
+    await engine.remove(record.containerName);
+    await cleanupGateway(record, directory, engine);
+    await rm(record.credentialDir, { recursive: true, force: true });
+    const saved = await readJson<SessionStatus>(join(directory, "status.json"));
+    await writeJsonAtomic(join(directory, "status.json"), {
+      ...saved, state: saved && terminal(saved.state) ? saved.state : "interrupted",
+      turn: saved?.turn ?? 0, updatedAt: new Date().toISOString(), question: undefined, cleanupPending: false,
+      detail: saved && terminal(saved.state) && saved.state !== "interrupted" ? saved.detail : "Interrupted session cleaned up explicitly",
+      artifacts: workspace ? { ...saved?.artifacts, workspace } : saved?.artifacts,
+    });
+  } catch (error) {
+    const saved = await readJson<SessionStatus>(join(directory, "status.json"));
+    await writeJsonAtomic(join(directory, "status.json"), {
+      ...saved, state: saved && terminal(saved.state) ? saved.state : "interrupted",
+      turn: saved?.turn ?? 0, updatedAt: new Date().toISOString(), cleanupPending: true,
+      detail: `Cleanup incomplete: ${String(error)}; retry stopSession after resolving the error`,
+    });
+    throw error;
+  }
 }
 
 export const readSessionEventsNdjson = (directory: string): Promise<string> => readFile(join(directory, "events.ndjson"), "utf8");

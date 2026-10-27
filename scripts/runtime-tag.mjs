@@ -20,6 +20,6 @@ export async function runtimeTagExists(manifest, { actor, token, tag = manifest.
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const manifest = JSON.parse(await readFile(new URL("../cli/runtime-manifest.json", import.meta.url), "utf8"));
+  const manifest = JSON.parse(await readFile(new URL(process.argv.includes("--gateway") ? "../cli/gateway-manifest.json" : "../cli/runtime-manifest.json", import.meta.url), "utf8"));
   console.log(`exists=${await runtimeTagExists(manifest, { actor: process.env.GITHUB_ACTOR, token: process.env.GHCR_TOKEN, tag: process.argv[2] ?? manifest.version })}`);
 }

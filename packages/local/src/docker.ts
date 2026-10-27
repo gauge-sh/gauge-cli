@@ -1,8 +1,8 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-interface BindMount { type: "bind"; source: string; target: string; readonly: boolean }
-interface ContainerSpec {
+export interface BindMount { type: "bind"; source: string; target: string; readonly: boolean }
+export interface ContainerSpec {
   name: string;
   image: string;
   labels: Record<string, string>;
@@ -11,6 +11,9 @@ interface ContainerSpec {
   command: string[];
   interactive?: boolean;
   user?: string;
+  network?: string;
+  gateway?: boolean;
+  restricted?: boolean;
 }
 
 const exec = promisify(execFile);
@@ -36,12 +39,13 @@ const isMissing = (stderr: string) =>
 export class DockerCli {
   constructor(private readonly binary = "docker") {}
 
-  private async run(args: string[]): Promise<string> {
+  private async run(args: string[], includeStderr = false): Promise<string> {
     try {
-      const { stdout } = await exec(this.binary, args, {
+      const { stdout, stderr } = await exec(this.binary, args, {
         maxBuffer: 16 * 1024 * 1024,
+        timeout: 30_000,
       });
-      return stdout;
+      return includeStderr ? stdout + stderr : stdout;
     } catch (error) {
       const stderr = String((error as { stderr?: unknown }).stderr ?? error);
       throw new DockerError(args, stderr);
@@ -51,6 +55,7 @@ export class DockerCli {
   async create(spec: ContainerSpec): Promise<"created" | "exists"> {
     const args = [
       "create",
+      "--pull", "never",
       "--name",
       spec.name,
       "--restart",
@@ -58,10 +63,13 @@ export class DockerCli {
       "--log-driver",
       "json-file",
       "--log-opt",
-      "max-size=1g",
+      spec.gateway ? "max-size=8m" : "max-size=1g",
     ];
     if (spec.interactive) args.push("--interactive");
     if (spec.user) args.push("--user", spec.user);
+    if (spec.network) args.push("--network", spec.network);
+    if (spec.gateway) args.push("--cap-add", "NET_ADMIN", "--sysctl", "net.ipv6.conf.all.disable_ipv6=1");
+    if (spec.restricted) args.push("--cap-drop", "ALL", "--security-opt", "no-new-privileges");
     for (const [key, value] of Object.entries(spec.labels))
       args.push("--label", `${key}=${value}`);
     for (const [key, value] of Object.entries(spec.env))
@@ -98,6 +106,27 @@ export class DockerCli {
     } catch (error) {
       if (!(error instanceof DockerError && isMissing(error.stderr))) throw error;
     }
+  }
+
+  async start(name: string): Promise<void> { await this.run(["start", name]); }
+  async copy(name: string, path: string, destination: string): Promise<void> {
+    await this.run(["cp", `${name}:${path}`, destination]);
+  }
+  async running(name: string): Promise<boolean> {
+    return (await this.run(["inspect", "--format", "{{.State.Running}}", name])).trim() === "true";
+  }
+  async ready(name: string): Promise<boolean> {
+    const state = JSON.parse(await this.run(["inspect", "--format", "{{json .State}}", name]));
+    return state.Running === true && state.Health?.Status === "healthy";
+  }
+  async logs(name: string): Promise<string> { return this.run(["logs", "--tail", "10000", name], true); }
+  async assertCompanionOwner(name: string, session: string, role: string): Promise<void> {
+    let value: string;
+    try { value = await this.run(["inspect", name]); }
+    catch (error) { if (error instanceof DockerError && isMissing(error.stderr)) return; throw error; }
+    const labels = JSON.parse(value)[0]?.Config?.Labels;
+    if (labels?.["sh.gauge.session"] !== session || labels?.["sh.gauge.role"] !== role)
+      throw new Error("Refusing cleanup: companion container ownership does not match the Gauge session");
   }
 
   async remove(name: string): Promise<void> {

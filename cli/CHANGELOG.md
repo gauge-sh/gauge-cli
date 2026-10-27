@@ -13,6 +13,9 @@
   Settings → API Keys), which takes precedence over a login. Errors report the
   API's error code; plan limits exit 3. `gauge chat categories use` saves a
   default category (`chatCategory`) for the selected organization.
+- Add portable `web-fixture` inputs for exact web responses, scoped missing-page blocking, and HTTPS origin proxying through the existing local/hosted run surface.
+- Add a per-session local mitmproxy gateway, public CA distribution, fixture evidence, and worker-owned startup/cleanup. Runtime inspect/pull now covers the gateway image.
+- Require a qualified, digest-pinned public gateway image before releasing the CLI.
 
 ### Changed
 
