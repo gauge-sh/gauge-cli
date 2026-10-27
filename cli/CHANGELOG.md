@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Fixed
+
+- Selecting an organization by public slug now checks access even when it is
+  absent from `gauge orgs`. Lookup outside the list requires Chat to be enabled.
+
 ## 0.25.0 — 2026-10-26
 
 ### Added

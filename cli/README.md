@@ -34,6 +34,12 @@ followed by its run specification, the project setting, then your default.
 Chat can pick your organization automatically if you have only one; Agents
 commands need a saved selection or `--org`.
 
+If your account can access an organization that isn't listed by `gauge orgs`,
+select it by public slug with `--org` or `gauge orgs use`. The server checks
+whether your account has access. Lookup outside the list currently requires
+the organization to have Chat enabled. For an unlisted Agents-only organization,
+use `--org <canonical-uuid>`.
+
 **Upgrading:** If your account has only one organization, `gauge auth login`
 updates your old saved default automatically. Otherwise, run `gauge orgs`, then
 `gauge orgs use <slug>` to choose your default. This includes defaults that an

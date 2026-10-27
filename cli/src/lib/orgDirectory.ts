@@ -49,15 +49,13 @@ export async function findOrganization(value: string): Promise<DirectoryOrg> {
   const org = (await fetchDirectory()).find(
     (org) => org.id === value || org.slug === value,
   );
-  if (!org)
-    throw new CliError(
-      "not_found",
-      `You don't have access to an organization named "${value}".`,
-      {
-        hint: "Run `gauge orgs` to see your organizations, then use a value from the slug column.",
-      },
-    );
-  return org;
+  if (org) return org;
+  // The list contains memberships, not every organization a superuser can
+  // access. Let the single-org endpoint authorize an explicit selection.
+  // Keep list matches above: they also include Agents-only organizations,
+  // while the single-org endpoint currently requires Chat to be enabled.
+  const { chatPath, createChatApiClient } = await import("./chatApi");
+  return createChatApiClient().get<DirectoryOrg>(chatPath("orgs", value));
 }
 
 export async function resolveOrgValue(value: string): Promise<ResolvedOrg> {
