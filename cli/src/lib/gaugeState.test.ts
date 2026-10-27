@@ -13,7 +13,7 @@ function workspace(t: TestContext) {
 test("backend precedence is flag, private workspace, user, then local, independent of login", (t) => {
   const root = workspace(t);
   assert.equal(
-    readGaugeState({}, root, { signedIn: true, defaultOrg: "acme" }).mode,
+    readGaugeState({}, root, { signedIn: true, orgId: "acme" }).mode,
     "local",
   );
   assert.equal(

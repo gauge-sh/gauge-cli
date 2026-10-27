@@ -17,7 +17,7 @@ export function register(program: Command): void {
     .command("list")
     .description("List your dashboard library")
     .action(async (_opts: unknown, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       const res = await createClient().get<dashboards.ListDashboardsResponse>(
         dashboardsPath(org),
       );
@@ -38,7 +38,7 @@ export function register(program: Command): void {
     .command("get <key>")
     .description("Show one resolved dashboard (widgets + saved filters)")
     .action(async (key: string, _opts: unknown, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       const dashboard = await createClient().get<dashboards.ResolvedDashboard>(
         `${dashboardsPath(org)}/${encodeURIComponent(key)}`,
       );
@@ -58,7 +58,7 @@ export function register(program: Command): void {
     .command("create <name>")
     .description("Create an empty personal dashboard")
     .action(async (name: string, _opts: unknown, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       const created = await createClient().post<dashboards.ResolvedDashboard>(
         dashboardsPath(org),
         { name },
@@ -71,7 +71,7 @@ export function register(program: Command): void {
     .command("rename <key> <name>")
     .description("Rename a dashboard (in your overlay)")
     .action(async (key: string, name: string, _opts: unknown, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       const updated = await createClient().patch<dashboards.ResolvedDashboard>(
         `${dashboardsPath(org)}/${encodeURIComponent(key)}`,
         { name },
@@ -84,7 +84,7 @@ export function register(program: Command): void {
     .command("rm <key>")
     .description("Delete a dashboard (built-in templates refuse)")
     .action(async (key: string, _opts: unknown, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       await createClient().delete<void>(
         `${dashboardsPath(org)}/${encodeURIComponent(key)}`,
       );
@@ -104,7 +104,7 @@ export function register(program: Command): void {
         opts: { json?: string; file?: string; clear?: boolean },
         cmd: Command,
       ) => {
-        const org = resolveOrg(cmd);
+        const org = await resolveOrg(cmd);
         const provided = [opts.json, opts.file, opts.clear].filter(
           (v) => v !== undefined && v !== false,
         ).length;

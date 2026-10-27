@@ -535,7 +535,7 @@ export async function loadLocalRunDefinition(
     return {
       definition,
       webFixtures: await freezeWebFixtures({ ...definition, resources: resources.filter((r) => r.source.type === "upload") }, uploads),
-      org: config.org,
+      org: config.orgId ?? config.org,
       uploads,
       inputSnapshots,
       unattachedInputs,

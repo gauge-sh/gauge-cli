@@ -2,9 +2,35 @@
 
 ## Unreleased
 
+### Added
+
+- `gauge chat` commands for the Gauge Chat API: categories,
+  topics (list, create, rename), prompts (bulk add with `--dry-run`,
+  bulk move, tag, untag), tags, brands, `query` with
+  `datasets`/`fields`/`metadata` discovery, answers, and citations. They use
+  `gauge auth login` shared credentials or,
+  for scripts, an org API key (`GAUGE_API_TOKEN=gauge_sk_…`, created in
+  Settings → API Keys), which takes precedence over a login. Errors report the
+  API's error code; plan limits exit 3. `gauge chat categories use` saves a
+  default category (`chatCategory`) for the selected organization.
 - Add portable `web-fixture` inputs for exact web responses, scoped missing-page blocking, and HTTPS origin proxying through the existing local/hosted run surface.
 - Add a per-session local mitmproxy gateway, public CA distribution, fixture evidence, and worker-owned startup/cleanup. Runtime inspect/pull now covers the gateway image.
 - Require a qualified, digest-pinned public gateway image before releasing the CLI.
+
+### Changed
+
+- Public organization slugs now come only from the shared Gauge directory.
+  `gauge orgs use <slug>` stores a canonical `orgId`; `--project` saves it to
+  `gauge.json`. Old `defaultOrg` and project `org` selections require explicit
+  reselection. Internal Agents slugs, persistent alias caches, and unlinked
+  workspaces are no longer used for public organization selection.
+- `gauge whoami` identifies users and organization API keys. `gauge auth status`
+  reports credential source, validity, scopes, expiry, and API URLs. Their JSON
+  output is documented in the CLI README. There is no product-specific whoami.
+- Chat commands with an org API key default to the owning organization;
+  `--org` can select an agency key's client. Agents commands retain explicit or
+  saved selection. Directory access by legacy Agents tokens requires a shared
+  login; requests with canonical UUIDs still work.
 
 ## 0.24.0 — 2026-10-21
 

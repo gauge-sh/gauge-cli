@@ -3,17 +3,24 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 export type CliConfig = {
+  orgId?: string;
   defaultOrg?: string;
   apiUrl?: string;
   authUrl?: string;
   backend?: "local" | "hosted";
+  chatCategory?: string;
+  // The organization chatCategory was chosen in.
+  chatCategoryOrg?: string;
 };
 
 export const CONFIG_KEYS = [
+  "orgId",
   "defaultOrg",
   "apiUrl",
   "authUrl",
   "backend",
+  "chatCategory",
+  "chatCategoryOrg",
 ] as const;
 export type ConfigKey = (typeof CONFIG_KEYS)[number];
 

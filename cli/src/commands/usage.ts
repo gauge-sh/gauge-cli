@@ -29,7 +29,7 @@ export function register(program: Command): void {
         opts: { since?: string; limit: number; cursor?: string },
         cmd: Command,
       ) => {
-        const org = resolveOrg(cmd);
+        const org = await resolveOrg(cmd);
         const res = await createClient().get<ListResponse<UsageEntry>>(
           `/api/v1/orgs/${encodeURIComponent(org)}/usage`,
           { since: opts.since, limit: opts.limit, cursor: opts.cursor },

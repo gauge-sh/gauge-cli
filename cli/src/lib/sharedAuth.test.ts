@@ -131,7 +131,7 @@ describe("shared CLI credentials", { concurrency: false }, () => {
     ]);
   });
 
-  it("resolves Agents workspaces separately during shared onboarding", async () => {
+  it("uses the canonical organization during shared onboarding despite different product slugs", async () => {
     mock.method(console, "log", () => {});
     const seen: string[] = [];
     mock.method(globalThis, "fetch", async (url: URL | string) => {
@@ -147,19 +147,22 @@ describe("shared CLI credentials", { concurrency: false }, () => {
         });
       if (String(url).endsWith("/token"))
         return json({ status: "approved", ...tokens() });
+      if (String(url).endsWith("/api/v1/orgs"))
+        return json({ data: [{ id: "8c7f0e1a-1111-4222-8333-944455556666", slug: "chat-slug", name: "Org", products: { chat: true, agents: true } }] });
       if (String(url).includes("chat.test"))
         return json({
           user: { id: "uuid", email: "person@test.com", name: "Person" },
-          orgs: [{ id: "canonical", slug: "chat-slug", name: "Org" }],
+          orgs: [{ id: "8c7f0e1a-1111-4222-8333-944455556666", slug: "chat-slug", name: "Org" }],
         });
       return json({
         user: { id: "agents-user", email: "person@test.com" },
-        orgs: [{ publicId: "public", slug: "agents-slug", name: "Org" }],
+        orgs: [{ publicId: "public", canonicalGaugeOrganizationId: "8c7f0e1a-1111-4222-8333-944455556666", slug: "agents-slug", name: "Org" }],
       });
     });
     const result = await ensureAccount({ seed: false });
-    assert.equal(result.org, "agents-slug");
-    assert.equal(seen.at(-1), "https://agents.test/api/v1/me");
+    assert.equal(result.org, "8c7f0e1a-1111-4222-8333-944455556666");
+    assert.ok(seen.includes("https://agents.test/api/v1/me"));
+    assert.equal(seen.at(-1), "https://chat.test/api/v1/orgs");
     assert.equal(
       (readCredentials() as SharedCredentials).refreshToken,
       "gauge_refresh_new",

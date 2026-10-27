@@ -49,5 +49,16 @@ revocation failed. Environment credentials are unchanged. `auth tokens` manages
 legacy Agents tokens; shared sessions cannot mint legacy tokens that would escape
 the shared grant's revocation.
 
-Local execution is unchanged. Existing stored and imported Agents tokens remain
-supported; the next browser or device login creates a shared session.
+Local execution is unchanged. Existing stored and imported Agents tokens can
+still identify the user, manage legacy tokens, and access Agents by canonical
+organization UUID. They cannot access the shared organization directory. Use
+`gauge auth login` for public slug selection; unset `GAUGE_API_TOKEN` if it
+contains a legacy token. The next browser or device login creates a shared
+session.
+
+`gauge whoami` identifies the user or organization API key. `gauge auth status`
+validates the active credential and reports its source, scopes, expiry, and API
+URLs. Shared sessions and API keys use the public Chat `/api/v1/me` endpoint;
+legacy credentials use Agents `/api/v1/me`. Only `whoami` lists organizations,
+using the canonical directory for shared sessions and the owning organization
+for API keys.

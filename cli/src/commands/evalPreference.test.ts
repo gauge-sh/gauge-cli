@@ -57,7 +57,7 @@ function program(): Command {
 }
 
 async function gauge(args: string[], mode = "--hosted"): Promise<void> {
-  await program().parseAsync(["--org", "acme", "-o", "json", mode, ...args], {
+  await program().parseAsync(["--org", "8c7f0e1a-1111-4222-8333-944455556666", "-o", "json", mode, ...args], {
     from: "user",
   });
 }
@@ -93,11 +93,11 @@ describe("gauge eval and gauge preference", () => {
     assert.deepEqual(
       requests.map(({ method, url }) => `${method} ${url}`),
       [
-        "GET /api/v1/orgs/acme/eval-sets/e1",
-        "DELETE /api/v1/orgs/acme/visibility-prompts/p1",
-        "PATCH /api/v1/orgs/acme/eval-sets/e1",
-        "DELETE /api/v1/orgs/acme/visibility-prompts/p1/scenarios/s1",
-        "POST /api/v1/orgs/acme/visibility-prompts",
+        "GET /api/v1/orgs/8c7f0e1a-1111-4222-8333-944455556666/eval-sets/e1",
+        "DELETE /api/v1/orgs/8c7f0e1a-1111-4222-8333-944455556666/visibility-prompts/p1",
+        "PATCH /api/v1/orgs/8c7f0e1a-1111-4222-8333-944455556666/eval-sets/e1",
+        "DELETE /api/v1/orgs/8c7f0e1a-1111-4222-8333-944455556666/visibility-prompts/p1/scenarios/s1",
+        "POST /api/v1/orgs/8c7f0e1a-1111-4222-8333-944455556666/visibility-prompts",
       ],
     );
     assert.deepEqual(requests[2].body, { tags: ["beta"] });
@@ -119,7 +119,7 @@ describe("gauge eval and gauge preference", () => {
       ["preference", "list", "--since", "2026-10-01"],
     ])
       await assert.rejects(
-        program().parseAsync(["--org", "acme", "--hosted", ...args], {
+        program().parseAsync(["--org", "8c7f0e1a-1111-4222-8333-944455556666", "--hosted", ...args], {
           from: "user",
         }),
         (error) =>
@@ -153,8 +153,8 @@ describe("gauge run", () => {
     assert.deepEqual(
       requests.map(({ url }) => url),
       [
-        "/api/v1/orgs/acme/runs?status=failed&evalSet=e1&limit=50",
-        "/api/v1/orgs/acme/visibility-prompts/p1/runs?limit=50",
+        "/api/v1/orgs/8c7f0e1a-1111-4222-8333-944455556666/runs?status=failed&evalSet=e1&limit=50",
+        "/api/v1/orgs/8c7f0e1a-1111-4222-8333-944455556666/visibility-prompts/p1/runs?limit=50",
       ],
     );
     assert.match(

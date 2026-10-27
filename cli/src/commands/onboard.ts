@@ -39,13 +39,13 @@ export function register(program: Command): void {
         if (output === "json") {
           printJson({
             user: account.user,
-            org: account.createdOrg ?? { slug: account.org },
-            defaultOrg: account.org,
+            org: account.organization,
+            orgId: account.org,
             seeded: account.seeded,
           });
           return;
         }
-        console.log(`\nDefault org set to ${account.org}. You're ready:`);
+        console.log(`\nDefault org set to ${account.organization.slug}. You're ready:`);
         console.log("  gauge status                    # the org at a glance");
         console.log(
           "  gauge eval list                 # eval sets",

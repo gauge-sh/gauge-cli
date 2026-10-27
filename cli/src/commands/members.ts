@@ -12,7 +12,7 @@ export function register(program: Command): void {
     .command("list")
     .description("List members and pending invites")
     .action(async (_opts: unknown, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       const client = createClient();
       const base = `/api/v1/orgs/${encodeURIComponent(org)}`;
       const [members, pending] = await Promise.all([

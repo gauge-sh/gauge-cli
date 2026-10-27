@@ -43,7 +43,7 @@ export function register(program: Command): void {
     .command("list")
     .description("List repositories (yours + read-only Gauge-provided ones)")
     .action(async (_opts: unknown, command: Command) => {
-      const org = resolveOrg(command);
+      const org = await resolveOrg(command);
       const output = resolveOutput(command);
       const items = await fetchAllRepos(createClient(), org);
       if (output === "json") {
@@ -57,7 +57,7 @@ export function register(program: Command): void {
     .command("add <url>")
     .description("Add a repository (pulls languages/size/stars from GitHub)")
     .action(async (url: string, _opts: unknown, command: Command) => {
-      const org = resolveOrg(command);
+      const org = await resolveOrg(command);
       const output = resolveOutput(command);
       const result = await createClient().post<RepoSyncResult>(reposPath(org), {
         url,
@@ -100,7 +100,7 @@ export function register(program: Command): void {
         },
         command: Command,
       ) => {
-        const org = resolveOrg(command);
+        const org = await resolveOrg(command);
         if (opts.framework.length > 0 && opts.clearFrameworks)
           throw new CliError(
             "usage",
@@ -126,7 +126,7 @@ export function register(program: Command): void {
     .command("resync <url>")
     .description("Re-fetch a repository's GitHub metadata")
     .action(async (url: string, _opts: unknown, command: Command) => {
-      const org = resolveOrg(command);
+      const org = await resolveOrg(command);
       const output = resolveOutput(command);
       const result = await createClient().post<RepoSyncResult>(
         `${reposPath(org)}/resync`,
@@ -149,7 +149,7 @@ export function register(program: Command): void {
     .command("rm <url>")
     .description("Remove a repository from the catalog")
     .action(async (url: string, _opts: unknown, command: Command) => {
-      const org = resolveOrg(command);
+      const org = await resolveOrg(command);
       const output = resolveOutput(command);
       await createClient().delete<void>(reposPath(org), { url });
       if (output !== "json") console.log(`Removed ${url}`);

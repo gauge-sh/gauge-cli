@@ -51,7 +51,10 @@ function parseWhere(expr: string): WhereClause {
   return { dimension, op: opFor[sym], value: rest.trim() };
 }
 
-function parseOrderBy(raw: string): { key: string; dir: "asc" | "desc" } {
+export function parseOrderBy(raw: string): {
+  key: string;
+  dir: "asc" | "desc";
+} {
   const [key, dir] = raw.split(":");
   if (
     !key.trim() ||
@@ -65,7 +68,7 @@ function parseOrderBy(raw: string): { key: string; dir: "asc" | "desc" } {
   return { key: key.trim(), dir: dir?.trim() === "asc" ? "asc" : "desc" };
 }
 
-async function readStdin(): Promise<string> {
+export async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
   return Buffer.concat(chunks).toString("utf8");
@@ -170,9 +173,10 @@ async function buildSpec(opts: QueryOpts): Promise<QuerySpec> {
   return spec;
 }
 
-const pct = (n: number): string => `${(n * 100).toFixed(1)}%`;
+// Rate metrics are 0-1 fractions in both the Agents and Chat query APIs.
+export const pct = (n: number): string => `${(n * 100).toFixed(1)}%`;
 
-function noteFreshness(f: stats.StatsFreshness): void {
+export function noteFreshness(f: stats.StatsFreshness): void {
   if (!f.available) {
     console.error(
       "warning: analytics store is temporarily unavailable; results may be incomplete.",
@@ -192,7 +196,7 @@ async function runQuery(command: Command, opts: QueryOpts): Promise<void> {
     state.mode === "local"
       ? queryLocal(localDirectory(command), spec)
       : await createClient().post<query.QueryResponse>(
-          `/api/v1/orgs/${encodeURIComponent(resolveOrg(command))}/query`,
+          `/api/v1/orgs/${encodeURIComponent(await resolveOrg(command))}/query`,
           spec,
         );
   if (output === "json") {
@@ -242,7 +246,7 @@ async function showMetadata(
     gaugeState(command).mode === "local"
       ? localQueryMetadata()
       : await createClient().get<query.MetadataResponse>(
-          `/api/v1/orgs/${encodeURIComponent(resolveOrg(command))}/query/metadata`,
+          `/api/v1/orgs/${encodeURIComponent(await resolveOrg(command))}/query/metadata`,
         );
 
   if (mode === "datasets") {

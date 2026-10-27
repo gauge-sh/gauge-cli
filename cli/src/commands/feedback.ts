@@ -1,6 +1,7 @@
 import { feedback } from "@withgauge/api-schemas";
 import { type Command, Option } from "commander";
 import { createClient } from "../lib/client";
+import { resolveOrgValue } from "../lib/orgDirectory";
 import { readConfig } from "../lib/config";
 import { resolveOutput } from "../lib/context";
 import { printJson } from "../lib/output";
@@ -33,7 +34,11 @@ export function register(program: Command): void {
           message: opts.message,
           kind: opts.kind,
           command: opts.command,
-          org: client.signedIn ? (org ?? readConfig().defaultOrg) : undefined,
+          org: client.signedIn
+            ? org
+              ? (await resolveOrgValue(org)).id
+              : readConfig().orgId
+            : undefined,
         };
         const res = await client.post<feedback.CreateFeedbackResponse>(
           "/api/v1/feedback",

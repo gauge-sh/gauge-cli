@@ -55,6 +55,18 @@ async function fixture(t: { after: (fn: () => Promise<void>) => void }) {
   return root;
 }
 
+test("loads a project migrated to a canonical organization ID", async (t) => {
+  const root = await fixture(t);
+  const orgId = "8c7f0e1a-1111-4222-8333-944455556666";
+  await writeFile(
+    join(root, "gauge.json"),
+    JSON.stringify({ version: 2, orgId, inputs: {} }),
+  );
+  const loaded = await loadLocalRunDefinition([], [], root);
+  t.after(loaded.cleanup);
+  assert.equal(loaded.org, orgId);
+});
+
 test("submits current definitions and an uploaded skill without Git or a GitHub App", async (t) => {
   const root = await fixture(t);
   const loaded = await loadLocalRunDefinition([], ["product=./built"], root);

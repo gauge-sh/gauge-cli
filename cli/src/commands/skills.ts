@@ -89,7 +89,7 @@ export function register(program: Command): void {
     .command("list")
     .description("List the org's skills with their newest version")
     .action(async (_opts: unknown, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       const res = await createClient().get<skills.ListSkillsResponse>(
         skillsPath(org),
       );
@@ -111,7 +111,7 @@ export function register(program: Command): void {
     .command("get <ref>")
     .description("Show one skill: source, note, every version")
     .action(async (ref: string, _opts: unknown, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       const skill = await createClient().get<skills.SkillDetail>(
         skillPath(org, ref),
       );
@@ -156,7 +156,7 @@ export function register(program: Command): void {
         },
         cmd: Command,
       ) => {
-        const org = resolveOrg(cmd);
+        const org = await resolveOrg(cmd);
         const result = await createClient().post<skills.AddSkillResponse>(
           skillsPath(org),
           {
@@ -199,7 +199,7 @@ export function register(program: Command): void {
       "true|false — auto re-ingest on new commits",
     )
     .action(async (ref: string, opts: SkillEditOpts, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       const client = createClient();
       const body = await buildSkillEditBody(opts, async () => {
         const skill = await client.get<skills.SkillDetail>(skillPath(org, ref));
@@ -217,7 +217,7 @@ export function register(program: Command): void {
     .command("reingest <ref>")
     .description("Pull the tracked source now (no-op when already current)")
     .action(async (ref: string, _opts: unknown, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       const result = await createClient().post<skills.ReingestSkillResponse>(
         `${skillPath(org, ref)}/reingest`,
         {},
@@ -237,7 +237,7 @@ export function register(program: Command): void {
       "Remove a skill; the handle stays reserved and finished runs keep their snapshot",
     )
     .action(async (ref: string, _opts: unknown, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       const result = await createClient().delete<{
         referencedBatches: number;
         referencedRuns: number;
@@ -254,7 +254,7 @@ export function register(program: Command): void {
     .description("Recent sessions that staged this skill")
     .option("--limit <n>", "max runs (default 10, cap 50)")
     .action(async (ref: string, opts: { limit?: string }, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       const res = await createClient().get<skills.ListSkillRunsResponse>(
         `${skillPath(org, ref)}/runs`,
         { limit: opts.limit },
