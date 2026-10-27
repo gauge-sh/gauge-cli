@@ -7,6 +7,7 @@ import { Command } from "commander";
 import {
   fileEditFromOpts,
   fileSourceFromOpts,
+  latestLaunch,
   launchSettled,
   parseEdits,
   parseStatus,
@@ -35,6 +36,20 @@ describe("parseSubjectRef", () => {
       /one of --issue/,
     );
     assert.throws(() => parseSubjectRef({ finding: "o1" }), /needs --run/);
+    assert.throws(
+      () => parseSubjectRef({ issue: "i1", run: "r1" }),
+      /--run only applies with --finding/,
+    );
+  });
+});
+
+describe("latestLaunch", () => {
+  it("picks the highest number in any order", () => {
+    assert.equal(
+      latestLaunch([{ number: 3 }, { number: 1 }, { number: 2 }])?.number,
+      3,
+    );
+    assert.equal(latestLaunch([]), undefined);
   });
 });
 
@@ -66,7 +81,7 @@ describe("fileEditFromOpts", () => {
       { kind: "skill", name: "setup", path: "old.md", body: null },
     );
     assert.deepEqual(
-      fileEditFromOpts({ cli: "@owned/cli", from: "r.json" }, () => "{\"a\":1}"),
+      fileEditFromOpts({ cli: "@owned/cli", from: "r.json" }, () => '{"a":1}'),
       { kind: "cli", package: "@owned/cli", rules: { a: 1 } },
     );
   });
@@ -92,6 +107,27 @@ describe("fileEditFromOpts", () => {
     assert.throws(
       () => fileEditFromOpts({ cli: "c", from: "x" }, () => "not json"),
       /CLI rules as JSON/,
+    );
+    assert.throws(
+      () =>
+        fileEditFromOpts({ page: "https://x.dev", path: "p", from: "x" }, read),
+      /--path only applies with --skill/,
+    );
+    assert.throws(
+      () =>
+        fileEditFromOpts(
+          { skill: "s", path: "p", contentType: "text/html", from: "x" },
+          read,
+        ),
+      /--content-type only applies with --page/,
+    );
+    assert.throws(
+      () =>
+        fileEditFromOpts(
+          { skill: "s", path: "p", delete: true, from: "x" },
+          read,
+        ),
+      /--delete or --from/,
     );
   });
 });
@@ -180,7 +216,15 @@ describe("optimization command requests", () => {
       undefined,
     ],
     [
-      ["file", "edit", "o1", "--page", "https://x.dev/docs", "--edits", EDITS_FILE],
+      [
+        "file",
+        "edit",
+        "o1",
+        "--page",
+        "https://x.dev/docs",
+        "--edits",
+        EDITS_FILE,
+      ],
       "PATCH",
       "/o1/files",
       { url: "https://x.dev/docs", edits: [{ find: "old", replace: "new" }] },
@@ -192,7 +236,15 @@ describe("optimization command requests", () => {
       { kind: "page", url: "https://x.dev/docs" },
     ],
     [
-      ["file", "write", "o1", "--page", "https://x.dev/docs", "--from", PAGE_FILE],
+      [
+        "file",
+        "write",
+        "o1",
+        "--page",
+        "https://x.dev/docs",
+        "--from",
+        PAGE_FILE,
+      ],
       "PUT",
       "/o1/files",
       { kind: "page", url: "https://x.dev/docs", body: "# Docs" },
@@ -203,12 +255,7 @@ describe("optimization command requests", () => {
       "/o1/files?key=cli%3A%40owned%2Fcli",
       undefined,
     ],
-    [
-      ["notes", "o1", "--from", PAGE_FILE],
-      "PATCH",
-      "/o1",
-      { notes: "# Docs" },
-    ],
+    [["notes", "o1", "--from", PAGE_FILE], "PATCH", "/o1", { notes: "# Docs" }],
     [
       ["launch", "o1", "--run", "r1", "r2", "--note", "auth first", "--yes"],
       "POST",

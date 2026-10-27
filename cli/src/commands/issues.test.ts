@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { Command } from "commander";
-import { impactLine, register } from "./issues";
+import { flattenBlocks, impactLine, register } from "./issues";
 
 describe("impactLine", () => {
   it("shows effects for problems and destinations for reasons", () => {
@@ -22,11 +22,42 @@ describe("impactLine", () => {
   });
 });
 
+describe("flattenBlocks", () => {
+  it("tags each issue with its type and product and sums ungrouped findings", () => {
+    const issue = {
+      id: "is_1",
+      title: "Docs lack install command",
+      description: "",
+      sessions: 5,
+      wentTo: [],
+      impact: [{ effect: "EXTRA_WORK", sessions: 5 }],
+    };
+    const block = {
+      kind: "FRICTION",
+      headline: "",
+      sessions: 5,
+      total: 5,
+      ungrouped: 2,
+    };
+    assert.deepEqual(
+      flattenBlocks("friction", [
+        { ...block, product: "Acme", issues: [issue] },
+        { ...block, product: "Other", issues: [], ungrouped: 1 },
+      ]),
+      {
+        issues: [{ ...issue, type: "friction", product: "Acme" }],
+        ungrouped: 3,
+      },
+    );
+  });
+});
+
 describe("issues command requests", () => {
-  for (const [args, suffix] of [
-    [["list"], "?kind=problems"],
-    [["list", "--reasons"], "?kind=reasons"],
-    [["get", "is_1"], "/is_1"],
+  for (const [args, suffixes] of [
+    [["list"], ["?kind=problems", "?kind=reasons"]],
+    [["list", "--type", "friction"], ["?kind=problems"]],
+    [["list", "--type", "objection"], ["?kind=reasons"]],
+    [["get", "is_1"], ["/is_1"]],
   ] as const) {
     it(`${args.join(" ")} maps to the correct API request`, async (t) => {
       const previous = {
@@ -63,9 +94,13 @@ describe("issues command requests", () => {
         ],
         { from: "user" },
       );
-      assert.deepEqual(urls, [
-        `https://test.invalid/api/v1/orgs/8c7f0e1a-1111-4222-8333-944455556666/issues${suffix}`,
-      ]);
+      assert.deepEqual(
+        urls.sort(),
+        suffixes.map(
+          (suffix) =>
+            `https://test.invalid/api/v1/orgs/8c7f0e1a-1111-4222-8333-944455556666/issues${suffix}`,
+        ),
+      );
     });
   }
 });

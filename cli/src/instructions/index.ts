@@ -179,7 +179,7 @@ Choose what to improve: \`gauge instructions issues\`.
 
 ## The loop
 
-    gauge issues list                               # by impact; --reasons for Agent Preference
+    gauge issues list                               # by impact; --type friction|objection
     gauge issues get <id>                           # the issue's findings and runs
     gauge optimizations create --issue <id>         # or --finding <id> --run <run>, or --goal <text>
     gauge optimizations authoring <id>              # findings, tree, editing practices

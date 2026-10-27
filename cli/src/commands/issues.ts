@@ -1,4 +1,4 @@
-import type { Command } from "commander";
+import { type Command, Option } from "commander";
 import { createClient } from "../lib/client";
 import { hostedOnly, resolveOrg, resolveOutput } from "../lib/context";
 import { printItems, printJson } from "../lib/output";
@@ -40,6 +40,23 @@ type IssueDetail = {
   }[];
 };
 
+const TYPES = { friction: "problems", objection: "reasons" } as const;
+type IssueType = keyof typeof TYPES;
+
+export type ListedIssue = IssueRow & { type: IssueType; product: string };
+
+export function flattenBlocks(
+  type: IssueType,
+  blocks: IssueBlock[],
+): { issues: ListedIssue[]; ungrouped: number } {
+  return {
+    issues: blocks.flatMap((block) =>
+      block.issues.map((issue) => ({ ...issue, type, product: block.product })),
+    ),
+    ungrouped: blocks.reduce((sum, block) => sum + block.ungrouped, 0),
+  };
+}
+
 function issuesPath(org: string): string {
   return `/api/v1/orgs/${encodeURIComponent(org)}/issues`;
 }
@@ -60,36 +77,50 @@ export function register(program: Command): void {
   group
     .command("list")
     .description(
-      "Issues per owned product, most sessions first: problems from evals, or --reasons from preference prompts",
+      "Friction and objections across your products, most sessions first",
     )
-    .option("--reasons", "why agents passed on your product")
-    .action(async (opts: { reasons?: boolean }, cmd: Command) => {
-      const res = await createClient().get<{ blocks: IssueBlock[] }>(
-        issuesPath(await resolveOrg(cmd)),
-        { kind: opts.reasons ? "reasons" : "problems" },
+    .addOption(
+      new Option("--type <type>", "only this type").choices(Object.keys(TYPES)),
+    )
+    .action(async (opts: { type?: IssueType }, cmd: Command) => {
+      const org = await resolveOrg(cmd);
+      const types = opts.type
+        ? [opts.type]
+        : (Object.keys(TYPES) as IssueType[]);
+      const results = await Promise.all(
+        types.map(async (type) => {
+          const res = await createClient().get<{ blocks: IssueBlock[] }>(
+            issuesPath(org),
+            { kind: TYPES[type] },
+          );
+          return flattenBlocks(type, res.blocks);
+        }),
       );
-      if (resolveOutput(cmd) === "json") return printJson(res.blocks);
-      if (!res.blocks.length)
+      const issues = results
+        .flatMap((r) => r.issues)
+        .sort((a, b) => b.sessions - a.sessions);
+      if (resolveOutput(cmd) === "json") return printJson(issues);
+      if (!issues.length)
         console.log(
           "No issues yet. Issues group the findings from analyzed eval and preference runs.",
         );
-      for (const block of res.blocks) {
-        console.log(`\n${block.product}: ${block.headline}`);
+      else
         printItems(
-          block.issues.map((issue) => ({
+          issues.map((issue) => ({
             id: issue.id,
+            type: issue.type,
+            product: issue.product,
             sessions: issue.sessions,
             title: issue.title,
-            [block.kind === "OBJECTION" ? "went to" : "impact"]:
-              impactLine(issue),
+            impact: impactLine(issue),
           })),
           "table",
         );
-        if (block.ungrouped)
-          console.log(
-            `${block.ungrouped} more finding${block.ungrouped === 1 ? " is" : "s are"} not in an issue yet`,
-          );
-      }
+      const ungrouped = results.reduce((sum, r) => sum + r.ungrouped, 0);
+      if (ungrouped)
+        console.log(
+          `${ungrouped} more finding${ungrouped === 1 ? " is" : "s are"} not in an issue yet`,
+        );
     });
 
   group

@@ -719,20 +719,22 @@ scenario subset leaves the schedule unchanged.
 ## Issues (hosted)
 
 An issue groups the same finding across many sessions. `gauge issues list` shows
-each owned product's issues with the most sessions first, and how badly they
-hurt (blocked, recovered, extra work). `--reasons` lists why agents passed on
-your product in preference prompts. `gauge issues get <id>` lists the issue's
+every issue with the most sessions first, with its type and product. Friction
+shows how badly it hurt agents (blocked, recovered, extra work). Objections come
+from preference sessions and show where agents went instead. Filter with
+`--type friction|objection`. `gauge issues get <id>` lists the issue's
 findings with their runs. `gauge run insight <run>` shows each finding's issue.
 
 ## Optimizations (hosted)
 
-An optimization improves one issue. You edit a tree of pages, skills,
-and CLI rules; Gauge reruns the issue's source sessions with the tree injected
+Optimizations can help hill climb your agent surfaces to improve Agent
+Preference and Agent Experience. You edit a tree of pages, skills,
+and CLI rules; Gauge reruns the source sessions with the tree injected
 and compares their findings. Nothing deploys.
 
 ```sh
 gauge instructions optimization
-gauge issues list -o json                     # by impact; --reasons for Agent Preference
+gauge issues list -o json                     # by impact; --type friction|objection
 gauge issues get is_1                         # the issue's findings and runs
 gauge optimizations create --issue is_1       # or --finding <id> --run <run>, or --goal <text>
 gauge optimizations authoring op_1

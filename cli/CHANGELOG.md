@@ -23,8 +23,9 @@
 
 ### Added
 
-- `gauge issues list` ranks issues (the same finding across many sessions) by
-  impact, and `gauge issues get <id>` lists an issue's findings and runs.
+- `gauge issues list` ranks every issue (the same finding across many
+  sessions) by impact, with its type (friction or objection) and product;
+  `--type` filters, and `gauge issues get <id>` lists an issue's findings and runs.
   `gauge run insight` shows each finding's id and issue. `gauge instructions
   issues` explains issues, also called findings, and how to choose one.
 - `gauge run trace <id> --seq <n>` prints the trace around a seq,

@@ -6,7 +6,8 @@ import { confirmOrAbort } from "../lib/confirm";
 import { hostedOnly, resolveOrg, resolveOutput } from "../lib/context";
 import { printItems, printJson } from "../lib/output";
 
-type Summary = optimizations.OptimizationWire<optimizations.OptimizationSummary>;
+type Summary =
+  optimizations.OptimizationWire<optimizations.OptimizationSummary>;
 type Detail = optimizations.OptimizationWire<optimizations.OptimizationDetail>;
 type LaunchView = optimizations.OptimizationLaunchView;
 type LaunchDetail = optimizations.OptimizationLaunchDetail;
@@ -90,6 +91,8 @@ export function parseSubjectRef(opts: SubjectOpts): SubjectRef {
       "usage",
       "pass one of --issue <id>, --finding <id> --run <runId>, or --goal <text>",
     );
+  if (opts.run && !opts.finding)
+    throw new CliError("usage", "--run only applies with --finding");
   if (opts.issue) return { kind: "issue", issueId: opts.issue };
   if (opts.finding) {
     if (!opts.run) throw new CliError("usage", "--finding needs --run <runId>");
@@ -119,6 +122,12 @@ export function fileEditFromOpts(
     );
   if (opts.delete && !opts.skill)
     throw new CliError("usage", "--delete removes one path from a skill");
+  if (opts.path && !opts.skill)
+    throw new CliError("usage", "--path only applies with --skill");
+  if (opts.contentType && !opts.page)
+    throw new CliError("usage", "--content-type only applies with --page");
+  if (opts.delete && opts.from)
+    throw new CliError("usage", "pass --delete or --from, not both");
   if (!opts.delete && !opts.from)
     throw new CliError("usage", "--from <file> is required ('-' for stdin)");
   const from = opts.from as string;
@@ -146,10 +155,7 @@ export function fileEditFromOpts(
   try {
     rules = JSON.parse(read(from));
   } catch {
-    throw new CliError(
-      "usage",
-      "--from must contain CLI rules as JSON",
-    );
+    throw new CliError("usage", "--from must contain CLI rules as JSON");
   }
   return {
     kind: "cli",
@@ -169,6 +175,16 @@ export function fileSourceFromOpts(opts: FileAddOpts): FileSource {
   if (opts.page) return { kind: "page", url: opts.page };
   if (opts.skill) return { kind: "skill", name: opts.skill };
   return { kind: "cli" };
+}
+
+export function latestLaunch<T extends { number: number }>(
+  launches: T[],
+): T | undefined {
+  return launches.reduce<T | undefined>(
+    (latest, launch) =>
+      !latest || launch.number > latest.number ? launch : latest,
+    undefined,
+  );
 }
 
 /** Analysis only follows a successful rerun, so failed reruns settle unanalyzed. */
@@ -285,7 +301,9 @@ function printLaunch(launch: LaunchDetail): void {
     const now = new Set(run.findings.map((f) => f.label));
     const before = new Set(run.sourceFindings.map((f) => f.label));
     for (const f of run.sourceFindings)
-      console.log(`  ${now.has(f.label) ? "returned" : "resolved"}    ${f.label}`);
+      console.log(
+        `  ${now.has(f.label) ? "returned" : "resolved"}    ${f.label}`,
+      );
     for (const f of run.findings)
       if (!before.has(f.label)) console.log(`  introduced  ${f.label}`);
   }
@@ -309,7 +327,9 @@ type PageView = {
   hint?: string;
 };
 
-export function parseEdits(value: unknown): { find: string; replace: string }[] {
+export function parseEdits(
+  value: unknown,
+): { find: string; replace: string }[] {
   const ok =
     Array.isArray(value) &&
     value.length > 0 &&
@@ -497,7 +517,11 @@ export function register(program: Command): void {
       "JSON [{find, replace}]; copy find text from `file read --query`; '-' for stdin",
     )
     .action(
-      async (id: string, opts: { page: string; edits: string }, cmd: Command) => {
+      async (
+        id: string,
+        opts: { page: string; edits: string },
+        cmd: Command,
+      ) => {
         const res = await createClient().patch<WriteResult>(
           `${itemPath(await resolveOrg(cmd), id)}/files`,
           { url: opts.page, edits: parseEdits(readJson(opts.edits)) },
@@ -582,9 +606,7 @@ export function register(program: Command): void {
 
   group
     .command("launch <id>")
-    .description(
-      "Rerun the source sessions with the tree injected",
-    )
+    .description("Rerun the source sessions with the tree injected")
     .option("--run <runId...>", "rerun only these source runs")
     .option("--note <text>", "one line on what this launch tests")
     .option("--yes", "skip the confirmation")
@@ -648,31 +670,46 @@ export function register(program: Command): void {
       "Wait until the latest launch's reruns finish and are analyzed, then print them",
     )
     .option("--interval <seconds>", "poll interval (default 15)")
-    .action(async (id: string, opts: { interval?: string }, cmd: Command) => {
-      const path = itemPath(await resolveOrg(cmd), id);
-      const client = createClient();
-      const interval =
-        (parseCount(opts.interval, "--interval", 600) ?? 15) * 1000;
-      let last = "";
-      for (;;) {
-        const detail = await client.get<Detail>(path);
-        const latest = detail.launchList.at(-1);
-        if (!latest) throw new CliError("usage", `${id} has no launches yet`);
-        if (launchSettled(latest)) {
-          const launch = await client.get<LaunchDetail>(
-            `${path}/launches/${encodeURIComponent(latest.id)}`,
-          );
-          if (resolveOutput(cmd) === "json") printJson(launch);
-          else printLaunch(launch);
-          return;
+    .option("--timeout <minutes>", "give up after this long (default 60)")
+    .action(
+      async (
+        id: string,
+        opts: { interval?: string; timeout?: string },
+        cmd: Command,
+      ) => {
+        const path = itemPath(await resolveOrg(cmd), id);
+        const client = createClient();
+        const interval =
+          (parseCount(opts.interval, "--interval", 600) ?? 15) * 1000;
+        const timeoutMinutes =
+          parseCount(opts.timeout, "--timeout", 1440) ?? 60;
+        const deadline = Date.now() + timeoutMinutes * 60_000;
+        let last = "";
+        for (;;) {
+          const detail = await client.get<Detail>(path);
+          const latest = latestLaunch(detail.launchList);
+          if (!latest) throw new CliError("usage", `${id} has no launches yet`);
+          if (launchSettled(latest)) {
+            const launch = await client.get<LaunchDetail>(
+              `${path}/launches/${encodeURIComponent(latest.id)}`,
+            );
+            if (resolveOutput(cmd) === "json") printJson(launch);
+            else printLaunch(launch);
+            return;
+          }
+          const progress = launchProgress(latest);
+          if (progress !== last)
+            console.error(`launch ${latest.number}: ${progress}`);
+          last = progress;
+          if (Date.now() >= deadline)
+            throw new CliError(
+              "network",
+              `Timed out after ${timeoutMinutes} minutes (launch ${latest.number}: ${progress}). Re-run watch, or check \`gauge optimizations launches ${id} ${latest.id}\`.`,
+            );
+          await sleep(interval);
         }
-        const progress = launchProgress(latest);
-        if (progress !== last)
-          console.error(`launch ${latest.number}: ${progress}`);
-        last = progress;
-        await sleep(interval);
-      }
-    });
+      },
+    );
 
   group
     .command("finish <id>")

@@ -230,8 +230,8 @@ describe("gauge instructions", () => {
 
   it("keeps the issue workflow in its named page", () => {
     const issues = instructions("issues");
-    assert.match(issues, /Findings is an alternative term for\s+issues/);
-    assert.match(issues, /gauge issues list --reasons/);
+    assert.match(issues, /Findings is an alternative term\s+for issues/);
+    assert.match(issues, /gauge issues list --type friction/);
     assert.match(issues, /gauge issues get <id>/);
     assert.match(issues, /optimizations create --issue/);
     assert.match(instructions(), /`gauge instructions issues`/);
