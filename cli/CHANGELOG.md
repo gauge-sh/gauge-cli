@@ -31,6 +31,8 @@
   `--org` can select an agency key's client. Agents commands retain explicit or
   saved selection. Directory access by legacy Agents tokens requires a shared
   login; requests with canonical UUIDs still work.
+- Command telemetry requests send a `gauge-cli/<version>` User-Agent, matching
+  Gauge API requests.
 
 ## 0.24.0 — 2026-10-21
 

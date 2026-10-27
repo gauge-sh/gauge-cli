@@ -62,7 +62,7 @@ try {
 import { writeFileSync } from "node:fs";
 if (process.argv[1]?.endsWith("telemetryWorker.js")) {
   globalThis.fetch = async (url, options) => {
-    writeFileSync(${JSON.stringify(capture)}, JSON.stringify({ url, body: JSON.parse(options.body), pid: process.pid }));
+    writeFileSync(${JSON.stringify(capture)}, JSON.stringify({ url, body: JSON.parse(options.body), userAgent: new Headers(options.headers).get("user-agent"), pid: process.pid }));
     if (process.env.TEST_TELEMETRY_HANG === "1") return new Promise(() => {});
     return new Response(null);
   };
@@ -118,6 +118,7 @@ if (process.argv[1]?.endsWith("telemetryWorker.js")) {
     "command",
   ]);
   assert.equal(first.body.properties.$ip, "0.0.0.0");
+  assert.equal(first.userAgent, `gauge-cli/${first.body.properties.cli_version}`);
   await rm(capture);
   await run(["instructions", "--list"]);
   assert.equal((await captured()).body.distinct_id, first.body.distinct_id);
