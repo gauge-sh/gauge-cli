@@ -198,7 +198,8 @@ The UUID is independent of login and is never linked to your Gauge account.
 This is pseudonymous usage tracking: an installation can be recognized across
 commands, but no personal identity is sent. HTTP requests necessarily expose a
 source IP to the receiving infrastructure; event properties mask IP addresses,
-disable GeoIP enrichment, and disable person-profile creation.
+disable GeoIP enrichment, and disable person-profile creation. Requests
+identify themselves with a `gauge-cli/<version>` User-Agent.
 
 Preferences live in `~/.config/gauge/telemetry.json` and the UUID in
 `~/.config/gauge/telemetry-id` (respecting `XDG_CONFIG_HOME`). They are shared

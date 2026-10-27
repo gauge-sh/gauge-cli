@@ -60,6 +60,7 @@ async function fixture(t: test.TestContext, prompt: string, samples = 6) {
     CLAUDE_CODE_OAUTH_TOKEN: "fixture-only",
     ANTHROPIC_API_KEY: "",
     XDG_CONFIG_HOME: root,
+    GAUGE_TELEMETRY_DISABLED: "1",
   };
   const invoke = async (...args: string[]) => {
     try {
