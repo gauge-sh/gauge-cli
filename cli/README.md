@@ -20,45 +20,70 @@ Requires Node.js ≥ 22.13.
 
 ## Organizations
 
-With a shared login, Gauge Chat and Gauge Agents commands use `--org`,
-then `org` in the project's `gauge.json`, then `defaultOrg` (set with
-`gauge orgs use <org>`). A value can be the organization's Gauge slug or its id
-(a UUID); a Gauge Agents workspace slug from an older setup (such as
-`acme-1a2b3c4d`) still works. The CLI resolves the value to the organization id
-and sends that to both APIs. Successful slug resolutions are cached for 24 hours
-per credential. UUIDs need no directory lookup; the API still checks access on
-each request. Agents commands that accept an org in a run specification use that
-value after `--org` and before `gauge.json`.
+Use the public Gauge slug shown by `gauge orgs` with either product:
 
-`gauge orgs` lists every organization you belong to with the products it uses
-(Chat, Agents, or both). A command for a product the organization doesn't use
-says so (for example `Acme doesn't use Gauge Chat.`).
+```sh
+gauge orgs use acme                 # save your default organization
+gauge orgs use acme --project       # save this project's organization
+gauge chat tags list --org acme     # override the selection for one command
+```
 
-Older values keep working:
+The CLI resolves slugs through the shared Gauge directory and sends the
+canonical organization ID to the product API. It stores that ID in `orgId`
+in user configuration or `gauge.json`; you do not need to find or enter a UUID.
+Explicit canonical UUIDs are also accepted. Slug lookups use the current
+directory without a persistent cache or fallback to internal Agents workspace
+names. Directory failures stop the command before it accesses product data.
+Saved IDs need no lookup; the product API checks access on every request.
 
-- A `defaultOrg` that is an Agents workspace slug is rewritten to the
-  organization id the first time it is used.
-- A committed `gauge.json` is never rewritten; the CLI prints a one-time hint
-  suggesting the organization id or Gauge slug instead.
-- If directory lookups find that a value names different organizations in Chat
-  and Agents, the CLI stops and asks for the organization id.
-- Released CLIs before this change keep sending Agents workspace slugs, which
-  Gauge Agents still accepts, and they also accept an organization id written
-  by a newer CLI.
+With a shared login, selection precedence is `--org`, a run specification,
+`gauge.json` `orgId`, then user configuration `orgId`. Run specifications with
+an old `org` slug require an explicit `--org <public-slug>` override, or removal
+of `org` to use the saved selection. Canonical UUIDs in run specifications are
+unambiguous and still work.
 
-Chat commands with an org API key (`GAUGE_API_TOKEN=gauge_sk_…`) default to the
-key's organization and ignore `defaultOrg` and `gauge.json`; `--org` can select
-one of an agency key's client organizations. Agents commands still require an
-organization selection from `--org`, a run specification, or configuration.
+An old `defaultOrg` or `gauge.json` `org` selection requires reselection using
+`gauge orgs use <slug>` or `gauge orgs use <slug> --project`, respectively.
+The CLI never guesses whether an old saved slug meant a canonical organization
+or an Agents workspace. Project migration preserves other manifest fields.
+Older CLI binaries retain their existing Agents slug semantics; the server
+continues to accept those legacy requests. They do not read the new user `orgId`
+field. A project migrated with `--project` requires the new CLI: older versions
+reject `orgId` in the manifest. To return to an older CLI, restore the prior
+`gauge.json` and select the Agents workspace there again. No compatibility slug
+is written by the new CLI.
 
-With a shared login and no organization selected, Chat commands select your
-only Chat-enabled organization or ask you to choose. Agents commands require
-an explicit or configured selection.
+`gauge orgs` lists canonical organizations and their products (Chat, Agents, or
+both). Historical unlinked Agents workspaces are excluded. Commands for a
+product an organization does not use report that limitation.
+`gauge orgs -o json` returns `id`, `slug`, `name`, `products`, and `isDefault`;
+`products.agents: null` means availability could not be determined. Organization
+creation and onboarding require a backend that provisions canonical Gauge
+organizations and exposes their IDs in the Agents identity response.
 
-`gauge orgs -o json` returns shared `id`, `slug`, `name`, `products`,
-`agentsSlug`, and `isDefault` fields. This replaces the previous Agents-only
-list shape. `products.agents: null` means availability could not be determined;
-an unlinked Agents workspace has `id: null` and continues to use its slug.
+Chat commands with an organization API key default to the key's organization
+and ignore saved user/project selections; `--org` can select an agency key's
+client organization. With a shared login and no selection, Chat commands select
+your only Chat-enabled organization or ask you to choose. Agents commands
+require an explicit or saved selection.
+
+Legacy Agents tokens can still identify their user and make requests using a
+canonical UUID. They cannot read the shared directory; use `gauge auth login`
+for selection by public slug.
+
+## Identity and authentication diagnostics
+
+`gauge whoami` shows who you are acting as: a signed-in user and their Gauge
+organizations, or an organization API key and its owning organization.
+`gauge auth status` checks which credential is active, where it came from,
+whether the server accepts it, its scopes and expiry, and the API URLs.
+Neither command prints credential secrets. Legacy tokens can identify their
+user, but do not report canonical organization membership, scopes, or expiry.
+
+JSON consumers: `whoami` returns `user`, `apiKey`, and `orgs` (null for a legacy
+token). `auth status` returns `authenticated`, `source`, `apiUrl`, `authUrl`, and
+`credential` (`kind`, `scopes`, `expiresAt`). API-key identity and credential
+diagnostics are available at the root; there is no `gauge chat whoami` command.
 
 ## Workspace and local storage
 
@@ -826,8 +851,8 @@ shared [organization selection](#organizations), and an only Chat organization
 is picked when none is set. Category-scoped commands take `--category` (slug or
 id); `gauge chat categories use <category>` saves `chatCategory` for the
 selected organization, and an only category is picked automatically. The
-Agents-only `--local` and `--hosted` flags are rejected. `gauge chat whoami`
-shows the org API key or signed-in user in use, with its scopes and expiry.
+Agents-only `--local` and `--hosted` flags are rejected. Use `gauge whoami`
+for identity and `gauge auth status` for credential diagnostics.
 
 ```sh
 gauge chat topics create "Pricing" --if-exists

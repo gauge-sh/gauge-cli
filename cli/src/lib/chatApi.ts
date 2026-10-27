@@ -96,7 +96,12 @@ function hintFor(
 
 export type ChatMe = {
   user: { id: string; email: string; name: string } | null;
-  apiKey: { id: string; name: string; prefix: string } | null;
+  apiKey: {
+    id: string;
+    name: string;
+    prefix: string;
+    organization?: import("./orgDirectory").DirectoryOrg;
+  } | null;
   token: {
     kind: "session" | "api_key";
     scopes: string[];
@@ -163,7 +168,7 @@ export class ChatApiClient extends ApiClient {
     extra?: Record<string, string>,
   ): Record<string, string> {
     if (!this.signedIn)
-      throw new CliError("unauthorized", "Not logged in to Gauge Chat.", {
+      throw new CliError("unauthorized", "Not logged in to Gauge.", {
         hint: LOGIN_HINT,
       });
     return super.headers(extra);
@@ -254,12 +259,6 @@ export type ChatOrg = {
   source: OrgSource | "key" | "only";
 };
 
-function notChat(value: string, name?: string): CliError {
-  return new CliError("not_found", `${name ?? value} doesn't use Gauge Chat.`, {
-    hint: "It is a Gauge Agents workspace. Run `gauge orgs` to see which products each organization uses.",
-  });
-}
-
 export async function resolveChatOrg(command: Command): Promise<ChatOrg> {
   const { org } = command.optsWithGlobals<ChatGlobals>();
   const isKey = credentialKind() === "api_key";
@@ -270,13 +269,11 @@ export async function resolveChatOrg(command: Command): Promise<ChatOrg> {
     : selectedOrg(command);
   if (selection) {
     const resolved = await resolveSelection(selection.value, selection.source);
-    if (resolved.via === "agents_unlinked")
-      throw notChat(selection.value, resolved.name);
     return { id: resolved.id, name: resolved.name, source: selection.source };
   }
   if (isKey) {
-    const keyOrg = await keyOrganization().catch(() => undefined);
-    if (keyOrg) return { id: keyOrg.id, name: keyOrg.name, source: "key" };
+    const keyOrg = await keyOrganization();
+    return { id: keyOrg.id, name: keyOrg.name, source: "key" };
   }
   const chatOrgs = (await fetchDirectory()).filter(
     (o) => o.products?.chat !== false,

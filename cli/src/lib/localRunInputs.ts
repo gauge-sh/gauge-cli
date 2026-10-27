@@ -524,7 +524,7 @@ export async function loadLocalRunDefinition(
     if (!local) runDefinitionSubmissionSchema.parse(definition);
     return {
       definition,
-      org: config.org,
+      org: config.orgId ?? config.org,
       uploads,
       inputSnapshots,
       unattachedInputs,

@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { Command, Option } from "commander";
+import { ensureAccount } from "../lib/account";
 import { createClient } from "../lib/client";
 import { readConfig, updateConfig } from "../lib/config";
 import { resolveOrg } from "../lib/context";
@@ -25,7 +26,7 @@ let saved: NodeJS.ProcessEnv;
 let cwd: string;
 let stdout: string[];
 let stderr: string[];
-let handler: (path: string) => Reply;
+let handler: (path: string, method?: string) => Reply;
 const log = console.log;
 const error = console.error;
 
@@ -123,7 +124,7 @@ describe("gauge orgs and org selection", { concurrency: false }, () => {
     server = createServer((req, res) => {
       const path = new URL(req.url ?? "/", "http://localhost").pathname;
       paths.push(path);
-      const reply = handler(path);
+      const reply = handler(path, req.method);
       res.writeHead(reply.status ?? 200, {
         "content-type": "application/json",
       });
@@ -148,98 +149,179 @@ describe("gauge orgs and org selection", { concurrency: false }, () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
-  it("lists every org with its products, Agents filling what Chat couldn't ask", async () => {
-    updateConfig({ defaultOrg: "acme-1a2b3c4d" });
-    const { json } = await run("orgs", "-o", "json");
-    assert.deepEqual(json, [
-      {
-        id: ACME,
-        slug: "acme",
-        name: "Acme",
-        products: { chat: true, agents: true },
-        agentsSlug: "acme-1a2b3c4d",
-        isDefault: true,
-      },
-      {
-        id: CHAT_ONLY,
-        slug: "chatco",
-        name: "ChatCo",
-        products: { chat: true, agents: false },
-        agentsSlug: null,
-        isDefault: false,
-      },
-      {
-        id: BETA,
-        slug: "beta",
-        name: "Beta",
-        products: { chat: false, agents: true },
-        agentsSlug: "beta-9f8e7d6c",
-        isDefault: false,
-      },
-      {
-        id: null,
-        slug: "sandbox",
-        name: "Sandbox",
-        products: { chat: false, agents: true },
-        agentsSlug: "sandbox",
-        isDefault: false,
-      },
-    ]);
+  it("lists only canonical organizations without consulting Agents", async () => {
+    updateConfig({ orgId: ACME });
+    const { json, error } = await run("orgs", "-o", "json");
+    assert.equal(error, undefined);
+    assert.deepEqual(
+      json,
+      chatDirectory.data.map((org) => ({ ...org, isDefault: org.id === ACME })),
+    );
+    assert.deepEqual(paths, ["/api/v1/orgs"]);
     await run("orgs", "list");
     assert.match(stdout.join("\n"), /acme\s+Acme\s+Chat, Agents/);
+    assert.ok(!stdout.join("\n").includes(ACME));
   });
 
-  it("stores the shared id for a Chat slug, legacy Agents slug, or id", async () => {
-    for (const value of ["acme", "acme-1a2b3c4d", ACME]) {
-      const { json } = await run("orgs", "use", value, "-o", "json");
-      assert.deepEqual(json, { defaultOrg: ACME, name: "Acme" });
-      assert.equal(readConfig().defaultOrg, ACME);
+  it("stores a canonical selection and removes the ambiguous old default", async () => {
+    updateConfig({ defaultOrg: "acme-1a2b3c4d", chatCategory: "pricing" });
+    for (const value of ["acme", ACME]) {
+      const { json, error } = await run("orgs", "use", value, "-o", "json");
+      assert.equal(error, undefined);
+      assert.deepEqual(json, { orgId: ACME, slug: "acme", name: "Acme" });
+      assert.equal(readConfig().orgId, ACME);
+      assert.equal(readConfig().defaultOrg, undefined);
+      assert.equal(readConfig().chatCategory, "pricing");
     }
-    const { json } = await run("orgs", "use", "sandbox", "-o", "json");
-    assert.deepEqual(json, { defaultOrg: "sandbox", name: "Sandbox" });
-  });
-
-  it("rewrites a legacy defaultOrg to the shared id, once", async () => {
-    updateConfig({ defaultOrg: "beta-9f8e7d6c" });
-    assert.equal(await resolveOrg(agentsCommand()), BETA);
-    assert.equal(readConfig().defaultOrg, BETA);
-    assert.match(stderr.join("\n"), /now stored as its organization id/);
     paths = [];
-    assert.equal(await resolveOrg(agentsCommand()), BETA);
-    assert.deepEqual(paths, [], "an id needs no lookup");
+    assert.equal(await resolveOrg(agentsCommand()), ACME);
+    assert.deepEqual(paths, [], "saved canonical IDs need no lookup");
   });
 
-  it("never rewrites gauge.json, hints once, and caches the resolution", async () => {
-    writeFileSync(
-      join(directory, "gauge.json"),
-      '{"version":2,"org":"acme-1a2b3c4d","inputs":{}}',
+  it("requires reselection of old saved slugs, even when they match a canonical slug", async () => {
+    updateConfig({ defaultOrg: "acme" });
+    await assert.rejects(
+      resolveOrg(agentsCommand()),
+      /legacy Agents namespace/,
     );
-    assert.equal(await resolveOrg(agentsCommand()), ACME);
-    assert.equal(await resolveOrg(agentsCommand()), ACME);
-    assert.deepEqual(paths.sort(), ["/api/v1/me", "/api/v1/orgs"]);
-    assert.equal(
-      stderr.filter((line) => line.includes("gauge.json org")).length,
-      1,
-    );
-    assert.equal(readConfig().defaultOrg, undefined);
+    assert.equal(readConfig().defaultOrg, "acme");
+    assert.deepEqual(paths, []);
+    const cmd = agentsCommand().setOptionValue("org", "acme");
+    assert.equal(await resolveOrg(cmd), ACME);
   });
 
-  it("passes an unknown or LOCAL value through to Agents", async () => {
-    const command = agentsCommand();
-    command.setOptionValue("org", "sandbox");
-    assert.equal(await resolveOrg(command), "sandbox");
-    command.setOptionValue("org", "staff-only-slug");
-    assert.equal(await resolveOrg(command), "staff-only-slug");
-    handler = (path) =>
-      path === "/api/v1/orgs"
-        ? { status: 500, body: {} }
+  it("migrates a project by public slug and preserves unrelated configuration", async () => {
+    const manifest = {
+      version: 2,
+      org: "acme-1a2b3c4d",
+      inputs: { app: { root: "." } },
+    };
+    const path = join(directory, "gauge.json");
+    writeFileSync(path, JSON.stringify(manifest));
+    await assert.rejects(
+      resolveOrg(agentsCommand()),
+      /legacy Agents namespace/,
+    );
+    assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), manifest);
+    const result = await run("orgs", "use", "acme", "--project");
+    assert.equal(result.error, undefined);
+    assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), {
+      version: 2,
+      orgId: ACME,
+      inputs: manifest.inputs,
+    });
+    assert.equal(await resolveOrg(agentsCommand()), ACME);
+    assert.equal(readConfig().orgId, undefined);
+  });
+
+  it("rejects unknown, internal, and unlinked workspace slugs without passing them to Agents", async () => {
+    for (const value of ["sandbox", "staff-only-slug", "acme-1a2b3c4d"]) {
+      const { error } = await run("orgs", "use", value);
+      assert.match(
+        errorReport(error, "orgs use").message,
+        /not found in the Gauge directory/,
+      );
+    }
+    assert.ok(paths.every((path) => path === "/api/v1/orgs"));
+    assert.equal(readConfig().orgId, undefined);
+  });
+
+  it("propagates directory failures and leaves the selection unchanged", async () => {
+    updateConfig({ orgId: BETA });
+    handler = () => ({
+      status: 403,
+      body: { error: { code: "forbidden", message: "Directory unavailable" } },
+    });
+    const result = await run("orgs", "use", "acme");
+    assert.equal(errorReport(result.error, "orgs use").code, "forbidden");
+    assert.equal(readConfig().orgId, BETA);
+    assert.deepEqual(paths, ["/api/v1/orgs"]);
+  });
+
+  it("does not reuse slug mappings after directory membership changes", async () => {
+    const cmd = agentsCommand().setOptionValue("org", "acme");
+    assert.equal(await resolveOrg(cmd), ACME);
+    handler = () => ({ body: { data: [] } });
+    await assert.rejects(resolveOrg(cmd), /not found in the Gauge directory/);
+    assert.deepEqual(paths, ["/api/v1/orgs", "/api/v1/orgs"]);
+  });
+
+  it("asks legacy token users to log in for the canonical directory", async () => {
+    process.env.GAUGE_API_TOKEN = "gauge_legacy";
+    const result = await run("orgs");
+    assert.match(
+      errorReport(result.error, "orgs").hint ?? "",
+      /gauge auth login/,
+    );
+    assert.deepEqual(paths, []);
+  });
+
+  it("rejects legacy run-spec slugs unless a public --org is supplied", async () => {
+    await assert.rejects(
+      resolveOrg(agentsCommand(), "acme"),
+      /legacy Agents namespace/,
+    );
+    const cmd = agentsCommand().setOptionValue("org", "beta");
+    assert.equal(await resolveOrg(cmd, "acme"), BETA);
+  });
+
+  it("saves the canonical organization after creation, and honors --no-use", async () => {
+    handler = (path, method) =>
+      method === "POST" && path === "/api/v1/orgs"
+        ? { body: { slug: "acme-1a2b3c4d", name: "Acme", publicId: null } }
         : defaultHandler(path);
-    command.setOptionValue("org", "beta-9f8e7d6c");
-    assert.equal(
-      await resolveOrg(command),
-      BETA,
-      "Agents alone resolves a legacy slug when Chat is down",
+    updateConfig({ orgId: BETA });
+    const unused = await run(
+      "orgs",
+      "create",
+      "Acme",
+      "--no-use",
+      "-o",
+      "json",
     );
+    assert.equal(unused.error, undefined);
+    assert.equal(unused.json.slug, "acme");
+    assert.equal(readConfig().orgId, BETA);
+    const selected = await run("orgs", "create", "Acme", "-o", "json");
+    assert.equal(selected.error, undefined);
+    assert.equal(selected.json.id, ACME);
+    assert.equal(readConfig().orgId, ACME);
+  });
+
+  it("does not save an unlinked workspace returned by an older creation server", async () => {
+    updateConfig({ orgId: BETA });
+    handler = (path, method) =>
+      method === "POST" && path === "/api/v1/orgs"
+        ? { body: { slug: "sandbox", name: "Sandbox", publicId: null } }
+        : defaultHandler(path);
+    const result = await run("orgs", "create", "Sandbox");
+    assert.match(
+      errorReport(result.error, "orgs create").message,
+      /created.*did not link/,
+    );
+    assert.equal(readConfig().orgId, BETA);
+  });
+
+  it("onboarding creates, saves, and seeds using the canonical organization", async () => {
+    handler = (path, method) => {
+      if (method === "POST" && path === "/api/v1/orgs")
+        return {
+          body: { slug: "acme-1a2b3c4d", name: "Acme", publicId: null },
+        };
+      if (path === `/api/v1/orgs/${ACME}/onboarding/seed`)
+        return { body: { evalSets: 1, visibilityPrompts: 2, markets: 1 } };
+      return defaultHandler(path);
+    };
+    const result = await ensureAccount({
+      new: true,
+      orgName: "Acme",
+      log: () => {},
+    });
+    assert.equal(result.org, ACME);
+    assert.equal(result.organization.slug, "acme");
+    assert.equal(readConfig().orgId, ACME);
+    assert.equal(result.seeded?.evalSets, 1);
+    assert.equal(paths.at(-1), `/api/v1/orgs/${ACME}/onboarding/seed`);
   });
 
   it("says an org doesn't use Gauge Agents instead of a bare 404", async () => {

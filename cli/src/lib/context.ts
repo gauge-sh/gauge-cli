@@ -2,7 +2,12 @@ import type { Command } from "commander";
 import { CliError } from "./client";
 import { readConfig } from "./config";
 import { gaugeState } from "./gaugeState";
-import { type OrgSource, resolveSelection } from "./orgDirectory";
+import {
+  type OrgSource,
+  isUuid,
+  legacySelection,
+  resolveSelection,
+} from "./orgDirectory";
 import type { OutputFormat } from "./output";
 
 export type OrgSelection = { value: string; source: OrgSource };
@@ -14,11 +19,26 @@ export function selectedOrg(
   const { org } = command.optsWithGlobals<{ org?: string }>();
   if (org) return { value: org, source: "flag" };
   if (fileOrg) return { value: fileOrg, source: "file" };
-  const projectOrg = gaugeState(command).config?.org;
-  if (typeof projectOrg === "string" && projectOrg)
-    return { value: projectOrg, source: "project" };
-  const { defaultOrg } = readConfig();
-  if (defaultOrg) return { value: defaultOrg, source: "config" };
+  const project = gaugeState(command).config;
+  if (typeof project?.orgId === "string" && project.orgId) {
+    if (!isUuid(project.orgId))
+      throw new CliError(
+        "usage",
+        "Invalid orgId in gauge.json. Run `gauge orgs use <slug> --project`.",
+      );
+    return { value: project.orgId, source: "project" };
+  }
+  if (project?.org) legacySelection("project");
+  const { orgId, defaultOrg } = readConfig();
+  if (orgId) {
+    if (!isUuid(orgId))
+      throw new CliError(
+        "usage",
+        "Invalid saved orgId. Run `gauge orgs use <slug>`.",
+      );
+    return { value: orgId, source: "config" };
+  }
+  if (defaultOrg) legacySelection("config");
   return undefined;
 }
 

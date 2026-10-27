@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 export type CliConfig = {
+  orgId?: string;
   defaultOrg?: string;
   apiUrl?: string;
   authUrl?: string;
@@ -13,6 +14,7 @@ export type CliConfig = {
 };
 
 export const CONFIG_KEYS = [
+  "orgId",
   "defaultOrg",
   "apiUrl",
   "authUrl",

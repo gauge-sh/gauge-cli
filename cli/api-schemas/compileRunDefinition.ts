@@ -109,5 +109,5 @@ export function compileRunDefinitionFromBlobs(input: {
       }),
     cases,
   });
-  return { definition: submission, org: config?.org };
+  return { definition: submission, org: config?.orgId ?? config?.org };
 }

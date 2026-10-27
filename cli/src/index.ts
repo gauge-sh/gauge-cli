@@ -68,7 +68,7 @@ program
   .version(CLI_VERSION)
   .option(
     "--org <org>",
-    "organization slug or id, for Gauge Chat and Gauge Agents (default: gauge.json org, then defaultOrg)",
+    "organization slug or id, for Gauge Chat and Gauge Agents (default: gauge.json orgId, then your saved default)",
   )
   .addOption(
     new Option("-o, --output <format>", "output format")

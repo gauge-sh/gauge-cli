@@ -6,8 +6,6 @@ import {
   categoryScope,
   chatPath,
   chatScope,
-  createChatApiClient,
-  describeScopes,
   fetchPages,
   type Page,
   type PageOptions,
@@ -42,32 +40,6 @@ type Brand = {
 function done(cmd: Command, value: unknown, text: string): void {
   if (resolveOutput(cmd) === "json") printJson(value);
   else console.log(text);
-}
-
-function registerWhoami(chat: Command): void {
-  chat
-    .command("whoami")
-    .description(
-      "Show the org API key or signed-in user in use, with its scopes and expiry",
-    )
-    .action(async (_opts: unknown, cmd: Command) => {
-      const me = await createChatApiClient().me();
-      if (resolveOutput(cmd) === "json") return printJson(me);
-      const { apiKey, user, token } = me;
-      if (apiKey)
-        console.log(
-          `Org API key "${apiKey.name}" (${describeScopes(token.scopes)}) — ${apiKey.prefix}…`,
-        );
-      else if (user)
-        console.log(
-          `Signed in as ${user.email || user.id}${user.name ? ` (${user.name})` : ""}; scopes ${token.scopes.join(", ") || "(none)"}`,
-        );
-      else
-        console.log(
-          `Token: ${token.kind}; scopes ${token.scopes.join(", ") || "(none)"}`,
-        );
-      if (token.expiresAt) console.log(`Expires ${token.expiresAt}`);
-    });
 }
 
 function registerCategories(chat: Command): void {
@@ -268,7 +240,7 @@ function registerBrands(chat: Command): void {
 }
 
 const CHAT_ORG_HELP =
-  "organization slug or id (default: gauge.json org, then defaultOrg, else your only Chat org; an org API key implies its org)";
+  "organization slug or id (default: gauge.json orgId, then your saved default, else your only Chat org; an org API key implies its org)";
 
 // Configure help before registering subcommands so they inherit these overrides.
 function scopeGlobalOptions(program: Command, chat: Command): void {
@@ -315,7 +287,7 @@ config, else the org's only category). Authenticate with \`gauge auth login\`,
 or for scripts set GAUGE_API_TOKEN to an org API key (gauge_sk_…, created in
 Settings → API Keys); GAUGE_API_TOKEN takes precedence over a login. --org takes
 a slug or id and selects the same organization as Agents commands (default:
-gauge.json org, then defaultOrg from \`gauge orgs use\`, else your only Chat org);
+gauge.json orgId, then your saved default from \`gauge orgs use\`, else your only Chat org);
 an org API key implies its own org, and --org may pick one of an agency key's
 clients. Pass -o json for
 machine-readable output; errors carry the API error code. Exit codes: 0 ok,
@@ -323,7 +295,6 @@ machine-readable output; errors carry the API error code. Exit codes: 0 ok,
 Rate limits per token and organization: 600 requests/min, 60 queries/min.`,
     );
   scopeGlobalOptions(program, chat);
-  registerWhoami(chat);
   registerCategories(chat);
   registerTopics(chat);
   registerPrompts(chat);

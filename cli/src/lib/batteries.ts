@@ -3,9 +3,7 @@ import { batteries } from "@withgauge/api-schemas";
 import type { Command } from "commander";
 import { z } from "zod";
 import { CliError, createClient } from "./client";
-import { readConfig } from "./config";
-import { resolveOutput } from "./context";
-import { resolveSelection } from "./orgDirectory";
+import { resolveOrg, resolveOutput } from "./context";
 import { printJson } from "./output";
 
 type BatteryPlan = batteries.BatteryPlan;
@@ -115,16 +113,7 @@ async function resolveApplyOrg(
   command: Command,
   spec: batteries.BatterySpec,
 ): Promise<string> {
-  const { org } = command.optsWithGlobals<{ org?: string }>();
-  if (org) return (await resolveSelection(org, "flag")).id;
-  if (typeof spec.org === "string" && spec.org)
-    return (await resolveSelection(spec.org, "file")).id;
-  const { defaultOrg } = readConfig();
-  if (defaultOrg) return (await resolveSelection(defaultOrg, "config")).id;
-  throw new CliError(
-    "usage",
-    "No organization selected. Pass --org <org>, set `org` in the spec, or run `gauge orgs use <org>`.",
-  );
+  return resolveOrg(command, spec.org);
 }
 
 function repoLabel(repoUrl: string | null, repoRef: string | null): string {

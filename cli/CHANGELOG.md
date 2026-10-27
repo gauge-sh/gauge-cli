@@ -5,7 +5,7 @@
 ### Added
 
 - `gauge chat` commands for the Gauge Chat API: categories,
-  `whoami`, topics (list, create, rename), prompts (bulk add with `--dry-run`,
+  topics (list, create, rename), prompts (bulk add with `--dry-run`,
   bulk move, tag, untag), tags, brands, `query` with
   `datasets`/`fields`/`metadata` discovery, answers, and citations. They use
   `gauge auth login` shared credentials or,
@@ -16,19 +16,18 @@
 
 ### Changed
 
-- One organization selection for Gauge Chat and Gauge Agents: `--org`,
-  `gauge.json` `org`, and `defaultOrg` accept a Gauge slug, the organization id,
-  or an Agents workspace slug, and the CLI sends the organization id to both
-  APIs. `gauge orgs` lists every organization you belong to with the products it
-  uses, and `gauge orgs use` stores the organization id. A `defaultOrg` holding
-  an Agents workspace slug is rewritten to the id on first use; `gauge.json` is
-  never rewritten (a one-time hint suggests the id). A slug that names different
-  organizations in Chat and Agents is an error asking for the id when both
-  directory matches are available. Commands for a
-  product an organization doesn't use say so instead of returning a 404. An org
-  API key defaults to its own organization in Chat commands; `--org` selects
-  among an agency key's clients. Agents commands still use their explicit or
-  configured organization selection.
+- Public organization slugs now come only from the shared Gauge directory.
+  `gauge orgs use <slug>` stores a canonical `orgId`; `--project` saves it to
+  `gauge.json`. Old `defaultOrg` and project `org` selections require explicit
+  reselection. Internal Agents slugs, persistent alias caches, and unlinked
+  workspaces are no longer used for public organization selection.
+- `gauge whoami` identifies users and organization API keys. `gauge auth status`
+  reports credential source, validity, scopes, expiry, and API URLs. Their JSON
+  output is documented in the CLI README. There is no product-specific whoami.
+- Chat commands with an org API key default to the owning organization;
+  `--org` can select an agency key's client. Agents commands retain explicit or
+  saved selection. Directory access by legacy Agents tokens requires a shared
+  login; requests with canonical UUIDs still work.
 
 ## 0.24.0 — 2026-10-21
 

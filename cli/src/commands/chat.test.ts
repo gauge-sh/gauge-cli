@@ -16,6 +16,7 @@ import { createClient } from "../lib/client";
 import { readCredentials, saveCredentials } from "../lib/credentials";
 import { errorReport, renderError } from "../lib/errors";
 import { register } from "./chat";
+import { register as registerAuth } from "./auth";
 import { parsePromptInput } from "./chatPrompts";
 
 type Seen = {
@@ -84,6 +85,7 @@ async function run(...args: string[]): Promise<{ json: any; error?: unknown }> {
     .option("--hosted");
   program.exitOverride();
   register(program);
+  registerAuth(program);
   try {
     await program.parseAsync(["node", "gauge", ...args]);
   } catch (caught) {
@@ -193,13 +195,14 @@ describe("gauge chat", { concurrency: false }, () => {
       [
         `${api("/me")} Bearer gauge_sk_abc`,
         `${api(`/orgs/${ORG}/tags`)} Bearer gauge_sk_abc`,
+        `${api("/me")} Bearer gauge_sk_abc`,
         `${api(`/orgs/${ORG}/tags`)} Bearer gauge_sk_abc`,
       ],
-      "the key's org, looked up once; defaultOrg belongs to the login",
+      "the key's current org is looked up on each invocation",
     );
   });
 
-  it("resolves a slug to the shared org id once, and checks Agents for a clash", async () => {
+  it("resolves a public slug from the canonical directory on each invocation", async () => {
     process.env.GAUGE_API_TOKEN = "gauge_cli_session";
     handler = (req) => {
       if (req.path === api("/orgs")) return { body: { data: orgDirectory } };
@@ -222,42 +225,31 @@ describe("gauge chat", { concurrency: false }, () => {
     await run("chat", "tags", "list", "--org", "acme", "-o", "json");
     await run("chat", "tags", "list", "--org", "acme", "-o", "json");
     assert.deepEqual(seen.map((r) => r.path).sort(), [
-      api("/me"),
+      api("/orgs"),
       api("/orgs"),
       api(`/orgs/${ORG}/tags`),
       api(`/orgs/${ORG}/tags`),
     ]);
   });
 
-  it("refuses a slug that names different orgs in Chat and Agents", async () => {
+  it("uses the canonical slug even if an internal Agents slug could collide", async () => {
     process.env.GAUGE_API_TOKEN = "gauge_cli_session";
-    handler = (req) =>
-      req.path === api("/orgs")
-        ? { body: { data: orgDirectory } }
-        : {
-            body: {
-              user: { id: "u", email: null },
-              orgs: [
-                {
-                  slug: "acme",
-                  publicId: null,
-                  canonicalGaugeOrganizationId: OTHER,
-                  name: "Acme Labs",
-                },
-              ],
-            },
-          };
-    const { error: caught } = await run(
-      "chat",
-      "tags",
-      "list",
-      "--org",
-      "acme",
+    handler = (req) => {
+      if (req.path === api("/orgs")) return { body: { data: orgDirectory } };
+      if (req.path === api("/me"))
+        return {
+          body: {
+            orgs: [{ slug: "acme", canonicalGaugeOrganizationId: OTHER }],
+          },
+        };
+      return { body: { data: [] } };
+    };
+    const result = await run("chat", "tags", "list", "--org", "acme");
+    assert.equal(result.error, undefined);
+    assert.deepEqual(
+      seen.map((req) => req.path),
+      [api("/orgs"), api(`/orgs/${ORG}/tags`)],
     );
-    const report = errorReport(caught, "chat tags list");
-    assert.equal(report.code, "usage");
-    assert.match(report.message, /"acme" names two organizations/);
-    assert.match(report.hint ?? "", /Pass the organization's id/);
   });
 
   it("names an organization that doesn't use Gauge Chat", async () => {
@@ -363,6 +355,7 @@ describe("gauge chat", { concurrency: false }, () => {
       .option("--hosted", "run on hosted Gauge")
       .configureHelp({ showGlobalOptions: true });
     register(program);
+    registerAuth(program);
     const chat = program.commands.find((c) => c.name() === "chat");
     assert.ok(chat);
     const tags = chat.commands.find((c) => c.name() === "tags");
@@ -371,7 +364,7 @@ describe("gauge chat", { concurrency: false }, () => {
     const listHelp = list.helpInformation().replace(/\s+/g, " ");
     assert.match(
       listHelp,
-      /--org <org>\s+organization slug or id \(default: gauge.json org, then defaultOrg, else your only Chat org; an org API key implies its org\)/,
+      /--org <org>\s+organization slug or id \(default: gauge.json orgId, then your saved default, else your only Chat org; an org API key implies its org\)/,
     );
     assert.ok(!/--local|--hosted/.test(listHelp));
     assert.match(tags.helpInformation(), /prompts are kept/);
@@ -749,49 +742,127 @@ describe("gauge chat", { concurrency: false }, () => {
     );
   });
 
-  it("shows the org API key or signed-in user in whoami", async () => {
+  it("has one root whoami for users and org API keys", async () => {
     process.env.GAUGE_API_TOKEN = "gauge_sk_read";
-    const keyMe = {
+    handler = () => ({ body: keyMe });
+    const key = await run("whoami", "-o", "json");
+    assert.equal(key.error, undefined);
+    assert.deepEqual(key.json, {
       user: null,
-      apiKey: { id: "key_1", name: "Warehouse sync", prefix: "gauge_sk_3fA9" },
-      token: { kind: "api_key", scopes: ["read"], expiresAt: null },
-    };
-    let me: unknown = keyMe;
-    handler = () => ({ body: me });
-    const key = await run("chat", "whoami");
-    assert.equal(
-      key.json,
-      'Org API key "Warehouse sync" (read-only) — gauge_sk_3fA9…',
-    );
-    assert.deepEqual((await run("chat", "whoami", "-o", "json")).json, keyMe);
-
-    me = {
-      ...keyMe,
-      token: {
-        ...keyMe.token,
-        scopes: ["read", "write"],
-        expiresAt: "2027-01-01T00:00:00Z",
-      },
-    };
-    assert.equal(
-      (await run("chat", "whoami")).json,
-      'Org API key "Warehouse sync" (read & write) — gauge_sk_3fA9…\nExpires 2027-01-01T00:00:00Z',
-    );
-
-    me = {
-      user: { id: "u1", email: "a@b.co", name: "A" },
+      apiKey: keyMe.apiKey,
+      orgs: [keyMe.apiKey.organization],
+    });
+    const text = (await run("whoami")).json;
+    assert.match(text, /Org API key "ci"/);
+    assert.match(text, /Acme \(acme\)/);
+    assert.ok(!text.includes("Expires"));
+    process.env.GAUGE_API_TOKEN = "gauge_cli_session";
+    const user = { id: "u1", email: "a@b.co", name: "A" };
+    handler = (req) =>
+      req.path === api("/me")
+        ? {
+            body: {
+              user,
+              apiKey: null,
+              token: { kind: "session", scopes: ["read"], expiresAt: null },
+            },
+          }
+        : { body: { data: orgDirectory } };
+    assert.deepEqual((await run("whoami", "-o", "json")).json, {
+      user,
       apiKey: null,
-      token: {
-        kind: "session",
-        scopes: ["read", "write"],
-        expiresAt: "2027-01-01T00:00:00Z",
-      },
-    };
-    assert.equal(
-      (await run("chat", "whoami")).json,
-      "Signed in as a@b.co (A); scopes read, write\nExpires 2027-01-01T00:00:00Z",
+      orgs: orgDirectory,
+    });
+    assert.match((await run("whoami")).json, /Signed in as a@b.co \(A\)/);
+  });
+
+  it("auth status reports credential diagnostics without duplicating identity", async () => {
+    process.env.GAUGE_API_TOKEN = "gauge_sk_read";
+    handler = () => ({ body: keyMe });
+    const result = await run("auth", "status", "-o", "json");
+    assert.equal(result.error, undefined);
+    assert.deepEqual(result.json, {
+      authenticated: true,
+      source: "env",
+      apiUrl: origin,
+      authUrl: origin,
+      credential: keyMe.token,
+    });
+    assert.ok(!JSON.stringify(result.json).includes("gauge_sk_read"));
+    assert.deepEqual(
+      seen.map((req) => req.path),
+      [api("/me")],
     );
-    assert.ok(seen.every((r) => r.path === api("/me")));
+    const text = (await run("auth", "status")).json;
+    assert.match(text, /Credential: api_key \(valid\)/);
+    assert.match(text, /GAUGE_API_TOKEN/);
+    assert.ok(!text.includes("Organizations:"));
+    handler = () => apiError(401, "unauthorized", "Expired");
+    const rejected = await run("auth", "status");
+    assert.match(
+      errorReport(rejected.error, "auth status").message,
+      /source: env.*rejected/,
+    );
+  });
+
+  it("auth status diagnoses a stored session without listing organizations", async () => {
+    saveCredentials({
+      version: 1,
+      sessionId: "s1",
+      accessToken: "gauge_cli_stored",
+      authUrl: origin,
+      apiUrl: origin,
+    });
+    const token = {
+      kind: "session",
+      scopes: ["read"],
+      expiresAt: "2027-01-01T00:00:00Z",
+    };
+    handler = (req) =>
+      req.path === api("/me")
+        ? {
+            body: {
+              user: { id: "u", email: "u@test.com", name: "U" },
+              apiKey: null,
+              token,
+            },
+          }
+        : apiError(503, "unavailable", "Directory offline");
+    const status = await run("auth", "status", "-o", "json");
+    assert.equal(status.error, undefined);
+    assert.equal(status.json.source, "file");
+    assert.deepEqual(status.json.credential, token);
+    assert.equal(seen[0].auth, "Bearer gauge_cli_stored");
+    assert.deepEqual(
+      seen.map((req) => req.path),
+      [api("/me")],
+    );
+    const program = new Command();
+    register(program);
+    assert.ok(
+      !program.commands
+        .find((cmd) => cmd.name() === "chat")
+        ?.commands.some((cmd) => cmd.name() === "whoami"),
+    );
+  });
+
+  it("can identify legacy Agents credentials without exposing internal org slugs", async () => {
+    process.env.GAUGE_API_TOKEN = "gauge_legacy";
+    const user = { id: "u1", email: "a@b.co" };
+    handler = () => ({
+      body: { user, orgs: [{ slug: "internal-workspace" }] },
+    });
+    assert.deepEqual((await run("whoami", "-o", "json")).json, {
+      user,
+      apiKey: null,
+      orgs: null,
+    });
+    const status = (await run("auth", "status", "-o", "json")).json;
+    assert.deepEqual(status.credential, {
+      kind: "legacy",
+      scopes: null,
+      expiresAt: null,
+    });
   });
 
   it("degrades when the server has no /api/v1/me or returns an HTML 404", async () => {
@@ -815,8 +886,8 @@ describe("gauge chat", { concurrency: false }, () => {
     assert.equal(report.code, "insufficient_scope");
     assert.match(report.hint ?? "", /needs the 'write' scope/);
 
-    const who = await run("chat", "whoami");
-    const whoReport = errorReport(who.error, "chat whoami");
+    const who = await run("whoami");
+    const whoReport = errorReport(who.error, "whoami");
     assert.equal(whoReport.code, "not_found");
     assert.match(whoReport.message, /\/api\/v1\/me is not available/);
     assert.match(whoReport.hint ?? "", /gauge orgs/);
@@ -836,6 +907,7 @@ describe("gauge chat", { concurrency: false }, () => {
   it("keeps the staff-only --explain out of query help", () => {
     const program = new Command();
     register(program);
+    registerAuth(program);
     const query = program.commands
       .find((c) => c.name() === "chat")
       ?.commands.find((c) => c.name() === "query");
@@ -965,13 +1037,13 @@ describe("gauge chat", { concurrency: false }, () => {
       local: "default",
     } as never);
     assert.equal(report.code, "unauthorized");
-    assert.match(report.message, /Not logged in to Gauge Chat/);
+    assert.match(report.message, /Not logged in to Gauge/);
     assert.equal(seen.length, 0);
   });
 
   it("chunks prompt creation, previews multi-chunk writes, and reports per-item status", async () => {
     process.env.GAUGE_API_TOKEN = "gauge_cli_rw";
-    updateConfig({ defaultOrg: ORG, chatCategory: "crm" });
+    updateConfig({ orgId: ORG, chatCategory: "crm" });
     let remaining = 5000;
     handler = (req) => {
       if (req.path.endsWith("/topics"))
