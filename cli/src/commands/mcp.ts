@@ -1,11 +1,16 @@
 import { readFileSync } from "node:fs";
 import type { mcp } from "@withgauge/api-schemas";
+import {
+  parseMcpSpec,
+  saveMcpServerBodySchema,
+} from "@withgauge/api-schemas/mcp";
 import type { Command } from "commander";
 import { CliError, createClient } from "../lib/client";
 import { hostedOnly, resolveOrg, resolveOutput } from "../lib/context";
 import { collect } from "../lib/flags";
 import { printItems, printJson } from "../lib/output";
 import { LOCAL_MCP_HINT } from "../lib/localCapabilities";
+import { connectMcpOauth } from "../lib/mcpOauth";
 
 function mcpPath(org: string): string {
   return `/api/v1/orgs/${encodeURIComponent(org)}/mcp-servers`;
@@ -72,8 +77,9 @@ function specFromOpts(opts: {
 }
 
 export function register(program: Command): void {
-  const group = hostedOnly(program.command("mcp"), { hint: LOCAL_MCP_HINT })
-    .description("Manage MCP servers used by hosted eval and preference runs");
+  const group = hostedOnly(program.command("mcp"), {
+    hint: LOCAL_MCP_HINT,
+  }).description("Manage MCP servers used by hosted eval and preference runs");
 
   group
     .command("list")
@@ -118,6 +124,7 @@ export function register(program: Command): void {
         console.log(
           `  ${server.name}@${v.label}  [${v.spec.transport}]  ${specLabel(v.spec)}  ${v.createdAt}`,
         );
+        if (v.connectionId) console.log(`    connection: ${v.connectionId}`);
         for (const w of v.warnings) console.log(`    warning: ${w.message}`);
       }
     });
@@ -165,6 +172,28 @@ export function register(program: Command): void {
       "version label (a typed label always mints; omitted dedups by spec digest)",
     )
     .option("--note <text>", "note shown on the index")
+    .option(
+      "--connection <id>",
+      "bind an existing connection to this HTTP MCP server",
+    )
+    .option(
+      "--oauth",
+      "authorize this HTTP MCP in a browser, then save its connection binding",
+    )
+    .option(
+      "--oauth-client-id <id>",
+      "pre-registered OAuth client id, when the server requires one",
+    )
+    .option(
+      "--oauth-client-secret-env <NAME>",
+      "environment variable holding an optional OAuth client secret",
+    )
+    .option("--no-browser", "print the OAuth URL without opening a browser")
+    .option(
+      "--oauth-timeout <seconds>",
+      "maximum time to wait for OAuth consent (1-600)",
+      "600",
+    )
     .action(
       async (
         opts: {
@@ -180,19 +209,123 @@ export function register(program: Command): void {
           specFile?: string;
           label?: string;
           note?: string;
+          connection?: string;
+          oauth?: boolean;
+          oauthClientId?: string;
+          oauthClientSecretEnv?: string;
+          browser: boolean;
+          oauthTimeout: string;
         },
         cmd: Command,
       ) => {
         const org = await resolveOrg(cmd);
-        const result = await createClient().post<mcp.SaveMcpServerResponse>(
-          mcpPath(org),
-          {
+        if (opts.oauth && opts.connection)
+          throw new CliError(
+            "usage",
+            "--oauth conflicts with --connection; choose new consent or an existing connection.",
+          );
+        if (
+          !opts.oauth &&
+          (opts.oauthClientId ||
+            opts.oauthClientSecretEnv ||
+            opts.browser === false ||
+            opts.oauthTimeout !== "600")
+        )
+          throw new CliError("usage", "OAuth options require --oauth.");
+        const timeoutSeconds = Number(opts.oauthTimeout);
+        if (
+          !Number.isInteger(timeoutSeconds) ||
+          timeoutSeconds < 1 ||
+          timeoutSeconds > 600
+        )
+          throw new CliError(
+            "usage",
+            "--oauth-timeout must be an integer from 1 to 600 seconds.",
+          );
+        let spec: mcp.McpSpec;
+        let body: mcp.SaveMcpServerBody;
+        try {
+          const raw = specFromOpts(opts);
+          spec = parseMcpSpec(
+            raw && typeof raw === "object" && !Array.isArray(raw)
+              ? { specVersion: 1, serverName: opts.name, ...raw }
+              : raw,
+          );
+          body = saveMcpServerBodySchema.parse({
             name: opts.name,
-            spec: specFromOpts(opts),
+            spec,
             label: opts.label,
             note: opts.note,
-          },
-        );
+            connectionId: opts.connection,
+          });
+        } catch (error) {
+          if (error instanceof CliError) throw error;
+          throw new CliError(
+            "usage",
+            error instanceof Error
+              ? error.message
+              : "Invalid MCP configuration.",
+          );
+        }
+        if ((opts.oauth || opts.connection) && spec.transport !== "http")
+          throw new CliError(
+            "usage",
+            "--oauth and --connection require an HTTP MCP server.",
+          );
+        const client = createClient();
+        if (opts.oauth) {
+          let clientSecret: string | undefined;
+          if (opts.oauthClientSecretEnv) {
+            if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(opts.oauthClientSecretEnv))
+              throw new CliError(
+                "usage",
+                "--oauth-client-secret-env must name an environment variable.",
+              );
+            clientSecret = process.env[opts.oauthClientSecretEnv];
+            if (!clientSecret)
+              throw new CliError(
+                "usage",
+                "The OAuth client secret environment variable is empty or unset.",
+              );
+            if (!opts.oauthClientId)
+              throw new CliError(
+                "usage",
+                "--oauth-client-secret-env requires --oauth-client-id.",
+              );
+          }
+          body.connectionId = await connectMcpOauth(
+            client,
+            org,
+            {
+              name: opts.name,
+              url: spec.url!,
+              clientId: opts.oauthClientId,
+              clientSecret,
+            },
+            { browser: opts.browser, timeoutSeconds },
+          );
+        }
+        let result: mcp.SaveMcpServerResponse;
+        try {
+          result = await client.post<mcp.SaveMcpServerResponse>(
+            mcpPath(org),
+            body,
+          );
+        } catch (error) {
+          if (opts.oauth && body.connectionId)
+            console.error(
+              `OAuth connected, but saving the MCP version failed. Retry with --connection ${body.connectionId} instead of --oauth.`,
+            );
+          throw error;
+        }
+        if (body.connectionId && result.connectionId !== body.connectionId)
+          throw new CliError(
+            "internal",
+            "The server did not confirm the MCP connection binding.",
+            {
+              hint: `Upgrade the Gauge API before retrying with --connection ${body.connectionId}.`,
+            },
+          );
         if (resolveOutput(cmd) === "json") {
           printJson(result);
           return;

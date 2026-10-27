@@ -100,8 +100,8 @@ export class ApiClient {
     return this.token !== null;
   }
 
-  async get<T>(path: string, query?: Query): Promise<T> {
-    return this.request<T>("GET", path, { query });
+  async get<T>(path: string, query?: Query, signal?: AbortSignal): Promise<T> {
+    return this.request<T>("GET", path, { query, signal });
   }
 
   async post<T>(path: string, body?: unknown, query?: Query): Promise<T> {
@@ -257,7 +257,7 @@ export class ApiClient {
   private async request<T>(
     method: string,
     path: string,
-    options: { body?: unknown; query?: Query } = {},
+    options: { body?: unknown; query?: Query; signal?: AbortSignal } = {},
   ): Promise<T> {
     const headers = this.headers(
       options.body === undefined
@@ -269,6 +269,7 @@ export class ApiClient {
       headers,
       body:
         options.body === undefined ? undefined : JSON.stringify(options.body),
+      signal: options.signal,
     });
     if (!res.ok) throw await this.toError(res);
     if (res.status === 204) return undefined as T;
