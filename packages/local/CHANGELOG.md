@@ -2,8 +2,14 @@
 
 ## Unreleased
 
-- Add an optional transparent TLS gateway with immutable web fixtures and public CA distribution.
-- Move container creation into the session worker; join preparation before cleanup and retain explicit cleanup state after failures.
+- A session spec can include a `gateway` with a web fixture. The session then
+  starts a gateway container that serves fixture pages and routes origins over
+  intercepted HTTPS. The agent container shares the gateway's network and
+  trusts a per-session CA; its image needs no changes.
+- The detached session worker now creates and removes the agent container
+  (and gateway, when used), instead of `startSession`. Cancelling during
+  startup waits for it to stop before cleaning up, and a session whose cleanup
+  fails keeps `cleanupPending` so `stopSession` can retry it.
 
 ## 0.2.0 — 2026-10-21
 

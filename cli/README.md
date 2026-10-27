@@ -292,11 +292,13 @@ tarball has a different hash and size. Each launch takes a fresh snapshot.
 Each case owns its agents, models, consumer repository/ref, Persona and criteria.
 The optional `config.inputs` selects named inputs; all attach by default.
 
-For transparent web fixtures, declare an input such as
-`"docs": { "type": "web-fixture", "path": "fixtures/docs.json" }`.
-Select it with `config.inputs` and override it with `--input docs=path.json` in
-either backend. Local runs use a separate mitmproxy gateway; `gauge local runtime
-inspect` and `pull` cover both images. See [web fixture setup and contract](../docs/local-web-fixtures.md).
+A `web-fixture` input controls what agents receive from specific HTTPS URLs:
+exact pages, 404s for missing pages under a scope, or an origin routed to a
+preview. Declare it as `"docs": { "type": "web-fixture", "path": "fixtures/docs.json" }`,
+select it with `config.inputs`, and override it with `--input docs=path.json`
+on either backend. Local runs serve fixtures through a gateway container;
+`gauge local runtime inspect` and `pull` cover its image. See
+[web fixture inputs](https://github.com/gauge-sh/gauge-cli/blob/main/docs/local-web-fixtures.md).
 
 `verify` reads the repository's current files, including non-ignored untracked files,
 without login, network access, a PR, built CI artifacts, or sandbox compute. It checks

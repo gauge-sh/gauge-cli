@@ -255,14 +255,16 @@ for refresh, endpoint overrides, and compatibility details.
 | Execution | Docker on your machine, using your agent credentials | Managed compute; sessions keep running when you close your laptop |
 | Results and analysis | File evidence; SQLite measurements, judgments, and Findings authored by your coding agent | Shared results, automated judging, and tracking over time |
 | Queries | Run summaries and Findings; supported fields are discoverable | Findings and additional reporting datasets |
-| Product inputs | Skills, npm CLIs and SDKs, docs and files | Also native binaries, website previews, and authenticated MCPs/APIs |
+| Product inputs | Skills, npm CLIs and SDKs, docs and files, web fixtures | Also native binaries, GitHub-resolved website previews, and authenticated MCPs/APIs |
 | Iteration | Test working-tree changes and pre-release artifacts | Also controlled response rewriting and managed optimization trials |
 | Automation | CLI scripts and local batches | Also scheduled measurements, GitHub App PR checks, and greater concurrency |
 | Account | No Gauge account | Gauge workspace and credits |
 
-Hosted Gauge's gateway brokers credentials and can rewrite responses separately
-for each session. This lets you test changes to content an agent encounters,
-such as a docs response, without publishing those changes first.
+[Web fixtures](docs/local-web-fixtures.md) let you test changes to content an
+agent encounters, such as a docs page, without publishing them first. They
+replace pages or route a site to a preview in both local and hosted runs.
+Hosted Gauge's gateway also brokers credentials and can rewrite responses
+separately for each session.
 
 Project inputs on saved eval/preference launches, and `--dry-run` for those saved
 measurements, are currently local-only. For hosted working-tree input snapshots
