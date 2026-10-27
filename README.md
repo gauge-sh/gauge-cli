@@ -27,7 +27,7 @@ API keys. **No Gauge account required.**
 
 ## Access Gauge Chat data
 
-Use the same login and public organization slug for Chat and Agents:
+Sign in and choose your organization to access Chat data:
 
 ```sh
 gauge auth login
@@ -262,9 +262,9 @@ over time.
 
 ## Local or hosted
 
-Shared Chat/Agents login is the default for `gauge auth login` and
-`gauge auth login --device`. See [shared CLI authentication](docs/shared-cli-auth.md)
-for refresh, endpoint overrides, and compatibility details.
+Sign in with `gauge auth login` to use hosted Chat and Agents. On a remote
+terminal, use `gauge auth login --device`. See [signing in](docs/shared-cli-auth.md)
+for help with login and API keys.
 
 | | Local | Hosted Gauge |
 | --- | --- | --- |

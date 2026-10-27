@@ -20,68 +20,40 @@ Requires Node.js ≥ 22.13.
 
 ## Organizations
 
-Use the public Gauge slug shown by `gauge orgs` with either product:
+Run `gauge orgs` to see your organizations and whether each has Chat, Agents,
+or both. Use the value in the `slug` column to choose one:
 
 ```sh
 gauge orgs use acme                 # save your default organization
 gauge orgs use acme --project       # save this project's organization
-gauge chat tags list --org acme     # override the selection for one command
+gauge chat tags list --org acme     # choose an organization for one command
 ```
 
-The CLI resolves slugs through the shared Gauge directory and sends the
-canonical organization ID to the product API. It stores that ID in `orgId`
-in user configuration or `gauge.json`; you do not need to find or enter a UUID.
-Explicit canonical UUIDs are also accepted. Slug lookups use the current
-directory without a persistent cache or fallback to internal Agents workspace
-names. Directory failures stop the command before it accesses product data.
-Saved IDs need no lookup; the product API checks access on every request.
+The selection works for both products. A command's `--org` takes priority,
+followed by its run specification, the project setting, then your default.
+Chat can pick your organization automatically if you have only one; Agents
+commands need a saved selection or `--org`.
 
-With a shared login, selection precedence is `--org`, a run specification,
-`gauge.json` `orgId`, then user configuration `orgId`. Run specifications with
-an old `org` slug require an explicit `--org <public-slug>` override, or removal
-of `org` to use the saved selection. Canonical UUIDs in run specifications are
-unambiguous and still work.
+**Upgrading:** Reselect previously saved organizations with `gauge orgs use`.
+Add `--project` for a project setting. Everyone using an updated project needs
+CLI 0.25.0 or later; restore the previous `gauge.json` before using an older
+CLI. If an older run specification contains an `org` name, pass `--org` to
+choose the organization for that run.
 
-An old `defaultOrg` or `gauge.json` `org` selection requires reselection using
-`gauge orgs use <slug>` or `gauge orgs use <slug> --project`, respectively.
-The CLI never guesses whether an old saved slug meant a canonical organization
-or an Agents workspace. Project migration preserves other manifest fields.
-Older CLI binaries retain their existing Agents slug semantics; the server
-continues to accept those legacy requests. They do not read the new user `orgId`
-field. A project migrated with `--project` requires the new CLI: older versions
-reject `orgId` in the manifest. To return to an older CLI, restore the prior
-`gauge.json` and select the Agents workspace there again. No compatibility slug
-is written by the new CLI.
+Chat commands using an API key default to the key's organization, regardless
+of your saved selection. Agency keys can use `--org` to choose a client.
 
-`gauge orgs` lists canonical organizations and their products (Chat, Agents, or
-both). Historical unlinked Agents workspaces are excluded. Commands for a
-product an organization does not use report that limitation.
-`gauge orgs -o json` returns `id`, `slug`, `name`, `products`, and `isDefault`;
-`products.agents: null` means availability could not be determined.
+## Checking your account
 
-Chat commands with an organization API key default to the key's organization
-and ignore saved user/project selections; `--org` can select an agency key's
-client organization. With a shared login and no selection, Chat commands select
-your only Chat-enabled organization or ask you to choose. Agents commands
-require an explicit or saved selection.
+`gauge whoami` shows the account or API key you are using and its organizations.
+`gauge auth status` checks whether your login or API key works and shows its
+source, permissions, and expiry. See [signing in](../docs/shared-cli-auth.md)
+for login, logout, and API-key setup.
 
-Legacy Agents tokens can still identify their user and make requests using a
-canonical UUID. They cannot read the shared directory; use `gauge auth login`
-for selection by public slug.
-
-## Identity and authentication diagnostics
-
-`gauge whoami` shows who you are acting as: a signed-in user and their Gauge
-organizations, or an organization API key and its owning organization.
-`gauge auth status` checks which credential is active, where it came from,
-whether the server accepts it, its scopes and expiry, and the API URLs.
-Neither command prints credential secrets. Legacy tokens can identify their
-user, but do not report canonical organization membership, scopes, or expiry.
-
-JSON consumers: `whoami` returns `user`, `apiKey`, and `orgs` (null for a legacy
-token). `auth status` returns `authenticated`, `source`, `apiUrl`, `authUrl`, and
-`credential` (`kind`, `scopes`, `expiresAt`). API-key identity and credential
-diagnostics are available at the root; there is no `gauge chat whoami` command.
+For scripts, add `-o json`: `whoami` returns `user`, `apiKey`, and `orgs`;
+`auth status` returns `authenticated`, `source`, `apiUrl`, `authUrl`, and
+`credential` (`kind`, `scopes`, `expiresAt`). Older Agents tokens do not report
+organizations, permissions, or expiry.
 
 ## Workspace and local storage
 
@@ -848,18 +820,12 @@ stored credentials (useful in CI). Exit codes: `0` ok · `1` error ·
 
 ## Gauge Chat
 
-`gauge chat` manages tracked AI-visibility prompts and reads Gauge Chat data
-through the Chat API. Sign in with `gauge auth login` (shared credentials), or
-for scripts and CI set `GAUGE_API_TOKEN` to an org API key
-(`GAUGE_API_TOKEN=gauge_sk_…`, created in Settings → API Keys). A key acts as its
-organization with the scopes it was created with (Read, or Read & write);
-`GAUGE_API_TOKEN` takes precedence over a stored login. Commands use the
-shared [organization selection](#organizations), and an only Chat organization
-is picked when none is set. Category-scoped commands take `--category` (slug or
-id); `gauge chat categories use <category>` saves `chatCategory` for the
-selected organization, and an only category is picked automatically. The
-Agents-only `--local` and `--hosted` flags are rejected. Use `gauge whoami`
-for identity and `gauge auth status` for credential diagnostics.
+`gauge chat` manages tracked AI-visibility prompts and reads Gauge Chat data.
+Sign in with `gauge auth login`, or use an [API key](../docs/shared-cli-auth.md#api-keys-for-scripts-and-ci)
+for scripts and CI. Choose your [organization](#organizations), then use
+`--category` to select a category or `gauge chat categories use <category>`
+to save a default. If there is only one category, it is selected automatically.
+Chat commands do not use the Agents `--local` and `--hosted` flags.
 
 ```sh
 gauge chat topics create "Pricing" --if-exists

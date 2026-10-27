@@ -6,19 +6,10 @@
 
 ### Added
 
-- `gauge chat` commands for the Gauge Chat API: categories,
-  topics (list, create, rename), prompts (bulk add with `--dry-run`,
-  bulk move, tag, untag), tags, brands, `query` with
-  `datasets`/`fields`/`metadata` discovery, answers, and citations. They use
-  `gauge auth login` shared credentials or,
-  for scripts, an org API key (`GAUGE_API_TOKEN=gauge_sk_…`, created in
-  Settings → API Keys), which takes precedence over a login. Errors report the
-  API's error code; plan limits exit 3. `gauge chat categories use` saves a
-  default category (`chatCategory`) for the selected organization.
-- Shared Gauge login for Chat and Agents, with automatic credential refresh
-  before expiry and after an authentication rejection, including event streams.
-- `GAUGE_AUTH_URL` and the `authUrl` setting select an alternate authentication
-  service for development or other deployments.
+- `gauge chat` commands to manage topics, prompts, tags, and brands, and read
+  reports, answers, and citations. Sign in with `gauge auth login` or use an
+  organization API key from Settings → API Keys.
+- One login for Chat and Agents. The CLI keeps you signed in automatically.
 - `web-fixture` inputs serve exact HTTPS pages, block missing pages under a
   scope, or route a site's origin to a preview, in both local and hosted runs.
   Declare one in `gauge.json`, select it with `config.inputs`, and override it
@@ -30,44 +21,13 @@
 
 ### Changed
 
-- Browser and device login use shared authentication at `app.withgauge.com` by
-  default. Existing Agents tokens remain supported, and `GAUGE_API_TOKEN` and
-  explicitly supplied tokens keep their precedence without automatic refresh.
-- `gauge auth logout` revokes the shared session and clears local credentials.
-  If remote revocation fails, it still clears local credentials and reports it.
-- Credentials are saved atomically with owner-only permissions. Concurrent
-  commands serialize refreshes, and an uncertain refresh requires another login
-  to avoid reusing a possibly consumed token. Stored shared credentials are
-  restricted to the API origins selected at login.
-- Shared sessions cannot create legacy Agents tokens with
-  `gauge auth tokens create`; use an existing Agents credential to manage
-  automation tokens.
-- **Breaking:** Public organization slugs now come only from the shared Gauge
-  directory.
-  `gauge orgs use <slug>` stores a canonical `orgId`; `--project` saves it to
-  `gauge.json`. Old `defaultOrg` and project `org` selections require explicit
-  reselection. Internal Agents slugs, persistent alias caches, and unlinked
-  workspaces are no longer used for public organization selection.
-- `gauge whoami` identifies users and organization API keys. `gauge auth status`
-  reports credential source, validity, scopes, expiry, and API URLs. Their JSON
-  output is documented in the CLI README. There is no product-specific whoami.
-- Chat commands with an org API key default to the owning organization;
-  `--org` can select an agency key's client. Agents commands retain explicit or
-  saved selection. Directory access by legacy Agents tokens requires a shared
-  login; requests with canonical UUIDs still work.
-
-### Release requirements
-
-- Deploy Chat public API, canonical organization directory, and shared auth,
-  plus compatible Agents canonical identity and shared auth, before publishing.
-  See [shared CLI authentication](../docs/shared-cli-auth.md).
-- Deploy the device verification URL fix (Gauge Chat #2349) and verify that
-  device approval links use HTTPS.
-- Enable organization API keys in Agents before advertising keys as supported
-  across both products; Chat API-key support is independently available.
-- Deploy hosted support for `web-fixture` inputs before publishing this CLI
-  version; earlier hosted versions reject them. The local gateway must have a
-  qualified, digest-pinned public image.
+- Choose an organization once for both Chat and Agents with `gauge orgs use`.
+- **Upgrade:** Reselect previously saved organizations using `gauge orgs use
+  <org>`; add `--project` for a project setting. Choose from `gauge orgs`.
+  Projects updated this way require CLI 0.25.0 or later.
+- `gauge whoami` shows which account or API key you are using. `gauge auth
+  status` checks your login or API key and its permissions.
+- `gauge auth logout` signs out this CLI installation.
 
 ## 0.24.0 — 2026-10-21
 
