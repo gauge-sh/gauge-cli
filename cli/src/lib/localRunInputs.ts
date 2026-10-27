@@ -438,9 +438,9 @@ export async function loadLocalRunDefinition(
       if (local && input.type === "website")
         throw new CliError(
           "usage",
-          `Input ${name} is a website; canonical-site preview routing requires hosted Gauge.`,
+          `Website input "${name}" requires hosted Gauge to replace the original site with your preview.`,
           {
-            hint: "Use --hosted with a public preview. Locally, supply docs as files or put a reachable preview URL in the prompt; these test supplied content, not discovery of the canonical site. See `gauge instructions hillclimb`.",
+            hint: "Use --hosted with a public preview. For local runs, supply documentation files or a preview URL in the prompt. These give the agent your content directly rather than testing whether it finds your site. See `gauge instructions hillclimb`.",
           },
         );
       const original = compileDefinitionInput(

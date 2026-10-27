@@ -182,7 +182,15 @@ describe("gauge orgs and org selection", { concurrency: false }, () => {
     updateConfig({ defaultOrg: "acme" });
     await assert.rejects(
       resolveOrg(agentsCommand()),
-      /legacy Agents namespace/,
+      (error: unknown) => {
+        const report = errorReport(error, "run list");
+        assert.equal(report.code, "usage");
+        assert.match(report.message, /Your saved organization needs to be selected again/);
+        assert.doesNotMatch(report.message, /namespace|canonical|defaultOrg/);
+        assert.match(report.hint ?? "", /gauge orgs use <slug>/);
+        assert.match(report.hint ?? "", /gauge auth login.*automatically/);
+        return true;
+      },
     );
     assert.equal(readConfig().defaultOrg, "acme");
     assert.deepEqual(paths, []);
@@ -200,7 +208,7 @@ describe("gauge orgs and org selection", { concurrency: false }, () => {
     writeFileSync(path, JSON.stringify(manifest));
     await assert.rejects(
       resolveOrg(agentsCommand()),
-      /legacy Agents namespace/,
+      /needs to be selected again after this CLI update/,
     );
     assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), manifest);
     const result = await run("orgs", "use", "acme", "--project");
@@ -219,7 +227,7 @@ describe("gauge orgs and org selection", { concurrency: false }, () => {
       const { error } = await run("orgs", "use", value);
       assert.match(
         errorReport(error, "orgs use").message,
-        /not found in the Gauge directory/,
+        /don't have access to an organization/,
       );
     }
     assert.ok(paths.every((path) => path === "/api/v1/orgs"));
@@ -242,7 +250,7 @@ describe("gauge orgs and org selection", { concurrency: false }, () => {
     const cmd = agentsCommand().setOptionValue("org", "acme");
     assert.equal(await resolveOrg(cmd), ACME);
     handler = () => ({ body: { data: [] } });
-    await assert.rejects(resolveOrg(cmd), /not found in the Gauge directory/);
+    await assert.rejects(resolveOrg(cmd), /don't have access to an organization/);
     assert.deepEqual(paths, ["/api/v1/orgs", "/api/v1/orgs"]);
   });
 
@@ -259,7 +267,7 @@ describe("gauge orgs and org selection", { concurrency: false }, () => {
   it("rejects legacy run-spec slugs unless a public --org is supplied", async () => {
     await assert.rejects(
       resolveOrg(agentsCommand(), "acme"),
-      /legacy Agents namespace/,
+      /needs to be selected again after this CLI update/,
     );
     const cmd = agentsCommand().setOptionValue("org", "beta");
     assert.equal(await resolveOrg(cmd, "acme"), BETA);
@@ -297,7 +305,7 @@ describe("gauge orgs and org selection", { concurrency: false }, () => {
     const result = await run("orgs", "create", "Sandbox");
     assert.match(
       errorReport(result.error, "orgs create").message,
-      /created.*did not link/,
+      /created.*not ready to select/,
     );
     assert.equal(readConfig().orgId, BETA);
   });

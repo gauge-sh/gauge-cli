@@ -90,7 +90,7 @@ export function resolveLocalProfile(agent: string, model: string, options: Local
   const key = credentialKey(agent, model);
   if (options.credentialSelections) {
     const selected = options.credentialSelections[key];
-    if (!selected) throw new CliError("usage", `No frozen credential selection for ${agent} ${model}.`);
+    if (!selected) throw new CliError("usage", `This batch has no saved login settings for ${agent} ${model}.`, { hint: "Check `gauge local profiles list`, then start a new batch with the profile you want to use." });
     validateCompatibility(selected, agent, model);
     return selected;
   }

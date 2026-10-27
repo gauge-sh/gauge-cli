@@ -26,7 +26,7 @@ import {
   resolveAuthUrl,
   sharedTokenSchema,
 } from "./sharedAuth";
-import { updateConfig } from "./config";
+import { readConfig, updateConfig } from "./config";
 import {
   browserLogin,
   deviceLogin,
@@ -131,8 +131,37 @@ describe("shared CLI credentials", { concurrency: false }, () => {
     ]);
   });
 
+  it("repairs an old organization selection through device login", async () => {
+    updateConfig({ defaultOrg: "old-agents-slug" });
+    mock.method(console, "log", () => {});
+    const orgId = "8c7f0e1a-1111-4222-8333-944455556666";
+    mock.method(globalThis, "fetch", async (url: URL | string) => {
+      if (String(url).endsWith("/authorize"))
+        return json({
+          deviceCode: "secret",
+          userCode: "CODE",
+          verificationUriComplete: "https://chat.test/device",
+          interval: 0,
+          expiresIn: 60,
+          emailSent: false,
+        });
+      if (String(url).endsWith("/token"))
+        return json({ status: "approved", ...tokens() });
+      return json({
+        user: { id: "uuid", email: "person@test.com", name: "Person" },
+        orgs: [{ id: orgId, slug: "acme", name: "Acme" }],
+      });
+    });
+    const program = new Command();
+    register(program);
+    await program.parseAsync(["auth", "login", "--device"], { from: "user" });
+    assert.deepEqual(readConfig(), { orgId });
+    assert.equal((readCredentials() as SharedCredentials).accessToken, "gauge_cli_new");
+  });
+
   it("uses the canonical organization during shared onboarding despite different product slugs", async () => {
     mock.method(console, "log", () => {});
+    updateConfig({ defaultOrg: "old-agents-slug" });
     const seen: string[] = [];
     mock.method(globalThis, "fetch", async (url: URL | string) => {
       seen.push(String(url));
@@ -161,6 +190,7 @@ describe("shared CLI credentials", { concurrency: false }, () => {
     });
     const result = await ensureAccount({ seed: false });
     assert.equal(result.org, "8c7f0e1a-1111-4222-8333-944455556666");
+    assert.deepEqual(readConfig(), { orgId: result.org });
     assert.ok(seen.includes("https://agents.test/api/v1/me"));
     assert.equal(seen.at(-1), "https://chat.test/api/v1/orgs");
     assert.equal(
@@ -171,6 +201,7 @@ describe("shared CLI credentials", { concurrency: false }, () => {
 
   it("uses Chat browser login by default with PKCE and saves a refreshable session", async () => {
     delete process.env.GAUGE_AUTH_URL;
+    updateConfig({ defaultOrg: "old-agents-slug" });
     const originalFetch = globalThis.fetch;
     let authorize: URL | undefined;
     let callback: Promise<Response> | undefined;
@@ -200,12 +231,13 @@ describe("shared CLI credentials", { concurrency: false }, () => {
         assert.equal(String(url), `${DEFAULT_AUTH_URL}/api/cli/me`);
         return json({
           user: { id: "uuid", email: "person@test.com" },
-          orgs: [],
+          orgs: [{ id: "8c7f0e1a-1111-4222-8333-944455556666", slug: "acme", name: "Acme" }],
         });
       },
     );
     await browserLogin();
     await callback;
+    assert.deepEqual(readConfig(), { orgId: "8c7f0e1a-1111-4222-8333-944455556666" });
     assert.equal(
       (readCredentials() as SharedCredentials).refreshToken,
       "gauge_refresh_new",
@@ -301,7 +333,7 @@ describe("shared CLI credentials", { concurrency: false }, () => {
             },
           },
         );
-        assert.match(result.stdout, /outcome is uncertain.*gauge auth login/);
+        assert.match(result.stdout, /could not renew your login.*gauge auth login/);
       }
       assert.equal(refreshes, 1);
       assert.equal(apiCalls, 0);
@@ -324,7 +356,7 @@ describe("shared CLI credentials", { concurrency: false }, () => {
     try {
       await assert.rejects(
         refreshCredentials(original),
-        /outcome is uncertain/,
+        /could not renew your login/,
       );
     } finally {
       mock.restoreAll();
@@ -358,8 +390,8 @@ describe("shared CLI credentials", { concurrency: false }, () => {
   it("does not retry refresh after an unreadable successful response", async () => {
     saveCredentials(credentials(true));
     const fetchMock = mock.method(globalThis, "fetch", async () => json({}));
-    await assert.rejects(new ApiClient().get("/me"), /outcome is uncertain/);
-    await assert.rejects(new ApiClient().get("/me"), /outcome is uncertain/);
+    await assert.rejects(new ApiClient().get("/me"), /could not renew your login/);
+    await assert.rejects(new ApiClient().get("/me"), /could not renew your login/);
     assert.equal(fetchMock.mock.callCount(), 1);
   });
 
@@ -407,7 +439,7 @@ describe("shared CLI credentials", { concurrency: false }, () => {
     const fetchMock = mock.method(globalThis, "fetch", async () =>
       json(tokens()),
     );
-    await assert.rejects(new ApiClient().get("/me"), /outcome is uncertain/);
+    await assert.rejects(new ApiClient().get("/me"), /could not renew your login/);
     assert.equal(fetchMock.mock.callCount(), 0);
     // A fresh login replaces the marker; logout can still use the old secret.
     saveCredentials(credentials());
@@ -549,7 +581,7 @@ describe("shared CLI credentials", { concurrency: false }, () => {
     });
     await assert.rejects(
       new ApiClient().post("/mutate", {}),
-      /outcome is uncertain/,
+      /could not renew your login/,
     );
     assert.deepEqual(readCredentials(), { ...original, refreshPending: true });
     assert.equal(calls, 1);
@@ -647,7 +679,7 @@ describe("shared CLI credentials", { concurrency: false }, () => {
     saveCredentials(credentials());
     assert.throws(
       () => new ApiClient({ baseUrl: "https://unexpected.test" }),
-      /not authorized/,
+      /saved login is for a different Gauge server/,
     );
   });
 
@@ -675,6 +707,6 @@ describe("shared CLI credentials", { concurrency: false }, () => {
     });
     await logout();
     assert.equal(readCredentials(), null);
-    assert.match(warnings[0], /server grant may remain active/);
+    assert.match(warnings[0], /login may still allow access/);
   });
 });

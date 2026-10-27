@@ -177,7 +177,7 @@ test("capabilities reject unsupported requests without dropping predicates", () 
     );
     assert.throws(
       () => queryLocal(root, { dataset: "tokens", metrics: ["input_tokens"] }),
-      /not supported by the local backend/,
+      /not available for local runs/,
     );
     assert.throws(
       () => queryLocal(root, { metrics: ["not_a_metric"] }),

@@ -22,14 +22,17 @@
 ### Changed
 
 - Choose an organization once for both Chat and Agents with `gauge orgs use`.
-- **Upgrade:** Reselect previously saved organizations using `gauge orgs use
-  <org>`; add `--project` for a project setting. Choose from `gauge orgs`.
+- **Upgrade:** Signing in updates your old saved default automatically if you
+  have only one organization. Otherwise, choose from `gauge orgs` with
+  `gauge orgs use <slug>`. Add `--project` to update an old project setting.
   Projects updated this way require CLI 0.25.0 or later.
 - `gauge whoami` shows which account or API key you are using. `gauge auth
   status` checks your login or API key and its permissions.
 - `gauge auth logout` signs out this CLI installation.
 - Command telemetry requests send a `gauge-cli/<version>` User-Agent, matching
   Gauge API requests.
+- Errors and help explain organization selection, sign-in recovery, permissions,
+  and local runs in plain language, with commands to resolve the problem.
 
 ## 0.24.0 — 2026-10-21
 

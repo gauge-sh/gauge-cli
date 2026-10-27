@@ -1,6 +1,6 @@
 import type { MeResponse } from "@withgauge/api-schemas/me";
 import type { CreateOrgResponse } from "@withgauge/api-schemas/orgs";
-import { deviceLogin } from "../commands/auth";
+import { deviceLogin, useOnlyOrg } from "../commands/auth";
 import { ApiClient, CliError } from "./client";
 import {
   type DirectoryOrg,
@@ -88,6 +88,7 @@ export async function ensureAccount(
       if (login.credentials) saveCredentials(login.credentials);
       else saveToken(login.token);
     });
+    useOnlyOrg(login.me, login.token.startsWith("gauge_cli_"), log);
     client = new ApiClient();
     // Chat membership does not imply an Agents workspace exists or has the same slug.
     // Keep the successful shared login even if Agents onboarding is unavailable.

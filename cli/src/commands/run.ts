@@ -1262,7 +1262,7 @@ export function register(program: Command): void {
         if (!session)
           throw new CliError(
             "usage",
-            `Local run ${id} was not found. Use gauge run repair --local if its artifacts exist.`,
+            `Local run ${id} was not found. If its files are still in .gauge/runs, run \`gauge run repair --local\` to restore it to the run list.`,
           );
         if (opts.logs) {
           const path = join(
@@ -1277,7 +1277,7 @@ export function register(program: Command): void {
           if (!existsSync(path))
             throw new CliError(
               "usage",
-              "This run has no transcript artifact yet.",
+              "This run has no saved transcript yet.",
             );
           process.stdout.write(readFileSync(path, "utf8"));
         } else printJson({ ...session, analysis: getLocalAnalysis(dir, id) });
@@ -1381,7 +1381,7 @@ export function register(program: Command): void {
   run
     .command("repair")
     .description(
-      "Rebuild local session summaries from artifacts; preserve saved measurements and analysis",
+      "Restore local runs to the run list from their saved files, keeping measurements and analysis",
     )
     .action((_opts: unknown, command: Command) => {
       if (gaugeState(command).mode !== "local")
