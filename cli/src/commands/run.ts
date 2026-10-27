@@ -263,6 +263,9 @@ function printInsight(insight: RunInsightResponse): void {
   console.log(`\nFindings (${analysis.observations.length})`);
   for (const finding of analysis.observations) {
     console.log(`  ${finding.kind}: ${finding.label}`);
+    console.log(
+      `    id ${finding.id}${finding.issueId ? `, issue ${finding.issueId}` : ""}`,
+    );
     console.log(`    ${finding.detail}`);
     console.log(`    Evidence: ${JSON.stringify(finding.evidence)}`);
   }
@@ -1425,6 +1428,68 @@ export function register(program: Command): void {
         pollStatus: true,
       });
     });
+
+  hostedOnly(run.command("trace <id>"))
+    .description(
+      "A window of the run's trace around a seq, one line per event: web fetches, tool calls, results, and messages",
+    )
+    .requiredOption(
+      "--seq <n>",
+      "the seq at the center, e.g. a finding's evidence seq",
+    )
+    .option("--before <n>", "events before the seq (default 30)")
+    .option("--after <n>", "events after the seq (default 10)")
+    .action(
+      async (
+        id: string,
+        opts: { seq: string; before?: string; after?: string },
+        command: Command,
+      ) => {
+        const res = await createClient().get<{ lines: string[] }>(
+          `${runPath(id)}/trace`,
+          { seq: opts.seq, before: opts.before, after: opts.after },
+        );
+        if (resolveOutput(command) === "json") printJson(res);
+        else for (const line of res.lines) console.log(line);
+      },
+    );
+
+  hostedOnly(run.command("web <id>"))
+    .description(
+      "Every URL the run's agent fetched, with the seqs, and its searches",
+    )
+    .action(async (id: string, _opts: unknown, command: Command) => {
+      const res = await createClient().get<{
+        pages: { url: string; seqs: number[] }[];
+        searches: { seq: number; query: string }[];
+      }>(`${runPath(id)}/web`);
+      if (resolveOutput(command) === "json") return printJson(res);
+      for (const page of res.pages)
+        console.log(`${page.seqs.join(",")}  ${page.url}`);
+      for (const search of res.searches)
+        console.log(`${search.seq}  search: ${search.query}`);
+      if (!res.pages.length && !res.searches.length)
+        console.log("No web activity recorded.");
+    });
+
+  hostedOnly(run.command("commands <id>"))
+    .description(
+      "Shell commands the run's agent executed: without --seq, commands matching --query with their first output; with --seq, that call's full output",
+    )
+    .option("--query <text>", "only commands whose text contains this")
+    .option("--seq <n>", "one call from the listing")
+    .option("--offset <n>", "page into a long output")
+    .action(
+      async (id: string, opts: { query?: string; seq?: string; offset?: string }) => {
+        printJson(
+          await createClient().get<unknown>(`${runPath(id)}/commands`, {
+            query: opts.query,
+            seq: opts.seq,
+            offset: opts.offset,
+          }),
+        );
+      },
+    );
 
   run
     .command("diff <id>")

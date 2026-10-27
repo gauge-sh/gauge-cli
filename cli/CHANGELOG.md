@@ -7,6 +7,36 @@
 - Selecting an organization by public slug now checks access even when it is
   absent from `gauge orgs`. Lookup outside the list requires Chat to be enabled.
 
+### Changed
+
+- **Breaking:** `gauge optimizations` drives the new optimizations: open one on an
+  issue, a finding, or a goal; edit pages, skills, and CLI rules with
+  `file add`, `file read`, `file write`, and `file rm`; read `authoring`
+  guidance; keep `notes`; `launch` reruns of the source sessions; `watch` them;
+  and `finish` with the result. Rounds, trials,
+  baselines, diagnoses, adoption, and handoff are removed. Earlier CLI versions
+  get an update message from the optimizations API.
+
+### Removed
+
+- `gauge actions`. `gauge status` no longer lists open actions.
+
+### Added
+
+- `gauge issues list` ranks issues (the same finding across many sessions) by
+  impact, and `gauge issues get <id>` lists an issue's findings and runs.
+  `gauge run insight` shows each finding's id and issue. The Gauge app shows
+  issues as Findings; help and instructions say so.
+- `gauge run trace <id> --seq <n>` prints the trace around a seq,
+  `gauge run web <id>` lists every URL the agent fetched, and
+  `gauge run commands <id>` prints the shell output the agent saw.
+- `optimizations file edit` changes part of a page with find/replace on its
+  exact source; `file read --text` and `--query` show readable text or the
+  source around a match. Page writes and edits print how much of the page was
+  kept, and `launch` lists the changed files.
+- `optimizations file write --cli` takes CLI rules as authored
+  (`{schemaVersion: 3, target, rules, shippingIntent}`); Gauge seals them.
+
 ## 0.25.0 — 2026-10-26
 
 ### Added

@@ -70,6 +70,7 @@ export const sessionObservationSchema = z.object({
   ]),
   tags: z.array(z.string()),
   evidence: z.array(evidenceRefSchema),
+  issueId: z.string().nullable().optional(),
 });
 export type SessionObservation = z.infer<typeof sessionObservationSchema>;
 
@@ -145,7 +146,7 @@ export const portableEvidenceRefSchema = z.discriminatedUnion("kind", [
 export type PortableEvidenceRef = z.infer<typeof portableEvidenceRefSchema>;
 
 export const findingSubmissionSchema = sessionObservationSchema
-  .omit({ id: true })
+  .omit({ id: true, issueId: true })
   .extend({
     label: z.string().trim().min(1).max(200),
     detail: z.string().trim().min(1).max(10_000),

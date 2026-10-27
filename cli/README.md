@@ -227,7 +227,7 @@ contains the execution preference. Git is optional for workspace initialization.
 | Project inputs and previews on saved measurement launches | yes | use case files/specs |
 | Findings and summary queries | yes, supported fields | yes |
 | Personas, recurring schedules, PR checks | no | yes |
-| Optimizations (managed docs rewriting) | no | yes |
+| Optimizations (edit and rerun sessions) | no | yes |
 | Stored credentials for MCP servers and connections | no | yes |
 | Additional reporting datasets, dashboards, org settings | no | yes |
 
@@ -293,7 +293,7 @@ Use `gauge instructions optimization` for the full optimization workflow.
 
 Run `gauge --help` (or `gauge <command> --help`) for the full command set:
 run, eval, preference, models, personas, skills, mcp, repos, optimizations,
-brands, tags, actions, dashboards, members, org, provider keys,
+brands, tags, issues, dashboards, members, org, provider keys,
 billing, usage, stats, query, and more.
 
 ## Run committed Markdown evals
@@ -715,69 +715,57 @@ omit it and every scenario runs. On a recurring cadence, an eval launch or a
 full preference launch moves the next scheduled run to one period from now. A
 scenario subset leaves the schedule unchanged.
 
+## Issues (hosted)
+
+An issue groups the same finding across many sessions. `gauge issues list` shows
+each owned product's issues with the most sessions first, and how badly they
+hurt (blocked, recovered, extra work). `--reasons` lists why agents passed on
+your product in preference prompts. `gauge issues get <id>` lists the issue's
+findings with their runs. `gauge run insight <run>` shows each finding's issue.
+
 ## Optimizations (hosted)
 
-Start by finding runs that encountered the surface you want to improve:
+An optimization improves one issue. You edit a tree of pages, skills,
+and CLI rules; Gauge reruns the issue's source sessions with the tree injected
+and compares their findings. Nothing deploys.
 
 ```sh
 gauge instructions optimization
-gauge optimizations baselines --eval ev_1 -o json
-gauge run insight run_1 -o json
-gauge run get run_1 --logs -o json
-gauge optimizations start --eval ev_1 --from-run run_1 --yes
-gauge optimizations watch cl_1
+gauge issues list -o json                     # by impact; --reasons for Agent Preference
+gauge issues get is_1                         # the issue's findings and runs
+gauge optimizations create --issue is_1       # or --finding <id> --run <run>, or --goal <text>
+gauge optimizations authoring op_1
+gauge run trace run_1 --seq 42                # read the cited evidence
+gauge run web run_1                           # the exact URLs the session fetched
 ```
 
-`baselines` returns observed owned surfaces grouped by run, source evidence,
-judging status, eligibility (including the baseline's complete run set), and a
-`nextCursor` for `--cursor`. It uses the UI baseline picker's compatibility rules
-and recent 100-batch eligibility window. Missing evidence is unknown; the list
-is an analysis summary, not an exhaustive inventory of every trace event.
-`--from-run` inherits the eligible baseline's harness/model and reuses its runs.
-A stale choice fails instead of silently buying a new baseline. `--target` is
-an alternative when you need to establish a baseline; do not combine it with
-`--from-run`. Use `--preference` instead of `--eval` for preference prompts.
+Tree keys are `page:<url>`, `skill:<name>`, and `cli:<package>`. Copy an
+original in with `file add` so the diff shows only your edit. Change part of a
+page with `file edit`: `edits.json` is `[{find, replace}]` on the exact source,
+which `file read --query` shows. Each find must appear once, all edits apply or
+none do, and the output shows how much of the page you kept. Use `file write`
+for a new page, a full rewrite, a skill file, or CLI rules. Files not in the
+tree rerun as the source session had them.
 
 ```sh
-gauge optimizations authoring cl_1 > context.json
-gauge optimizations page cl_1 --url https://docs.acme.dev/auth -o json
-# Author round.json using context.revision and the observed baseline evidence.
-gauge optimizations round preview cl_1 --file round.json -o json
-gauge optimizations round save cl_1 --file round.json --digest <previewDigest>
-gauge optimizations launch cl_1 --yes
-gauge optimizations watch cl_1
-gauge optimizations trial cl_1 R1.1 -o json
-gauge optimizations adopt cl_1 R1.1 --yes
-gauge optimizations handoff cl_1
-gauge optimizations complete cl_1 --yes
+gauge optimizations file add op_1 --page https://docs.acme.dev/auth
+gauge optimizations file read op_1 page:https://docs.acme.dev/auth --text
+gauge optimizations file read op_1 page:https://docs.acme.dev/auth --query "API key"
+gauge optimizations file edit op_1 --page https://docs.acme.dev/auth --edits edits.json
+gauge optimizations file write op_1 --skill acme --path SKILL.md --from SKILL.md
+gauge optimizations notes op_1 --from notes.md
+gauge optimizations launch op_1 --yes         # spends credits
+gauge optimizations watch op_1
+gauge optimizations finish op_1 --from result.json --yes
 ```
 
-A round is `{revision, trials: [{trial: {title, hypothesis, lever, intervention}}]}`.
-Docs `REWRITE_DOCS` proposals supply `after.pages` with URL and exact `edits`
-(`find`/`replace`), or a complete `body` and `rewriteReason`. Check the page's
-`source`: `scrape` means current fetched content, not the captured response.
+`watch` waits until every rerun finishes and is analyzed, then shows each source
+finding as resolved or returned, and new findings as introduced. `launches
+<id> <launchId> -o json` reads one launch again. `result.json` is
+`{summary, changed, resolved, returned, introduced}`.
 
-For CLI trials, inspect `cliIntervention.guidance` and `targets` in authoring
-and use `gauge run get <id> --logs` for the cited command evidence. `cli-change --file change.json`
-accepts v3 `{schemaVersion:3, target, rules, shippingIntent}` and returns a sealed
-bundle to put in `CLI_INTERVENTION.after`. It does not save or launch. The old
-catalog/invocation-ID workflow is retired. Skills use `skill-files` and the
-complete edited file bundle.
-
-A checkpoint is a saved state of a baseline run. Resuming it avoids repeating
-earlier work. Gauge automatically selects a compatible checkpoint before the
-affected interaction for docs and CLI candidates, or starts fresh with a reason.
-You do not select a checkpoint; omit checkpoint choices and fork flags. Skills
-start fresh. Inspect
-`runs[].candidateExecution` for actual starting mode and `candidateDelivery`
-for exposure, observed artifacts, and evidence completeness. A score improvement
-does not prove the change was exercised. Report sample counts and failed sessions.
-
-Read `nextAction` on optimization detail; `watch` exits 4 when input is needed.
-Round save replaces pending drafts but never launches. Use `--yes` for approved
-spending and `trials add --idempotency-key` when retrying single-trial writes.
-Adoption selects a winner without changing the baseline or deploying the change;
-`handoff` supplies instructions to implement it in your source repository.
+CLI versions before 0.26.0 used an earlier optimizations API and now get an
+update message. Run `npm install -g @withgauge/cli`.
 
 ## Compare runs
 
@@ -853,7 +841,7 @@ index or background indexing process is maintained.
 
 Every read supports `-o json` for scripting. `GAUGE_API_TOKEN` overrides
 stored credentials (useful in CI). Exit codes: `0` ok · `1` error ·
-`2` usage · `3` billing-blocked · `4` needs your input (`optimizations watch`).
+`2` usage · `3` billing-blocked.
 
 ## Gauge Chat
 

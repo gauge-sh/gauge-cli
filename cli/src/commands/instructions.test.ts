@@ -230,16 +230,15 @@ describe("gauge instructions", () => {
   it("keeps the complete optimization workflow in its named page", () => {
     const optimization = instructions("optimization");
     assert.match(optimization, /## The loop/);
-    assert.match(optimization, /gauge optimizations diagnose/);
-    assert.match(optimization, /--idempotency-key/);
-    assert.match(optimization, /baselines --eval/);
-    assert.match(optimization, /--from-run/);
-    assert.match(optimization, /selects checkpoints automatically/);
-    assert.match(optimization, /Checkpoints are saved states of baseline runs/);
-    assert.match(optimization, /candidateDelivery/);
+    assert.match(optimization, /gauge issues list/);
+    assert.match(optimization, /optimizations authoring/);
+    assert.match(optimization, /file add/);
+    assert.match(optimization, /file write/);
+    assert.match(optimization, /gauge run trace/);
+    assert.match(optimization, /optimizations finish/);
     assert.ok(
-      optimization.indexOf("baselines --eval") <
-        optimization.indexOf("optimizations start"),
+      optimization.indexOf("optimizations create") <
+        optimization.indexOf("optimizations launch"),
     );
     assert.equal(instructions("optimizations"), optimization);
   });

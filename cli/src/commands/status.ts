@@ -16,7 +16,7 @@ function delta(pp: number | null): string {
 
 export function register(program: Command): void {
   hostedOnly(program.command("status"))
-    .description("One-shot org summary: actions, Agent Preference, agent experience")
+    .description("One-shot org summary: Agent Preference and agent experience")
     .action(async (_opts: unknown, cmd: Command) => {
       const org = await resolveOrg(cmd);
       const s = await createClient().get<summary.HomeSummary>(
@@ -62,21 +62,6 @@ export function register(program: Command): void {
             : "no owned brand ranked";
           console.log(`  ${card.name}: ${owned}`);
         }
-      }
-
-      console.log("\nopen actions:");
-      if (!s.actions.ok) {
-        console.log(`  (unavailable: ${s.actions.error})`);
-      } else if (s.actions.data.length === 0) {
-        console.log("  (none)");
-      } else {
-        for (const a of s.actions.data.slice(0, 5)) {
-          console.log(`  [${a.priority}] ${a.title} (${a.id})`);
-        }
-        if (s.actions.data.length > 5)
-          console.log(
-            `  (+${s.actions.data.length - 5} more — \`gauge actions list\`)`,
-          );
       }
     });
 }
