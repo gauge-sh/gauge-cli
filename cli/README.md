@@ -391,7 +391,7 @@ alongside your product:
 ```json
 {
   "version": 2,
-  "org": "my-org",
+  "orgId": "00000000-0000-0000-0000-000000000000",
   "inputs": {
     "cli": {
       "type": "npm-package",
@@ -413,8 +413,9 @@ existing checkout settings, including GitHub's default merge checkout. Omit
 `source.artifact` when the workflow uploads one artifact, or select it by name.
 
 For automatic checks, connect the Gauge GitHub App with repository access and
-Actions read permission. Set `org` and enable the repository and target branches
-in **Settings → GitHub**. Waiting for inputs starts no sessions and spends no
+Actions read permission. Run `gauge orgs use <slug> --project` to record the
+organization as `orgId`, and enable the repository and target branches in
+**Settings → GitHub**. Waiting for inputs starts no sessions and spends no
 session credits.
 Fork pull requests are disabled by default. Check **Allow fork pull requests** to let
 workspace members authorize an evaluation from its GitHub check. Authorization
