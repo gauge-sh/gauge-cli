@@ -12,10 +12,20 @@ import { readConfig, updateConfig } from "../lib/config";
 import { resolveOrg } from "../lib/context";
 import { errorReport } from "../lib/errors";
 import { register } from "./orgs";
+import { register as registerTags } from "./tags";
 
 const ACME = "8c7f0e1a-1111-4222-8333-944455556666";
 const BETA = "1d2e3f40-5555-4666-8777-988899990000";
 const CHAT_ONLY = "3a4b5c6d-7777-4888-9999-aaaabbbbcccc";
+const STAFF_ORG = {
+  id: "4b5c6d7e-8888-4999-aaaa-bbbbccccdddd",
+  slug: "outside-org",
+  name: "Outside Org",
+};
+const notFound: Reply = {
+  status: 404,
+  body: { error: { code: "not_found", message: "Organization not found" } },
+};
 
 type Reply = { status?: number; body: unknown };
 
@@ -81,6 +91,7 @@ const agentsMe = {
 function defaultHandler(path: string): Reply {
   if (path === "/api/v1/orgs") return { body: chatDirectory };
   if (path === "/api/v1/me") return { body: agentsMe };
+  if (/^\/api\/v1\/orgs\/[^/]+$/.test(path)) return notFound;
   return { body: { ok: true } };
 }
 
@@ -94,6 +105,7 @@ async function run(...args: string[]): Promise<{ json: any; error?: unknown }> {
     .option("--hosted");
   program.exitOverride();
   register(program);
+  registerTags(program);
   try {
     await program.parseAsync(["node", "gauge", ...args]);
   } catch (caught) {
@@ -223,14 +235,21 @@ describe("gauge orgs and org selection", { concurrency: false }, () => {
   });
 
   it("rejects unknown, internal, and unlinked workspace slugs without passing them to Agents", async () => {
-    for (const value of ["sandbox", "staff-only-slug", "acme-1a2b3c4d"]) {
+    for (const value of ["sandbox", "unknown-slug", "acme-1a2b3c4d"]) {
       const { error } = await run("orgs", "use", value);
       assert.match(
         errorReport(error, "orgs use").message,
-        /don't have access to an organization/,
+        /Organization not found/,
       );
     }
-    assert.ok(paths.every((path) => path === "/api/v1/orgs"));
+    assert.deepEqual(paths, [
+      "/api/v1/orgs",
+      "/api/v1/orgs/sandbox",
+      "/api/v1/orgs",
+      "/api/v1/orgs/unknown-slug",
+      "/api/v1/orgs",
+      "/api/v1/orgs/acme-1a2b3c4d",
+    ]);
     assert.equal(readConfig().orgId, undefined);
   });
 
@@ -249,9 +268,83 @@ describe("gauge orgs and org selection", { concurrency: false }, () => {
   it("does not reuse slug mappings after directory membership changes", async () => {
     const cmd = agentsCommand().setOptionValue("org", "acme");
     assert.equal(await resolveOrg(cmd), ACME);
-    handler = () => ({ body: { data: [] } });
-    await assert.rejects(resolveOrg(cmd), /don't have access to an organization/);
-    assert.deepEqual(paths, ["/api/v1/orgs", "/api/v1/orgs"]);
+    handler = (path) =>
+      path === "/api/v1/orgs" ? { body: { data: [] } } : notFound;
+    await assert.rejects(resolveOrg(cmd), /Organization not found/);
+    assert.deepEqual(paths, ["/api/v1/orgs", "/api/v1/orgs", "/api/v1/orgs/acme"]);
+  });
+
+  it("lets the server authorize a non-member org by slug before requesting Agents data", async () => {
+    handler = (path) => {
+      if (path === `/api/v1/orgs/${STAFF_ORG.slug}`) return { body: STAFF_ORG };
+      if (path === `/api/v1/orgs/${STAFF_ORG.id}/tags`)
+        return { body: { items: [], nextCursor: null } };
+      return defaultHandler(path);
+    };
+    const result = await run(
+      "tags", "list", "--hosted", "--org", STAFF_ORG.slug, "-o", "json",
+    );
+    assert.equal(result.error, undefined);
+    assert.deepEqual(result.json, []);
+    assert.deepEqual(paths, [
+      "/api/v1/orgs",
+      `/api/v1/orgs/${STAFF_ORG.slug}`,
+      `/api/v1/orgs/${STAFF_ORG.id}/tags`,
+    ]);
+    const listed = await run("orgs", "-o", "json");
+    assert.ok(!listed.json.some((org: { id: string }) => org.id === STAFF_ORG.id));
+  });
+
+  it("saves a server-authorized non-member org by slug or UUID, including project selection", async () => {
+    handler = (path) =>
+      [STAFF_ORG.slug, STAFF_ORG.id].some(
+        (value) => path === `/api/v1/orgs/${value}`,
+      ) ? { body: STAFF_ORG } : defaultHandler(path);
+    for (const value of [STAFF_ORG.slug, STAFF_ORG.id]) {
+      const result = await run("orgs", "use", value, "-o", "json");
+      assert.equal(result.error, undefined);
+      assert.equal(result.json.orgId, STAFF_ORG.id);
+      assert.equal(readConfig().orgId, STAFF_ORG.id);
+    }
+    updateConfig({ orgId: ACME });
+    writeFileSync(
+      join(directory, "gauge.json"),
+      JSON.stringify({ version: 2, org: "old-slug" }),
+    );
+    const project = await run("orgs", "use", STAFF_ORG.slug, "--project");
+    assert.equal(project.error, undefined);
+    assert.deepEqual(
+      JSON.parse(readFileSync(join(directory, "gauge.json"), "utf8")),
+      { version: 2, orgId: STAFF_ORG.id },
+    );
+    assert.equal(readConfig().orgId, ACME);
+  });
+
+  it("keeps listed Agents-only organizations selectable without a Chat product check", async () => {
+    const result = await run("orgs", "use", "beta");
+    assert.equal(result.error, undefined);
+    assert.equal(readConfig().orgId, BETA);
+    assert.deepEqual(paths, ["/api/v1/orgs"]);
+  });
+
+  it("preserves server denials and outages without changing the selection or calling Agents", async () => {
+    updateConfig({ orgId: ACME });
+    for (const [status, code] of [
+      [401, "unauthorized"],
+      [403, "forbidden"],
+      [404, "not_found"],
+      [503, "internal"],
+    ] as const) {
+      paths = [];
+      handler = (path) =>
+        path === "/api/v1/orgs"
+          ? { body: chatDirectory }
+          : { status, body: { error: { code, message: "Lookup rejected" } } };
+      const result = await run("orgs", "use", STAFF_ORG.slug);
+      assert.equal(errorReport(result.error, "orgs use").code, code);
+      assert.equal(readConfig().orgId, ACME);
+      assert.deepEqual(paths, ["/api/v1/orgs", `/api/v1/orgs/${STAFF_ORG.slug}`]);
+    }
   });
 
   it("asks legacy token users to log in for the canonical directory", async () => {

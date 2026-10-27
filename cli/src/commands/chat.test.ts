@@ -141,6 +141,28 @@ const topics = [
 ];
 
 describe("gauge chat", { concurrency: false }, () => {
+  it("resolves an explicit non-member slug through the authorized org endpoint", async () => {
+    process.env.GAUGE_API_TOKEN = "gauge_cli_staff";
+    handler = (req) => {
+      if (req.path === api("/orgs")) return { body: { data: [] } };
+      if (req.path === api("/orgs/outside-org"))
+        return { body: { id: OTHER, slug: "outside-org", name: "Outside Org" } };
+      if (req.path === api(`/orgs/${OTHER}/tags`)) return { body: { data: [] } };
+      return apiError(404, "not_found", "Unexpected request");
+    };
+    const result = await run(
+      "chat", "tags", "list", "--org", "outside-org", "-o", "json",
+    );
+    assert.equal(result.error, undefined);
+    assert.deepEqual(result.json, { data: [], nextCursor: null });
+    assert.deepEqual(seen.map((req) => req.path), [
+      api("/orgs"),
+      api("/orgs/outside-org"),
+      api(`/orgs/${OTHER}/tags`),
+    ]);
+    assert.ok(seen.every((req) => req.auth === "Bearer gauge_cli_staff"));
+  });
+
   beforeEach(async () => {
     saved = { ...process.env };
     directory = mkdtempSync(join(tmpdir(), "gauge-chat-"));
