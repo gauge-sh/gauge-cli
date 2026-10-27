@@ -122,7 +122,7 @@ export async function listPreferencePrompts(
   if (isLocal(cmd)) return listLocalMeasurements(cmd, "preference");
   const res =
     await createClient().get<visibility.ListVisibilityPromptsResponse>(
-      visibilityPath(resolveOrg(cmd)),
+      visibilityPath(await resolveOrg(cmd)),
     );
   return res.items;
 }
@@ -134,7 +134,7 @@ export async function getPreferencePrompt(
   const vp = isLocal(cmd)
     ? localMeasurementView(getLocalMeasurement(cmd, "preference", id))
     : await createClient().get<VisibilityPrompt>(
-        promptPath(resolveOrg(cmd), id),
+        promptPath(await resolveOrg(cmd), id),
       );
   if (resolveOutput(cmd) === "json") printJson(vp);
   else printDetail(vp);
@@ -190,7 +190,7 @@ export async function createPreferencePrompt(
   const created = isLocal(cmd)
     ? createLocalMeasurement(cmd, "preference", body)
     : await createClient().post<VisibilityPrompt>(
-        visibilityPath(resolveOrg(cmd)),
+        visibilityPath(await resolveOrg(cmd)),
         body,
       );
   if (resolveOutput(cmd) === "json") printJson(created);
@@ -245,7 +245,7 @@ export async function editPreferencePrompt(
   const updated = isLocal(cmd)
     ? editLocalMeasurement(cmd, "preference", id, body)
     : await createClient().patch<VisibilityPrompt>(
-        promptPath(resolveOrg(cmd), id),
+        promptPath(await resolveOrg(cmd), id),
         body,
       );
   if (resolveOutput(cmd) === "json") printJson(updated);
@@ -257,7 +257,7 @@ export async function removePreferencePrompt(
   id: string,
 ): Promise<void> {
   if (isLocal(cmd)) removeLocalMeasurement(cmd, "preference", id);
-  else await createClient().delete<void>(promptPath(resolveOrg(cmd), id));
+  else await createClient().delete<void>(promptPath(await resolveOrg(cmd), id));
   if (resolveOutput(cmd) !== "json")
     console.log(`Deleted preference prompt ${id}`);
 }
@@ -266,7 +266,7 @@ export async function listScenarios(cmd: Command, id: string): Promise<void> {
   const vp = isLocal(cmd)
     ? localMeasurementView(getLocalMeasurement(cmd, "preference", id))
     : await createClient().get<VisibilityPrompt>(
-        promptPath(resolveOrg(cmd), id),
+        promptPath(await resolveOrg(cmd), id),
       );
   if (resolveOutput(cmd) === "json") printJson(vp.scenarios);
   else printItems(vp.scenarios.map(scenarioRow), "table");
@@ -300,7 +300,7 @@ export async function addScenario(
   }
   const created =
     await createClient().post<ownedConfigurations.VisibilityScenario>(
-      scenariosPath(resolveOrg(cmd), id),
+      scenariosPath(await resolveOrg(cmd), id),
       {
         repoUrl: opts.repo ?? null,
         repoRef: opts.ref ?? null,
@@ -329,7 +329,7 @@ export async function removeScenario(
     return;
   }
   await createClient().delete<void>(
-    `${scenariosPath(resolveOrg(cmd), id)}/${encodeURIComponent(scenarioId)}`,
+    `${scenariosPath(await resolveOrg(cmd), id)}/${encodeURIComponent(scenarioId)}`,
   );
   if (resolveOutput(cmd) !== "json")
     console.log(`Removed scenario ${scenarioId}`);
@@ -345,7 +345,7 @@ export async function runPreferencePrompt(
     samples?: string;
   },
 ): Promise<void> {
-  const org = resolveOrg(cmd);
+  const org = await resolveOrg(cmd);
   const overrides = runOverridesFromOpts(opts);
   const settings =
     Object.keys(overrides).length > 0
@@ -383,7 +383,7 @@ export async function listPreferencePromptRuns(
 ): Promise<void> {
   const res =
     await createClient().get<visibility.ListVisibilityPromptRunsResponse>(
-      `${promptPath(resolveOrg(cmd), id)}/runs`,
+      `${promptPath(await resolveOrg(cmd), id)}/runs`,
       { limit: opts.limit, cursor: opts.cursor },
     );
   if (resolveOutput(cmd) === "json") {
@@ -414,7 +414,7 @@ export async function markets(
   if (isLocal(cmd))
     throw new CliError("usage", "Markets require hosted Gauge. Pass --hosted.");
   const client = createClient();
-  const base = `/api/v1/orgs/${encodeURIComponent(resolveOrg(cmd))}/markets`;
+  const base = `/api/v1/orgs/${encodeURIComponent(await resolveOrg(cmd))}/markets`;
   if (opts.add !== undefined) {
     const market = await client.post<visibility.OrgMarket>(base, {
       marketId: opts.add,

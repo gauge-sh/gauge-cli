@@ -29,7 +29,7 @@ export function register(program: Command): void {
     .command("get")
     .description("Show the org's settings (edit them in the web app)")
     .action(async (_opts: unknown, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       const client = createClient();
       const base = `/api/v1/orgs/${encodeURIComponent(org)}`;
       const [settings, billingStatus] = await Promise.all([

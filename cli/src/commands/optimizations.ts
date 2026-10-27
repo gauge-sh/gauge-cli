@@ -548,7 +548,7 @@ export function register(program: Command): void {
         },
         cmd: Command,
       ) => {
-        const org = resolveOrg(cmd);
+        const org = await resolveOrg(cmd);
         const subject =
           opts.eval || opts.preference ? parseSubject(opts) : undefined;
         const res =
@@ -583,7 +583,7 @@ export function register(program: Command): void {
       ) => {
         const response =
           await createClient().get<optimizations.BaselineDiscoveryResponse>(
-            `${basePath(resolveOrg(cmd))}/baselines`,
+            `${basePath(await resolveOrg(cmd))}/baselines`,
             {
               ...parseSubject(opts),
               limit: parseCount(opts.limit, "--limit"),
@@ -626,7 +626,7 @@ export function register(program: Command): void {
     .command("get <id>")
     .description("One optimization: settings, score, and its trial ladder")
     .action(async (id: string, _opts: unknown, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       const detail = await createClient().get<Detail>(itemPath(org, id));
       if (resolveOutput(cmd) === "json") printJson(detail);
       else printDetail(detail);
@@ -639,7 +639,7 @@ export function register(program: Command): void {
         "Improvement opportunities for an eval or preference prompt from its judged sessions",
       ),
   ).action(async (opts: SubjectOpts, cmd: Command) => {
-    const org = resolveOrg(cmd);
+    const org = await resolveOrg(cmd);
     const diagnosis = await createClient().post<Diagnosis>(
       `${basePath(org)}/diagnoses`,
       parseSubject(opts),
@@ -669,7 +669,7 @@ export function register(program: Command): void {
           TargetOpts & { name?: string; yes?: boolean; fromRun?: string },
         cmd: Command,
       ) => {
-        const org = resolveOrg(cmd);
+        const org = await resolveOrg(cmd);
         if (!!opts.target === !!opts.fromRun)
           throw new CliError(
             "usage",
@@ -702,7 +702,7 @@ export function register(program: Command): void {
     .description("Cancel an optimization and stop its in-flight sessions")
     .option("--yes", "skip the confirmation")
     .action(async (id: string, opts: { yes?: boolean }, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       await confirmOrAbort(
         `Cancel optimization ${id}? In-flight sessions stop; completed usage remains billed.`,
         opts.yes,
@@ -732,7 +732,7 @@ export function register(program: Command): void {
         cmd: Command,
       ) => {
         const detail = await createClient().post<Detail>(
-          `${basePath(resolveOrg(cmd))}/drafts`,
+          `${basePath(await resolveOrg(cmd))}/drafts`,
           {
             ...parseSubject(opts),
             ...targetFromOpts(opts),
@@ -768,7 +768,7 @@ export function register(program: Command): void {
         if (!Object.keys(body).length)
           throw new CliError("usage", "pass --target, --name, or --file");
         const detail = await createClient().patch<Detail>(
-          itemPath(resolveOrg(cmd), id),
+          itemPath(await resolveOrg(cmd), id),
           body,
         );
         if (resolveOutput(cmd) === "json") printJson(detail);
@@ -789,7 +789,7 @@ export function register(program: Command): void {
         opts: TargetOpts & { name?: string; yes?: boolean },
         cmd: Command,
       ) => {
-        const org = resolveOrg(cmd);
+        const org = await resolveOrg(cmd);
         const client = createClient();
         const plan = targetFromOpts(opts);
         const current = await client.get<Detail>(itemPath(org, id));
@@ -829,7 +829,7 @@ export function register(program: Command): void {
       );
       const result =
         await createClient().post<optimizations.LaunchRoundResponse>(
-          `${itemPath(resolveOrg(cmd), id)}/rounds/current/launch`,
+          `${itemPath(await resolveOrg(cmd), id)}/rounds/current/launch`,
           {},
         );
       if (resolveOutput(cmd) === "json") printJson(result);
@@ -853,7 +853,7 @@ export function register(program: Command): void {
         opts.yes,
       );
       const detail = await createClient().post<Detail>(
-        `${itemPath(resolveOrg(cmd), id)}/continue`,
+        `${itemPath(await resolveOrg(cmd), id)}/continue`,
         {},
       );
       if (resolveOutput(cmd) === "json") printJson(detail);
@@ -878,7 +878,7 @@ export function register(program: Command): void {
             summary: string;
             actorName: string | null;
           }[];
-        }>(`${itemPath(resolveOrg(cmd), id)}/activity`, {
+        }>(`${itemPath(await resolveOrg(cmd), id)}/activity`, {
           after: opts.after,
           limit: parseCount(opts.limit, "--limit", 500),
         });
@@ -901,7 +901,7 @@ export function register(program: Command): void {
     .description("Resolve your optimization chat and print its URL path")
     .action(async (id: string, _opts: unknown, cmd: Command) => {
       const res = await createClient().post<optimizations.ResolveChatResponse>(
-        `${itemPath(resolveOrg(cmd), id)}/chat`,
+        `${itemPath(await resolveOrg(cmd), id)}/chat`,
         {},
       );
       if (resolveOutput(cmd) === "json") printJson(res);
@@ -917,7 +917,7 @@ export function register(program: Command): void {
         `Delete optimization ${id}, its rounds, trials, and activity? Session history is kept.`,
         opts.yes,
       );
-      await createClient().delete(itemPath(resolveOrg(cmd), id));
+      await createClient().delete(itemPath(await resolveOrg(cmd), id));
       if (resolveOutput(cmd) === "json") printJson({ deleted: id });
       else console.log(`Deleted ${id}.`);
     });
@@ -933,7 +933,7 @@ export function register(program: Command): void {
         opts: { adopt?: string; yes?: boolean },
         cmd: Command,
       ) => {
-        const org = resolveOrg(cmd);
+        const org = await resolveOrg(cmd);
         await confirmOrAbort(
           `Complete optimization ${id}? No further rounds run; unspent credits are released.`,
           opts.yes,
@@ -961,7 +961,7 @@ export function register(program: Command): void {
         opts: { interval?: string; follow?: boolean },
         cmd: Command,
       ) => {
-        const org = resolveOrg(cmd);
+        const org = await resolveOrg(cmd);
         const client = createClient();
         const interval = Number(opts.interval ?? 15);
         if (!Number.isFinite(interval) || interval <= 0)
@@ -1007,7 +1007,7 @@ export function register(program: Command): void {
     )
     .action(async (id: string, _opts: unknown, cmd: Command) => {
       printJson(
-        await createClient().get(`${itemPath(resolveOrg(cmd), id)}/authoring`),
+        await createClient().get(`${itemPath(await resolveOrg(cmd), id)}/authoring`),
       );
     });
 
@@ -1020,7 +1020,7 @@ export function register(program: Command): void {
     .action(async (id: string, opts: { file: string }, cmd: Command) => {
       printJson(
         await createClient().post(
-          `${itemPath(resolveOrg(cmd), id)}/cli-changes`,
+          `${itemPath(await resolveOrg(cmd), id)}/cli-changes`,
           readObject(opts.file),
         ),
       );
@@ -1038,7 +1038,7 @@ export function register(program: Command): void {
     .requiredOption("--file <path>", "the round JSON; '-' for stdin")
     .action(async (id: string, opts: { file: string }, cmd: Command) => {
       const preview = await createClient().post<RoundPreview>(
-        `${itemPath(resolveOrg(cmd), id)}/rounds/current/preview`,
+        `${itemPath(await resolveOrg(cmd), id)}/rounds/current/preview`,
         readObject(opts.file),
       );
       if (resolveOutput(cmd) === "json") printJson(preview);
@@ -1059,7 +1059,7 @@ export function register(program: Command): void {
         cmd: Command,
       ) => {
         const result = await createClient().put<RoundSaved>(
-          `${itemPath(resolveOrg(cmd), id)}/rounds/current`,
+          `${itemPath(await resolveOrg(cmd), id)}/rounds/current`,
           { ...readObject(opts.file), previewDigest: opts.digest },
         );
         if (resolveOutput(cmd) === "json") printJson(result);
@@ -1077,7 +1077,7 @@ export function register(program: Command): void {
     .command("list <id>")
     .description("Every trial of an optimization with score and verdict")
     .action(async (id: string, _opts: unknown, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       const res = await createClient().get<optimizations.ListTrialsResponse>(
         `${itemPath(org, id)}/trials`,
       );
@@ -1119,7 +1119,7 @@ export function register(program: Command): void {
     .option("--yes", "skip the confirmation")
     .action(
       async (id: string, opts: TrialOpts & { yes?: boolean }, cmd: Command) => {
-        const org = resolveOrg(cmd);
+        const org = await resolveOrg(cmd);
         const body = trialBodyFromOpts(opts);
         if (body.launch !== false)
           await confirmOrAbort(
@@ -1162,7 +1162,7 @@ export function register(program: Command): void {
         opts: { yes?: boolean },
         cmd: Command,
       ) => {
-        const org = resolveOrg(cmd);
+        const org = await resolveOrg(cmd);
         await confirmOrAbort(
           `Run trial ${trialId} now? Spends credits.`,
           opts.yes,
@@ -1193,7 +1193,7 @@ export function register(program: Command): void {
       ) => {
         await confirmOrAbort(`Remove draft ${trialId} from ${id}?`, opts.yes);
         const detail = await createClient().delete<Detail>(
-          trialPath(resolveOrg(cmd), id, trialId),
+          trialPath(await resolveOrg(cmd), id, trialId),
         );
         if (resolveOutput(cmd) === "json") printJson(detail);
         else console.log(`Removed ${trialId}.`);
@@ -1205,7 +1205,7 @@ export function register(program: Command): void {
     .description("One trial by id or key (B0, R1.1, …) with its sessions")
     .action(
       async (id: string, trialId: string, _opts: unknown, cmd: Command) => {
-        const org = resolveOrg(cmd);
+        const org = await resolveOrg(cmd);
         const trial = await createClient().get<Trial>(
           trialPath(org, id, trialId),
         );
@@ -1225,7 +1225,7 @@ export function register(program: Command): void {
         opts: { body?: boolean },
         cmd: Command,
       ) => {
-        const org = resolveOrg(cmd);
+        const org = await resolveOrg(cmd);
         const content = await createClient().get<TrialContent>(
           `${trialPath(org, id, trialId)}/content`,
         );
@@ -1254,7 +1254,7 @@ export function register(program: Command): void {
         opts: { yes?: boolean },
         cmd: Command,
       ) => {
-        const org = resolveOrg(cmd);
+        const org = await resolveOrg(cmd);
         await confirmOrAbort(
           `Mark ${trialId} as the winner on ${id}?`,
           opts.yes,
@@ -1276,7 +1276,7 @@ export function register(program: Command): void {
     .action(async (id: string, _opts: unknown, cmd: Command) => {
       const handoff =
         await createClient().get<optimizations.OptimizationHandoff>(
-          `${itemPath(resolveOrg(cmd), id)}/handoff`,
+          `${itemPath(await resolveOrg(cmd), id)}/handoff`,
         );
       if (resolveOutput(cmd) === "json") printJson(handoff);
       else process.stdout.write(handoff.prompt);
@@ -1288,7 +1288,7 @@ export function register(program: Command): void {
       "The text files of a skill version, the base a skill-edit trial edits",
     )
     .action(async (versionId: string, _opts: unknown, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       const res = await createClient().get<optimizations.SkillFilesResponse>(
         `${basePath(org)}/skill-versions/${encodeURIComponent(versionId)}`,
       );
@@ -1307,7 +1307,7 @@ export function register(program: Command): void {
     )
     .requiredOption("--url <url>", "the page URL")
     .action(async (id: string, opts: { url: string }, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       const res = await createClient().get<optimizations.PageBodyResponse>(
         `${itemPath(org, id)}/page`,
         { url: opts.url },

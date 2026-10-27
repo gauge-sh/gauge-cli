@@ -35,13 +35,13 @@ test("hosted saved eval and preference launches forward Antigravity overrides", 
   t.mock.method(console, "log", () => {});
   for (const source of ["eval", "preference"]) {
     await program().parseAsync([
-      "--org", "acme", "-o", "json", "run", `--${source}`, "saved-1",
+      "--org", "8c7f0e1a-1111-4222-8333-944455556666", "-o", "json", "run", `--${source}`, "saved-1",
       "--agent", "antigravity:gemini-3.1-pro-preview", "--yes",
     ], { from: "user" });
   }
   assert.deepEqual(calls.map(({ path }) => path), [
-    "/api/v1/orgs/acme/eval-sets/saved-1/run",
-    "/api/v1/orgs/acme/visibility-prompts/saved-1/run",
+    "/api/v1/orgs/8c7f0e1a-1111-4222-8333-944455556666/eval-sets/saved-1/run",
+    "/api/v1/orgs/8c7f0e1a-1111-4222-8333-944455556666/visibility-prompts/saved-1/run",
   ]);
   assert.deepEqual(runEvalBodySchema.parse(calls[0].body).agents, agents);
   assert.deepEqual(runVisibilityBodySchema.parse(calls[1].body).agents, agents);
@@ -54,7 +54,7 @@ test("Antigravity cases load, preview and launch hosted, and refuse local execut
     process.chdir(previous);
     await rm(root, { recursive: true, force: true });
   });
-  await writeFile(join(root, "gauge.json"), JSON.stringify({ version: 2, org: "acme" }));
+  await writeFile(join(root, "gauge.json"), JSON.stringify({ version: 2, orgId: "8c7f0e1a-1111-4222-8333-944455556666" }));
   await writeFile(join(root, "task.md"), [
     "---", "criteria:", "  - name: Works", "    rubric: Task completed",
     "config:", "  agents:", "    - agent: ANTIGRAVITY",
@@ -98,10 +98,10 @@ test("Antigravity cases load, preview and launch hosted, and refuse local execut
     ], { from: "user" });
   }
   assert.deepEqual(calls.map(({ path }) => path), [
-    "/api/v1/orgs/acme/run-definitions/plan",
-    "/api/v1/orgs/acme/run-definitions/run",
-    "/api/v1/orgs/acme/run-definitions/plan",
-    "/api/v1/orgs/acme/run-definitions/run",
+    "/api/v1/orgs/8c7f0e1a-1111-4222-8333-944455556666/run-definitions/plan",
+    "/api/v1/orgs/8c7f0e1a-1111-4222-8333-944455556666/run-definitions/run",
+    "/api/v1/orgs/8c7f0e1a-1111-4222-8333-944455556666/run-definitions/plan",
+    "/api/v1/orgs/8c7f0e1a-1111-4222-8333-944455556666/run-definitions/run",
   ]);
   for (const call of calls) {
     const definition = runDefinitionSubmissionSchema.parse(call.body);

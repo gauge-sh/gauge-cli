@@ -7,6 +7,7 @@ import {
   readConfig,
   updateConfig,
 } from "../lib/config";
+import { isUuid } from "../lib/orgDirectory";
 import { printJson } from "../lib/output";
 
 function assertKey(key: string): ConfigKey {
@@ -41,6 +42,14 @@ export function register(program: Command): void {
     .description(`Set a config key (${CONFIG_KEYS.join(", ")})`)
     .action((key: string, value: string) => {
       const configKey = assertKey(key);
+      if (
+        configKey === "defaultOrg" ||
+        (configKey === "orgId" && !isUuid(value))
+      )
+        throw new CliError(
+          "usage",
+          "Select an organization with `gauge orgs use <slug>`.",
+        );
       if (configKey === "backend" && value !== "local" && value !== "hosted")
         throw new CliError("usage", "backend must be local or hosted");
       updateConfig({ [configKey]: value });

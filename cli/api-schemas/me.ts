@@ -9,6 +9,9 @@ export type MeUser = z.infer<typeof meUserSchema>;
 export const meOrgSchema = z.object({
   slug: z.string(),
   publicId: z.string().nullable(),
+  // The shared Gauge organization id; null for LOCAL and unlinked workspaces,
+  // absent from older servers.
+  canonicalGaugeOrganizationId: z.string().nullable().optional(),
   name: z.string(),
 });
 export type MeOrg = z.infer<typeof meOrgSchema>;

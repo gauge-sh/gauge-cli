@@ -108,3 +108,24 @@ The same workflow runs qualification without publishing on pull requests that
 change `packages/local/`. Because gateway qualification uses the pinned
 runtime, release and pin a changed runtime first. Changing
 `packages/local/gateway` requires another gateway release and reviewed pin.
+
+## Hosted API compatibility
+
+Before publishing a CLI release that changes authentication or organization
+selection, verify the candidate package against the deployed Chat and Agents
+APIs. Check shared browser/device consent, refresh, logout, canonical public
+slugs, old-client compatibility, and cross-organization denial. Run analytical
+checks only as reads against approved existing data. Use disposable fixtures
+for writes, then remove their memberships and revoke credentials.
+
+For 0.25.0, the servers must expose the Chat public API and canonical directory,
+shared CLI authentication, and Agents canonical organization resolution. Deploy
+Gauge Chat #2349 and recheck the advertised HTTPS device URL. Enable Agents
+organization API keys and verify live introspection before claiming cross-product
+API-key support. Chat's Agents MCP rollout is independent of CLI publishing;
+MCP connections using API keys still need OAuth to delegate Agents requests.
+
+The CLI's credential-prefix classification also needs separate qualification in
+hosted sessions that receive credential placeholders. Ordinary CLI checks do not
+establish that injected connections work. Keep that pilot separate from package
+build, unit, and packed-artifact checks.

@@ -38,7 +38,7 @@ for (const [flag, path] of [
     await command.parseAsync(
       [
         "--org",
-        "another-org",
+        "8c7f0e1a-1111-4222-8333-944455556666",
         "run",
         flag,
         "target",
@@ -48,7 +48,7 @@ for (const [flag, path] of [
     );
     assert.deepEqual(requests, [
       {
-        url: `https://test.invalid/api/v1/orgs/another-org/${path}/target/run`,
+        url: `https://test.invalid/api/v1/orgs/8c7f0e1a-1111-4222-8333-944455556666/${path}/target/run`,
         body: {},
       },
     ]);

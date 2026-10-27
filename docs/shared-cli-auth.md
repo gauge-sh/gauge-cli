@@ -49,5 +49,35 @@ revocation failed. Environment credentials are unchanged. `auth tokens` manages
 legacy Agents tokens; shared sessions cannot mint legacy tokens that would escape
 the shared grant's revocation.
 
-Local execution is unchanged. Existing stored and imported Agents tokens remain
-supported; the next browser or device login creates a shared session.
+Local execution is unchanged. Existing stored and imported Agents tokens can
+still identify the user, manage legacy tokens, and access Agents by canonical
+organization UUID. They cannot access the shared organization directory. Use
+`gauge auth login` for public slug selection; unset `GAUGE_API_TOKEN` if it
+contains a legacy token. The next browser or device login creates a shared
+session.
+
+`gauge whoami` identifies the user or organization API key. `gauge auth status`
+validates the active credential and reports its source, scopes, expiry, and API
+URLs. Shared sessions and API keys use the public Chat `/api/v1/me` endpoint;
+legacy credentials use Agents `/api/v1/me`. Only `whoami` lists organizations,
+using the canonical directory for shared sessions and the owning organization
+for API keys.
+
+## Upgrading to 0.25.0
+
+Run `gauge orgs` and reselect your public Gauge slug with `gauge orgs use <slug>`.
+For a project with an old `org` field, use `gauge orgs use <slug> --project`.
+The CLI stores a canonical `orgId`; it does not guess whether the old slug
+belonged to Chat or Agents. Shared project files using `orgId` require 0.25.0 or
+later. Existing Agents tokens still work for direct requests with canonical UUIDs;
+public slug selection requires shared login. See the
+[organization compatibility details](../cli/README.md#organizations).
+
+`GAUGE_API_TOKEN` overrides stored login credentials. If it contains an old
+Agents token, unset it before using shared login for Chat or the organization
+directory. For automation, organization API keys from Chat Settings → API Keys
+use their configured read/write scopes. Chat defaults to the key's owning
+organization; Agents commands require an explicit or saved organization.
+Agents must have organization API-key support enabled in the target deployment.
+API keys do not provide user-scoped Agents MCP delegation; connect MCP through
+OAuth for Agents tools.

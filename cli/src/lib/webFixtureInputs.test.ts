@@ -6,6 +6,7 @@ import test from "node:test";
 import { parseWebFixtureInput, mergeWebFixtures } from "@withgauge/api-schemas/web-fixtures";
 import { loadLocalRunDefinition } from "./localRunInputs";
 import { freezeWebFixtures } from "./webFixtureInputs";
+import { parseCaseSpec } from "./caseSpec";
 
 const fixture = { version: 1, pages: [{ url: "https://example.com/docs#fragment", body: "fixture body" }], scopes: ["https://example.com/docs"] };
 
@@ -45,4 +46,31 @@ test("local and hosted use the same fixture upload; overrides are frozen and cas
   const bytes = await readFile(local.uploads[0].path);
   await writeFile(local.uploads[0].path, Buffer.concat([bytes, Buffer.from("tampered")]));
   await assert.rejects(freezeWebFixtures(local.definition, local.uploads), /digest mismatch/);
+});
+
+test("canonical organization selection survives fixture loading from files and an inline case spec", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "gauge-canonical-fixture-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const orgId = "8c7f0e1a-1111-4222-8333-944455556666";
+  await mkdir(join(root, "gauge-cases"));
+  await writeFile(join(root, "gauge.json"), JSON.stringify({
+    version: 2, orgId, inputs: { docs: { type: "web-fixture", path: "docs.json" } },
+  }));
+  await writeFile(join(root, "docs.json"), JSON.stringify(fixture));
+  await writeFile(join(root, "gauge-cases/a.md"), "---\ncriteria:\n  - name: Works\n    rubric: Task completed\nconfig:\n  agents:\n    - agent: CODEX_CLI\n      models: []\n  inputs: [docs]\n---\nRead the docs.\n");
+  const spec = parseCaseSpec({
+    version: 2,
+    cases: [{
+      key: "inline",
+      prompt: "Read the docs.",
+      criteria: [{ name: "Works", rubric: "Task completed" }],
+      config: { agents: [{ agent: "CODEX_CLI" }], inputs: ["docs"] },
+    }],
+  });
+  for (const options of [{}, { spec }]) {
+    const loaded = await loadLocalRunDefinition([], [], root, options);
+    t.after(loaded.cleanup);
+    assert.equal(loaded.org, orgId);
+    assert.equal(Object.values(loaded.webFixtures)[0]?.fixture.pages[0].body, "fixture body");
+  }
 });

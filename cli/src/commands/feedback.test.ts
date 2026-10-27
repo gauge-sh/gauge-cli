@@ -77,7 +77,7 @@ describe("gauge feedback", () => {
   it("sends anonymously without a token, and without an org", async (t) => {
     const { sent, stdout, error } = await sendFeedback(t, {
       respond: created,
-      args: ["--org", "acme"],
+      args: ["--org", "8c7f0e1a-1111-4222-8333-944455556666"],
     });
     assert.equal(error, undefined);
     assert.equal(sent[0].url, "https://test.invalid/api/v1/feedback");
@@ -91,10 +91,10 @@ describe("gauge feedback", () => {
     const { sent, stdout } = await sendFeedback(t, {
       token: "gauge_test",
       respond: created,
-      args: ["--org", "acme"],
+      args: ["--org", "8c7f0e1a-1111-4222-8333-944455556666"],
     });
     assert.equal(sent[0].headers.get("authorization"), "Bearer gauge_test");
-    assert.equal(sent[0].body.org, "acme");
+    assert.equal(sent[0].body.org, "8c7f0e1a-1111-4222-8333-944455556666");
     assert.deepEqual(stdout, ["Feedback sent (fb_1). Thank you."]);
   });
 

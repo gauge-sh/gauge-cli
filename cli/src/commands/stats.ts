@@ -69,7 +69,7 @@ async function runStats<R>(
   opts: FilterOpts,
   toRow: (item: R) => Record<string, unknown>,
 ): Promise<void> {
-  const org = resolveOrg(command);
+  const org = await resolveOrg(command);
   const output = resolveOutput(command);
   const res = await createClient().get<{
     items: R[];

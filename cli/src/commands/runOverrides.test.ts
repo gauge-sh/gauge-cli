@@ -43,7 +43,7 @@ async function gauge(
       [
         ...(args.includes("--local") ? [] : ["--hosted"]),
         "--org",
-        "my-org",
+        "8c7f0e1a-1111-4222-8333-944455556666",
         "-o",
         "json",
         ...args,
@@ -76,7 +76,7 @@ it("sends one-launch overrides with --eval", async (t) => {
   assert.equal(error, undefined);
   assert.equal(
     requests[0]?.url,
-    "https://test.invalid/api/v1/orgs/my-org/eval-sets/e1/run",
+    "https://test.invalid/api/v1/orgs/8c7f0e1a-1111-4222-8333-944455556666/eval-sets/e1/run",
   );
   assert.deepEqual(requests[0]?.body, {
     agents: [{ agent: "CLAUDE_CODE", models: ["sonnet"] }],
@@ -142,7 +142,7 @@ it("posts compare sides", async (t) => {
   assert.equal(error, undefined);
   assert.equal(
     requests[0]?.url,
-    "https://test.invalid/api/v1/orgs/my-org/runs/compare",
+    "https://test.invalid/api/v1/orgs/8c7f0e1a-1111-4222-8333-944455556666/runs/compare",
   );
   assert.deepEqual(requests[0]?.body, {
     baseline: { runRequest: "r1" },

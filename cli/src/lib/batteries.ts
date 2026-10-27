@@ -3,8 +3,7 @@ import { batteries } from "@withgauge/api-schemas";
 import type { Command } from "commander";
 import { z } from "zod";
 import { CliError, createClient } from "./client";
-import { readConfig } from "./config";
-import { resolveOutput } from "./context";
+import { resolveOrg, resolveOutput } from "./context";
 import { printJson } from "./output";
 
 type BatteryPlan = batteries.BatteryPlan;
@@ -110,19 +109,11 @@ export function parseSpec(parsed: unknown): batteries.BatterySpec {
   return result.data;
 }
 
-function resolveApplyOrg(
+async function resolveApplyOrg(
   command: Command,
   spec: batteries.BatterySpec,
-): string {
-  const { org } = command.optsWithGlobals<{ org?: string }>();
-  if (org) return org;
-  if (typeof spec.org === "string" && spec.org) return spec.org;
-  const { defaultOrg } = readConfig();
-  if (defaultOrg) return defaultOrg;
-  throw new CliError(
-    "usage",
-    "No organization selected. Pass --org <org>, set `org` in the spec, or run `gauge orgs use <slug>`.",
-  );
+): Promise<string> {
+  return resolveOrg(command, spec.org);
 }
 
 function repoLabel(repoUrl: string | null, repoRef: string | null): string {
@@ -191,7 +182,7 @@ export async function applySpec(
 ): Promise<void> {
   if (opts.requireExperiment !== undefined)
     assertRequiredExperiment(spec, opts.requireExperiment);
-  const org = resolveApplyOrg(command, spec);
+  const org = await resolveApplyOrg(command, spec);
   const result = await createClient().post<BatteryPlan | BatteryApplyResponse>(
     `/api/v1/orgs/${encodeURIComponent(org)}/batteries`,
     spec,

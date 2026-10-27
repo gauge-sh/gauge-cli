@@ -14,9 +14,9 @@ export type GaugeState = {
   root?: string;
   config?: Record<string, unknown> | null;
   signedIn: boolean;
-  defaultOrg?: string;
+  orgId?: string;
 };
-export type Account = Pick<GaugeState, "signedIn" | "defaultOrg"> & {
+export type Account = Pick<GaugeState, "signedIn" | "orgId"> & {
   backend?: Mode;
 };
 
@@ -102,7 +102,7 @@ export function readGaugeState(
     inRepo: root !== undefined,
     config,
     signedIn: account.signedIn,
-    defaultOrg: account.defaultOrg,
+    orgId: account.orgId,
   };
 }
 export function instructionMode(state: GaugeState): {

@@ -65,7 +65,7 @@ describe("useOnlyOrg", () => {
       },
       true,
     );
-    assert.equal(readConfig().defaultOrg, "canonical-id");
+    assert.equal(readConfig().orgId, "canonical-id");
   });
 
   it("sets the default org only for a single org and no existing default", (t) => {
@@ -83,7 +83,11 @@ describe("useOnlyOrg", () => {
     useOnlyOrg(me(["a", "b"]));
     assert.equal(readConfig().defaultOrg, undefined);
     useOnlyOrg(me(["acme"]));
-    assert.equal(readConfig().defaultOrg, "acme");
+    assert.equal(readConfig().orgId, undefined);
+    useOnlyOrg({
+      orgs: [{ slug: "acme", canonicalGaugeOrganizationId: "canonical-id" }],
+    } as MeResponse);
+    assert.equal(readConfig().orgId, "canonical-id");
     updateConfig({ defaultOrg: "other" });
     useOnlyOrg(me(["acme"]));
     assert.equal(readConfig().defaultOrg, "other");

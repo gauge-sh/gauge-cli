@@ -1,14 +1,15 @@
 # @withgauge/cli
 
 `gauge` — the [Gauge](https://agents.withgauge.com) command-line interface.
-Manage your eval sets, Agent Preference prompts, and agent runs, and watch runs
-live from your terminal.
+Access Gauge Chat data, manage eval sets and Agent Preference prompts, and
+watch agent runs live from your terminal.
 
 ```sh
 npm install -g @withgauge/cli
 gauge update              # update the CLI to the latest published version
 gauge onboard             # sign in and create a workspace (account only)
 gauge auth login          # (or just sign in)
+gauge orgs                # list your organizations and the products each uses
 gauge orgs use <org>      # set your default organization
 gauge init                # initialize a workspace; local is the default
 gauge init --hosted       # set a private hosted backend preference
@@ -16,6 +17,71 @@ gauge init --cases        # optionally scaffold shared gauge-cases/
 ```
 
 Requires Node.js ≥ 22.13.
+
+## Organizations
+
+Use the public Gauge slug shown by `gauge orgs` with either product:
+
+```sh
+gauge orgs use acme                 # save your default organization
+gauge orgs use acme --project       # save this project's organization
+gauge chat tags list --org acme     # override the selection for one command
+```
+
+The CLI resolves slugs through the shared Gauge directory and sends the
+canonical organization ID to the product API. It stores that ID in `orgId`
+in user configuration or `gauge.json`; you do not need to find or enter a UUID.
+Explicit canonical UUIDs are also accepted. Slug lookups use the current
+directory without a persistent cache or fallback to internal Agents workspace
+names. Directory failures stop the command before it accesses product data.
+Saved IDs need no lookup; the product API checks access on every request.
+
+With a shared login, selection precedence is `--org`, a run specification,
+`gauge.json` `orgId`, then user configuration `orgId`. Run specifications with
+an old `org` slug require an explicit `--org <public-slug>` override, or removal
+of `org` to use the saved selection. Canonical UUIDs in run specifications are
+unambiguous and still work.
+
+An old `defaultOrg` or `gauge.json` `org` selection requires reselection using
+`gauge orgs use <slug>` or `gauge orgs use <slug> --project`, respectively.
+The CLI never guesses whether an old saved slug meant a canonical organization
+or an Agents workspace. Project migration preserves other manifest fields.
+Older CLI binaries retain their existing Agents slug semantics; the server
+continues to accept those legacy requests. They do not read the new user `orgId`
+field. A project migrated with `--project` requires the new CLI: older versions
+reject `orgId` in the manifest. To return to an older CLI, restore the prior
+`gauge.json` and select the Agents workspace there again. No compatibility slug
+is written by the new CLI.
+
+`gauge orgs` lists canonical organizations and their products (Chat, Agents, or
+both). Historical unlinked Agents workspaces are excluded. Commands for a
+product an organization does not use report that limitation.
+`gauge orgs -o json` returns `id`, `slug`, `name`, `products`, and `isDefault`;
+`products.agents: null` means availability could not be determined.
+
+Chat commands with an organization API key default to the key's organization
+and ignore saved user/project selections; `--org` can select an agency key's
+client organization. With a shared login and no selection, Chat commands select
+your only Chat-enabled organization or ask you to choose. Agents commands
+require an explicit or saved selection.
+
+Legacy Agents tokens can still identify their user and make requests using a
+canonical UUID. They cannot read the shared directory; use `gauge auth login`
+for selection by public slug.
+
+## Identity and authentication diagnostics
+
+`gauge whoami` shows who you are acting as: a signed-in user and their Gauge
+organizations, or an organization API key and its owning organization.
+`gauge auth status` checks which credential is active, where it came from,
+whether the server accepts it, its scopes and expiry, and the API URLs.
+Neither command prints credential secrets. Legacy tokens can identify their
+user, but do not report canonical organization membership, scopes, or expiry.
+
+JSON consumers: `whoami` returns `user`, `apiKey`, and `orgs` (null for a legacy
+token). `auth status` returns `authenticated`, `source`, `apiUrl`, `authUrl`, and
+`credential` (`kind`, `scopes`, `expiresAt`). API-key identity and credential
+diagnostics are available at the root; there is no `gauge chat whoami` command.
 
 ## Workspace and local storage
 
@@ -779,6 +845,39 @@ index or background indexing process is maintained.
 Every read supports `-o json` for scripting. `GAUGE_API_TOKEN` overrides
 stored credentials (useful in CI). Exit codes: `0` ok · `1` error ·
 `2` usage · `3` billing-blocked · `4` needs your input (`optimizations watch`).
+
+## Gauge Chat
+
+`gauge chat` manages tracked AI-visibility prompts and reads Gauge Chat data
+through the Chat API. Sign in with `gauge auth login` (shared credentials), or
+for scripts and CI set `GAUGE_API_TOKEN` to an org API key
+(`GAUGE_API_TOKEN=gauge_sk_…`, created in Settings → API Keys). A key acts as its
+organization with the scopes it was created with (Read, or Read & write);
+`GAUGE_API_TOKEN` takes precedence over a stored login. Commands use the
+shared [organization selection](#organizations), and an only Chat organization
+is picked when none is set. Category-scoped commands take `--category` (slug or
+id); `gauge chat categories use <category>` saves `chatCategory` for the
+selected organization, and an only category is picked automatically. The
+Agents-only `--local` and `--hosted` flags are rejected. Use `gauge whoami`
+for identity and `gauge auth status` for credential diagnostics.
+
+```sh
+gauge chat topics create "Pricing" --if-exists
+gauge chat prompts add --file prompts.txt --topic pricing --dry-run -o json
+gauge chat query --dataset answers -d brand -m visibility,shareOfVoice --last-days 30
+gauge chat query fields --dataset citations
+gauge chat answers list --since 2026-10-01 --all --max 500 -o json
+```
+
+`prompts add` reads arguments or a file of lines, JSON Lines, or a JSON array,
+sends batches of 500 (previewing every batch before a multi-batch write), and
+reports `created`, `already_exists`, or `would_create` per prompt. List commands
+return `{data, nextCursor}` with `-o json`; `--all` follows cursors up to `--max`.
+Errors carry the API code (`insufficient_scope`, `limit_exceeded`,
+`incompatible_dimension`, `rate_limited`…) and details such as `retryAfter`.
+Invalid requests exit 2 and plan limits exit 3. Query rate metrics are 0-1
+fractions, as in `gauge query`. Rate limits apply per token and organization:
+600 requests/min and 60 queries/min.
 
 ## Support
 

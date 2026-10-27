@@ -18,10 +18,16 @@ import {
   ApiClient,
   CliError,
   createClient,
-  createChatClient,
   resolveBaseUrl,
   USER_AGENT,
 } from "../lib/client";
+import { ChatApiClient, describeScopes } from "../lib/chatApi";
+import {
+  credentialIdentity,
+  principalIdentity,
+  printPrincipal,
+} from "../lib/identity";
+import { credentialKind } from "../lib/orgDirectory";
 import { readConfig, updateConfig } from "../lib/config";
 import { hostedOnly, resolveOutput } from "../lib/context";
 import {
@@ -38,10 +44,13 @@ import type { OutputFormat } from "../lib/output";
 import { printItems, printJson } from "../lib/output";
 import { fetchAllPages } from "../lib/paginate";
 
-import { resolveAuthUrl, sharedTokenSchema } from "../lib/sharedAuth";
+import {
+  resolveAuthUrl,
+  sharedTokenSchema,
+  storedSharedCredentials,
+} from "../lib/sharedAuth";
 
 const LOGIN_TIMEOUT_MS = 2 * 60 * 1000;
-const TOKEN_PREFIX = "gauge_";
 
 type TokenSource = "env" | "file" | "none";
 
@@ -62,10 +71,6 @@ async function fetchMe(
   return shared
     ? client.get<ChatMeResponse>("/api/cli/me")
     : client.get<MeResponse>("/api/v1/me");
-}
-function identityClient(): { client: ApiClient; shared: boolean } {
-  const shared = resolveToken()?.startsWith("gauge_cli_") ?? false;
-  return { client: shared ? createChatClient() : createClient(), shared };
 }
 function sessionCredentials(raw: unknown): SharedCredentials {
   return {
@@ -116,10 +121,16 @@ function printIdentity(me: IdentityResponse): void {
 
 export function useOnlyOrg(me: IdentityResponse, shared = false): void {
   const org = me.orgs.length === 1 ? me.orgs[0] : undefined;
-  const only = org ? (shared && "id" in org ? org.id : org.slug) : undefined;
-  if (!only || readConfig().defaultOrg) return;
-  updateConfig({ defaultOrg: only });
-  console.log(`Default org set to ${only}.`);
+  const only = !org
+    ? undefined
+    : shared && "id" in org
+      ? org.id
+      : "canonicalGaugeOrganizationId" in org
+        ? org.canonicalGaugeOrganizationId
+        : undefined;
+  if (!only || readConfig().orgId || readConfig().defaultOrg) return;
+  updateConfig({ orgId: only });
+  console.log(`Default org set to ${org?.name ?? only}.`);
 }
 
 function openBrowser(url: string): void {
@@ -414,11 +425,21 @@ async function withTokenLogin(): Promise<void> {
     console.error("Paste your API token, then press Enter:");
   }
   const token = (await readStdin()).trim();
-  if (!token.startsWith(TOKEN_PREFIX)) {
-    throw new CliError(
-      "usage",
-      `Expected a token starting with ${TOKEN_PREFIX} on stdin`,
-    );
+  if (!token) throw new CliError("usage", "Expected a token on stdin");
+  if (credentialKind(token) === "api_key") {
+    const me = await new ChatApiClient({
+      token,
+      baseUrl: resolveAuthUrl(),
+    }).me();
+    await withCredentialLock(async () => {
+      saveToken(token);
+    });
+    console.log(`Token saved to ${credentialsPath()}`);
+    printPrincipal({
+      ...me,
+      orgs: me.apiKey?.organization ? [me.apiKey.organization] : undefined,
+    });
+    return;
   }
   const me = await verifyIssuedToken(token);
   await withCredentialLock(async () => {
@@ -479,13 +500,9 @@ function parseExpiresIn(raw: string): string | undefined {
 }
 
 async function whoami(output: OutputFormat): Promise<void> {
-  const identity = identityClient();
-  const me = await fetchMe(identity.client, identity.shared);
-  if (output === "json") {
-    printJson({ apiUrl: resolveBaseUrl(), ...me });
-    return;
-  }
-  printIdentity(me);
+  const identity = await principalIdentity();
+  if (output === "json") return printJson(identity);
+  printPrincipal(identity);
 }
 
 export async function logout(): Promise<void> {
@@ -577,7 +594,7 @@ export function register(program: Command): void {
 
   auth
     .command("status")
-    .description("Show the current auth state")
+    .description("Check the active credential, its source, scopes, and expiry")
     .action(async (_opts: unknown, command: Command) => {
       const output = resolveOutput(command);
       const source = tokenSource();
@@ -587,10 +604,9 @@ export function register(program: Command): void {
           "Not logged in. Run `gauge auth login` or set GAUGE_API_TOKEN.",
         );
       }
-      let me: IdentityResponse;
+      let me: Awaited<ReturnType<typeof credentialIdentity>>;
       try {
-        const identity = identityClient();
-        me = await fetchMe(identity.client, identity.shared);
+        me = await credentialIdentity();
       } catch (e) {
         if (e instanceof CliError && e.code === "unauthorized") {
           throw new CliError(
@@ -605,11 +621,22 @@ export function register(program: Command): void {
           authenticated: true,
           source,
           apiUrl: resolveBaseUrl(),
-          ...me,
+          authUrl: storedSharedCredentials()?.authUrl ?? resolveAuthUrl(),
+          credential: me.token,
         });
         return;
       }
-      printIdentity(me);
+      console.log(`Credential: ${me.token.kind} (valid)`);
+      console.log(
+        `Scopes: ${me.token.scopes ? describeScopes(me.token.scopes) : "not reported by the legacy API"}`,
+      );
+      console.log(
+        `Expires: ${me.token.expiresAt ?? (me.token.kind === "legacy" ? "not reported by the legacy API" : "never")}`,
+      );
+      console.log(
+        `Auth URL: ${storedSharedCredentials()?.authUrl ?? resolveAuthUrl()}`,
+      );
+      console.log(`Agents API URL: ${resolveBaseUrl()}`);
       console.log(
         `Token source: ${source === "env" ? "GAUGE_API_TOKEN environment variable" : credentialsPath()}`,
       );
@@ -673,7 +700,7 @@ export function register(program: Command): void {
 
   program
     .command("whoami")
-    .description("Show the authenticated user and their orgs")
+    .description("Show the user or organization API key you are acting as")
     .action(async (_opts: unknown, command: Command) => {
       await whoami(resolveOutput(command));
     });

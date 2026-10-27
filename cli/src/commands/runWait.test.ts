@@ -76,7 +76,7 @@ async function runWait(
   let error: unknown;
   try {
     await command.parseAsync(
-      ["--org", "my-org", "-o", "json", "run", ...args],
+      ["--org", "8c7f0e1a-1111-4222-8333-944455556666", "-o", "json", "run", ...args],
       { from: "user" },
     );
   } catch (caught) {
@@ -97,7 +97,7 @@ it("waits for judging after execution completes, then emits one passed JSON resu
     result.calls.every(
       (url) =>
         url ===
-        "https://test.invalid/api/v1/orgs/my-org/run-requests/request-1",
+        "https://test.invalid/api/v1/orgs/8c7f0e1a-1111-4222-8333-944455556666/run-requests/request-1",
     ),
   );
   assert.equal(result.stdout.length, 1);

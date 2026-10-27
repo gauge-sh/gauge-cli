@@ -16,7 +16,7 @@ export function register(program: Command): void {
     .command("list")
     .description("List the org's personas")
     .action(async (_opts: unknown, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       const res = await createClient().get<personas.ListPersonasResponse>(
         personasPath(org),
       );
@@ -39,7 +39,7 @@ export function register(program: Command): void {
     .command("get <id>")
     .description("Show one persona")
     .action(async (id: string, _opts: unknown, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       const persona = await createClient().get<personas.Persona>(
         `${personasPath(org)}/${encodeURIComponent(id)}`,
       );
@@ -63,7 +63,7 @@ export function register(program: Command): void {
     )
     .action(
       async (opts: { name: string; description: string }, cmd: Command) => {
-        const org = resolveOrg(cmd);
+        const org = await resolveOrg(cmd);
         const created = await createClient().post<personas.Persona>(
           personasPath(org),
           { name: opts.name, description: opts.description },
@@ -84,7 +84,7 @@ export function register(program: Command): void {
         opts: { name?: string; description?: string },
         cmd: Command,
       ) => {
-        const org = resolveOrg(cmd);
+        const org = await resolveOrg(cmd);
         if (opts.name === undefined && opts.description === undefined)
           throw new CliError("usage", "nothing to change");
         const updated = await createClient().patch<personas.Persona>(
@@ -102,7 +102,7 @@ export function register(program: Command): void {
       "Delete a persona (run configurations fall back to the default persona)",
     )
     .action(async (id: string, _opts: unknown, cmd: Command) => {
-      const org = resolveOrg(cmd);
+      const org = await resolveOrg(cmd);
       await createClient().delete<void>(
         `${personasPath(org)}/${encodeURIComponent(id)}`,
       );

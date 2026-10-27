@@ -177,12 +177,12 @@ describe("optimization command requests", () => {
         .option("-o, --output <output>");
       register(command);
       await command.parseAsync(
-        ["--org", "org", "-o", "json", "optimizations", ...args],
+        ["--org", "8c7f0e1a-1111-4222-8333-944455556666", "-o", "json", "optimizations", ...args],
         { from: "user" },
       );
       assert.deepEqual(requests, [
         {
-          url: `https://test.invalid/api/v1/orgs/org/optimizations${suffix}`,
+          url: `https://test.invalid/api/v1/orgs/8c7f0e1a-1111-4222-8333-944455556666/optimizations${suffix}`,
           method,
           body,
         },
@@ -236,7 +236,7 @@ for (const draft of [false, true]) {
     await command.parseAsync(
       [
         "--org",
-        "org",
+        "8c7f0e1a-1111-4222-8333-944455556666",
         "-o",
         "json",
         "optimizations",
@@ -254,7 +254,7 @@ for (const draft of [false, true]) {
     const launch = requests.at(-1)!;
     assert.equal(
       launch.url,
-      `https://test.invalid/api/v1/orgs/org/optimizations${draft ? "/climb/start" : ""}`,
+      `https://test.invalid/api/v1/orgs/8c7f0e1a-1111-4222-8333-944455556666/optimizations${draft ? "/climb/start" : ""}`,
     );
     assert.deepEqual(
       launch.body,
@@ -504,7 +504,7 @@ it("requires exactly one starting source before making a request", async () => {
   for (const flags of [[], ["--from-run", "run", "--target", "claude-code"]]) {
     const program = new Command()
       .option("--hosted", "use hosted", true)
-      .option("--org <org>", "organization", "org");
+      .option("--org <org>", "organization", "8c7f0e1a-1111-4222-8333-944455556666");
     register(program);
     await assert.rejects(
       program.parseAsync(
