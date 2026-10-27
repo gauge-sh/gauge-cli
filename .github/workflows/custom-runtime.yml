@@ -36,9 +36,11 @@ jobs:
         env:
           GAUGE_DOCKER_FIXTURES: "1"
           GAUGE_TELEMETRY_DISABLED: "1"
+          GAUGE_GATEWAY_IMAGE: gauge-gateway:test
         run: |
           docker tag gauge-runtime:custom-test gauge-runtime:dev
           docker build -t gauge-session-fixture:test packages/local/test/runtime-fixture
+          docker build -t gauge-gateway:test packages/local/gateway
           cd cli
           npm exec -- tsx --test src/commands/run.lifecycle.test.ts
       - run: docker build --build-arg GAUGE_RUNTIME=gauge-runtime:custom-test -t gauge-runtime-python:custom-test examples/runtime-python

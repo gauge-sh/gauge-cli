@@ -2,7 +2,7 @@
   "name": "@withgauge/local-execution",
   "version": "0.2.0",
   "private": false,
-  "description": "Host-operated agent sessions in a single local Docker container",
+  "description": "Host-operated Docker agent sessions with optional transparent web fixtures",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -16,7 +16,8 @@
   },
   "files": [
     "dist",
-    "image"
+    "image",
+    "gateway"
   ],
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.json",

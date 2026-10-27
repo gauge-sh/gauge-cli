@@ -2,6 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { validateRuntimeManifest, validateRuntimeSource } from "./validate-runtime-release.mjs";
 const manifest = { version: "0.1.0", repository: "ghcr.io/gauge-sh/gauge-runtime", digest: `sha256:${"a".repeat(64)}`, revision: "b".repeat(40), contract: "1", platforms: ["linux/amd64", "linux/arm64"] };
+test("gateway publication uses its own contract and requires an immutable qualified pin", () => {
+  const gateway = { ...manifest, repository: "ghcr.io/gauge-sh/gauge-gateway", contract: "gateway-1" };
+  validateRuntimeManifest(gateway, { gateway: true, tag: "gateway-v0.1.0" });
+  validateRuntimeManifest({ ...gateway, digest: null, revision: null }, { gateway: true, published: false });
+  assert.throws(() => validateRuntimeManifest({ ...gateway, digest: null }, { gateway: true }), /immutable digest/);
+  assert.throws(() => validateRuntimeManifest(gateway), /public/);
+  assert.throws(() => validateRuntimeManifest(gateway, { gateway: true, tag: "runtime-v0.1.0" }), /tag/);
+});
 test("release requires a published digest and source revision while bootstrap accepts null", () => {
   validateRuntimeManifest(manifest);
   const unpublished = { ...manifest, digest: null, revision: null };

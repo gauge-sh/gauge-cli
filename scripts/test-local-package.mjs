@@ -18,9 +18,10 @@ try {
     cwd: join(root, directory), encoding: "utf8",
   }))[0];
   const packed = pack("packages/local");
-  const modules = ["credentials", "docker", "driver", "fsAtomic", "index", "scripts", "session", "types", "worker", "workspace"];
+  const modules = ["credentials", "docker", "driver", "fsAtomic", "gateway", "index", "scripts", "session", "types", "worker", "workspace"];
   assert.deepEqual(packed.files.map((f) => f.path).sort(), [
     "LICENSE", "README.md", "package.json", "image/Dockerfile", "image/gauge-path.sh",
+    ...["Dockerfile", "entrypoint.sh", "fixtures.py", "health.py", "test_fixtures.py"].map(name => `gateway/${name}`),
     ...modules.flatMap((name) => [`dist/${name}.js`, `dist/${name}.d.ts`]),
   ].sort(), "Unexpected local-execution distribution contents");
   for (const { path } of packed.files) {
