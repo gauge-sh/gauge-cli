@@ -30,8 +30,11 @@ If you used an older Agents token, run `gauge auth login` to access Chat and
 choose organizations with `gauge orgs`. Unset `GAUGE_API_TOKEN` first if it
 contains the old token.
 
-Reselect any previously saved organization with `gauge orgs use <org>`, using
-an entry from `gauge orgs`. Add `--project` to update a project's setting;
+If your account has only one organization, signing in updates your old saved
+default automatically. If you have several, run `gauge orgs`, then
+`gauge orgs use <slug>` to choose one. Old defaults may have been saved when
+you signed in or created an organization, even if you never ran `orgs use`.
+Use `gauge orgs use <slug> --project` to update an old project setting;
 everyone using that project will need CLI 0.25.0 or later. See
 [organization selection](../cli/README.md#organizations).
 

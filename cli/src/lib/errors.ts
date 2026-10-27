@@ -51,10 +51,10 @@ function localModeError(
 ): Omit<ErrorReport, "docs" | "feedback"> & { docs?: string } {
   return {
     code: "usage",
-    message: `\`gauge ${command}\` requires hosted Gauge; the selected backend is local (${source}).`,
+    message: `\`gauge ${command}\` requires hosted Gauge, but ${source === "flag" ? "you passed --local" : source === "workspace" ? "this project is set to run locally" : source === "user" ? "your saved setting is local" : "the CLI is using local mode"}.`,
     hint:
       hint ??
-      "Pass --hosted for this command, or use `gauge init --hosted` to change this workspace's preference. Authentication is separate: `gauge auth login`.",
+      "Pass --hosted for this command, or run `gauge init --hosted` to use hosted Gauge in this project. Sign in with `gauge auth login` if needed.",
     exitCode: exitCodeFor("usage"),
   };
 }

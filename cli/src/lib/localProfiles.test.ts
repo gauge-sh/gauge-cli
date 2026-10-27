@@ -55,7 +55,7 @@ test("local credential profiles", async (t) => {
     assert.deepEqual(resolveLocalProfile("CODEX_CLI", "custom-model", options), profile);
     assert.equal((await inspectLocalCredential("CODEX_CLI", "custom-model", options)).ready, true);
     assert.throws(() => readProfiles(), /Invalid local credential profile file/);
-    assert.throws(() => resolveLocalProfile("CODEX_CLI", "other", options), /No frozen credential selection/);
+    assert.throws(() => resolveLocalProfile("CODEX_CLI", "other", options), /no saved login settings/);
     writeProfiles(empty);
   });
   await t.test("non-native providers select API auth and report missing credentials", async () => {

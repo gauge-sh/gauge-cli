@@ -150,7 +150,7 @@ export async function cancelLocal(
     const directory = batchDirectory(gaugeDir, filter.batch);
     if (existsSync(directory)) {
       if (!(await lstat(directory)).isDirectory())
-        throw new CliError("usage", "Refusing a linked batch directory");
+        throw new CliError("usage", "Cannot cancel this batch because its folder is a symbolic link.", { hint: "Run the command from the original Gauge workspace." });
       await writeFile(join(directory, "cancel"), "", { mode: 0o600 });
     } else if (!sessions.length)
       throw new CliError("not_found", "Local batch not found");

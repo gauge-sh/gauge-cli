@@ -34,8 +34,12 @@ followed by its run specification, the project setting, then your default.
 Chat can pick your organization automatically if you have only one; Agents
 commands need a saved selection or `--org`.
 
-**Upgrading:** Reselect previously saved organizations with `gauge orgs use`.
-Add `--project` for a project setting. Everyone using an updated project needs
+**Upgrading:** If your account has only one organization, `gauge auth login`
+updates your old saved default automatically. Otherwise, run `gauge orgs`, then
+`gauge orgs use <slug>` to choose your default. This includes defaults that an
+older CLI selected automatically when you signed in or created an organization.
+For an old project setting, run `gauge orgs use <slug> --project`.
+Everyone using an updated project needs
 CLI 0.25.0 or later; restore the previous `gauge.json` before using an older
 CLI. If an older run specification contains an `org` name, pass `--org` to
 choose the organization for that run.

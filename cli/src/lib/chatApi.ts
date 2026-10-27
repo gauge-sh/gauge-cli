@@ -61,8 +61,11 @@ function isChatErrorBody(value: unknown): value is ChatErrorBody {
   );
 }
 
-const LOGIN_HINT =
-  "Run `gauge auth login`, or set GAUGE_API_TOKEN to an org API key (Settings → API Keys).";
+function loginHint(): string {
+  return process.env.GAUGE_API_TOKEN?.trim()
+    ? "Replace GAUGE_API_TOKEN with a valid key, or unset it and run `gauge auth login`."
+    : "Run `gauge auth login`, or set GAUGE_API_TOKEN to an org API key (Settings → API Keys).";
+}
 
 function hintFor(
   code: string,
@@ -76,9 +79,11 @@ function hintFor(
         ? "--explain (or `explain` in --json) is only available to Gauge staff; rerun without it."
         : undefined;
     case "unauthorized":
-      return LOGIN_HINT;
+      return loginHint();
     case "insufficient_scope":
-      return `This credential needs the '${String(extra.requiredScope ?? "write")}' scope. If it is an org API key, create a Read & write key in Settings → API Keys.`;
+      return extra.requiredScope && extra.requiredScope !== "write"
+        ? `Ask an organization admin for '${String(extra.requiredScope)}' permission.`
+        : "Ask an organization admin for write access, or create a Read & write API key in Settings → API Keys.";
     case "limit_exceeded":
       return typeof extra.remaining === "number"
         ? `Your plan allows ${extra.remaining} more prompt(s); nothing was created.`
@@ -112,7 +117,7 @@ export type ChatMe = {
 export function describeScopes(scopes: string[]): string {
   if (scopes.includes("write")) return "read & write";
   if (scopes.length === 1 && scopes[0] === "read") return "read-only";
-  return scopes.length ? scopes.join(", ") : "no scopes";
+  return scopes.length ? scopes.join(", ") : "no permissions";
 }
 
 export class ChatApiClient extends ApiClient {
@@ -128,9 +133,9 @@ export class ChatApiClient extends ApiClient {
         throw error;
       throw new CliError(
         "not_found",
-        "not_found: this Gauge server does not report token identity yet (GET /api/v1/me is not available).",
+        "This Gauge server cannot show your account details yet.",
         {
-          hint: "Run `gauge orgs` to check that your credentials work.",
+          hint: "Run `gauge orgs` to check your access. If you use a custom Gauge server, ask its administrator to update it.",
         },
       );
     }
@@ -142,10 +147,11 @@ export class ChatApiClient extends ApiClient {
     try {
       const { token } = await this.me();
       const needs = String(required ?? "write");
+      const access = token.scopes.length ? `${describeScopes(token.scopes)} access` : "no permissions";
       if (token.kind === "api_key")
-        return `This org API key is ${describeScopes(token.scopes)} and needs '${needs}'.${needs === "write" ? " Create a Read & write key in Settings → API Keys." : ""}`;
+        return `This API key has ${access}.${needs === "write" ? " Create a Read & write key in Settings → API Keys, then update GAUGE_API_TOKEN or import it with `gauge auth login --with-token`." : ` Use a key with '${needs}' permission.`}`;
       if (token.kind === "session")
-        return `This login session has scopes [${token.scopes.join(", ")}] and needs '${needs}'. Ask an organization admin for write access, or use a Read & write org API key (Settings → API Keys).`;
+        return `Your login has ${access}. Ask an organization admin for ${needs === "write" ? "write access" : `'${needs}' permission`}.`;
       return undefined;
     } catch {
       return undefined;
@@ -169,7 +175,7 @@ export class ChatApiClient extends ApiClient {
   ): Record<string, string> {
     if (!this.signedIn)
       throw new CliError("unauthorized", "Not logged in to Gauge.", {
-        hint: LOGIN_HINT,
+        hint: loginHint(),
       });
     return super.headers(extra);
   }
@@ -209,7 +215,7 @@ export class ChatApiClient extends ApiClient {
       );
     return new CliError(
       exitFamily(res.status, code),
-      `${code}: ${message}${field ? ` (field: ${field})` : ""}`,
+      `${code === "insufficient_scope" ? "You don't have the permissions needed for this command." : message}${field ? ` (field: ${field})` : ""}`,
       {
         apiCode: code,
         details,
@@ -226,10 +232,10 @@ function unknownEndpoint(res: Response): CliError {
   const url = res.url ? new URL(res.url) : undefined;
   return new CliError(
     "not_found",
-    `not_found: ${url ? `${url.pathname} on ${url.host}` : "this path"} is not a Gauge Chat API endpoint (HTTP 404).`,
+    `This Gauge server${url ? ` (${url.host})` : ""} does not support this command at the requested address.`,
     {
-      details: { status: 404 },
-      hint: "This server may not support this command yet, or authUrl points at the wrong host.",
+      details: { status: 404, ...(url ? { path: url.pathname } : {}) },
+      hint: "Check GAUGE_AUTH_URL or `gauge config get authUrl` if you use a custom server. Otherwise, contact Gauge support.",
     },
   );
 }

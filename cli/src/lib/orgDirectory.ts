@@ -28,9 +28,9 @@ export async function fetchDirectory(): Promise<DirectoryOrg[]> {
   if (credentialKind() === "legacy")
     throw new CliError(
       "usage",
-      "Legacy Agents tokens cannot access the Gauge organization directory.",
+      "This Agents token cannot list or select organizations in this version of the CLI.",
       {
-        hint: "Run `gauge auth login` and unset GAUGE_API_TOKEN if it contains a legacy token.",
+        hint: "If GAUGE_API_TOKEN is set, unset it first. Then run `gauge auth login` and `gauge orgs`.",
       },
     );
   // Lazy import breaks the chatApi -> context -> orgDirectory cycle.
@@ -39,7 +39,9 @@ export async function fetchDirectory(): Promise<DirectoryOrg[]> {
     chatPath("orgs"),
   );
   if (!Array.isArray(data))
-    throw new CliError("internal", "Unexpected organization list response");
+    throw new CliError("internal", "Gauge returned an organization list the CLI could not read.", {
+      hint: "Try `gauge orgs` again. If this continues, contact Gauge support.",
+    });
   return data;
 }
 
@@ -50,9 +52,9 @@ export async function findOrganization(value: string): Promise<DirectoryOrg> {
   if (!org)
     throw new CliError(
       "not_found",
-      `Organization "${value}" was not found in the Gauge directory.`,
+      `You don't have access to an organization named "${value}".`,
       {
-        hint: "Run `gauge orgs` and use one of the listed slugs.",
+        hint: "Run `gauge orgs` to see your organizations, then use a value from the slug column.",
       },
     );
   return org;
@@ -64,21 +66,21 @@ export async function resolveOrgValue(value: string): Promise<ResolvedOrg> {
 }
 
 export function legacySelection(source: OrgSource): never {
-  const location =
+  const message =
     source === "config"
-      ? "defaultOrg"
+      ? "Your saved organization needs to be selected again after this CLI update."
       : source === "project"
-        ? "gauge.json org"
-        : "the run specification's org";
+        ? "This project's organization needs to be selected again after this CLI update."
+        : "The organization in this run file needs to be selected again after this CLI update.";
   const hint =
     source === "config"
-      ? "Run `gauge orgs`, then `gauge orgs use <slug>` to select your organization again."
+      ? "Run `gauge orgs` to see your organizations, then `gauge orgs use <slug>` to choose one. If you have only one organization, `gauge auth login` updates your saved choice automatically."
       : source === "project"
-        ? "Run `gauge orgs`, then `gauge orgs use <slug> --project` to select this project's organization again."
-        : "Pass --org <slug> using a slug from `gauge orgs`, or remove org from the specification and use your saved selection.";
+        ? "Run `gauge orgs`, then `gauge orgs use <slug> --project` to update gauge.json."
+        : "Run `gauge orgs`, then rerun your command with --org <slug>. Or remove org from the run file to use your saved organization.";
   throw new CliError(
     "usage",
-    `The saved selection in ${location} uses the legacy Agents namespace. Please select a Gauge organization.`,
+    message,
     { hint },
   );
 }
@@ -97,7 +99,8 @@ export async function keyOrganization(): Promise<DirectoryOrg> {
   if (!org)
     throw new CliError(
       "internal",
-      "The server did not report this API key's organization.",
+      "Gauge could not identify which organization this API key belongs to.",
+      { hint: "Check the key in Settings → API Keys and try again." },
     );
   return org;
 }
@@ -112,9 +115,9 @@ export async function createdOrganization(
   if (!id)
     throw new CliError(
       "internal",
-      "The workspace was created, but the server did not link it to a Gauge organization.",
+      "Your workspace was created, but it is not ready to select in the CLI yet.",
       {
-        hint: "Your previous selection is unchanged. Run `gauge orgs` before retrying creation.",
+        hint: "Run `gauge orgs` to check for it, then `gauge orgs use <slug>`. If it is missing, contact Gauge support; you don't need to create it again.",
       },
     );
   return findOrganization(id);
