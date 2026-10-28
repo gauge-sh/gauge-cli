@@ -2,38 +2,7 @@
 
 ## Unreleased
 
-### Added
-
-- `gauge optimizations sessions add <id> <runId...>` attaches sessions an
-  optimization can rerun, up to 12 in all. A `--goal` optimization starts with
-  none, so attach sessions before `launch`.
-
-## 0.25.1 — 2026-10-27
-
-### Added
-
-- `gauge mcp add --oauth` authorizes an HTTP MCP server in your browser and
-  saves its connection for hosted runs. Use `--connection <id>` to reuse a
-  saved connection, or `--no-browser` to open the authorization URL yourself.
-
-### Fixed
-
-- Selecting an organization by public slug now checks access even when it is
-  absent from `gauge orgs`. Lookup outside the list requires Chat to be enabled.
-
-### Changed
-
-- **Breaking:** `gauge optimizations` drives the new optimizations: open one on an
-  issue, a finding, or a goal; edit pages, skills, and CLI rules with
-  `file add`, `file read`, `file write`, and `file rm`; read `authoring`
-  guidance; keep `notes`; `launch` reruns of the source sessions; `watch` them;
-  and `finish` with the result. Rounds, trials,
-  baselines, diagnoses, adoption, and handoff are removed. Earlier CLI versions
-  get an update message from the optimizations API.
-
-### Removed
-
-- `gauge actions`. `gauge status` no longer lists open actions.
+## 0.26.0 — 2026-10-28
 
 ### Added
 
@@ -51,6 +20,36 @@
   kept, and `launch` lists the changed files.
 - `optimizations file write --cli` takes CLI rules as authored
   (`{schemaVersion: 3, target, rules, shippingIntent}`); Gauge seals them.
+- `gauge optimizations sessions add <id> <runId...>` attaches sessions an
+  optimization can rerun, up to 12 in all. A `--goal` optimization starts with
+  none, so attach sessions before `launch`.
+
+### Changed
+
+- **Breaking:** `gauge optimizations` drives the new optimizations: open one on an
+  issue, a finding, or a goal; edit pages, skills, and CLI rules with
+  `file add`, `file read`, `file write`, and `file rm`; read `authoring`
+  guidance; keep `notes`; `launch` reruns of the source sessions; `watch` them;
+  and `finish` with the result. Rounds, trials,
+  baselines, diagnoses, adoption, and handoff are removed. Earlier CLI versions
+  get an update message from the optimizations API.
+
+### Removed
+
+- `gauge actions`. `gauge status` no longer lists open actions.
+
+## 0.25.1 — 2026-10-27
+
+### Added
+
+- `gauge mcp add --oauth` authorizes an HTTP MCP server in your browser and
+  saves its connection for hosted runs. Use `--connection <id>` to reuse a
+  saved connection, or `--no-browser` to open the authorization URL yourself.
+
+### Fixed
+
+- Selecting an organization by public slug now checks access even when it is
+  absent from `gauge orgs`. Lookup outside the list requires Chat to be enabled.
 
 ## 0.25.0 — 2026-10-26
 
