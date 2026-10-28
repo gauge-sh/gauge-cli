@@ -737,6 +737,7 @@ gauge instructions optimization
 gauge issues list -o json                     # by impact; --type friction|objection
 gauge issues get is_1                         # the issue's findings and runs
 gauge optimizations create --issue is_1       # or --finding <id> --run <run>, or --goal <text>
+gauge optimizations sessions add op_1 run_1 run_2   # a goal starts with none; up to 12
 gauge optimizations authoring op_1
 gauge run trace run_1 --seq 42                # read the cited evidence
 gauge run web run_1                           # the exact URLs the session fetched

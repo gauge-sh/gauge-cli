@@ -410,7 +410,10 @@ export function register(program: Command): void {
       "a finding id from `gauge run insight <run> -o json`; needs --run",
     )
     .option("--run <runId>", "the run the finding is on")
-    .option("--goal <text>", "free text, with no source sessions")
+    .option(
+      "--goal <text>",
+      "free text; starts with no sessions, attach them with `sessions add`",
+    )
     .option("--title <title>", "name (default: from the subject)")
     .action(async (opts: SubjectOpts & { title?: string }, cmd: Command) => {
       const detail = await createClient().post<Detail>(
@@ -423,7 +426,9 @@ export function register(program: Command): void {
       if (resolveOutput(cmd) === "json") printJson(detail);
       else
         console.log(
-          `Opened ${detail.id} "${detail.title}" on ${plural(detail.sourceRunIds.length, "source session")}. Next: \`gauge optimizations authoring ${detail.id}\`.`,
+          detail.sourceRunIds.length
+            ? `Opened ${detail.id} "${detail.title}" on ${plural(detail.sourceRunIds.length, "source session")}. Next: \`gauge optimizations authoring ${detail.id}\`.`
+            : `Opened ${detail.id} "${detail.title}" with no sessions. Next: \`gauge optimizations sessions add ${detail.id} <runId...>\`.`,
         );
     });
 
@@ -449,6 +454,25 @@ export function register(program: Command): void {
       );
       if (resolveOutput(cmd) === "json") printJson(res);
       else console.log(res.guidance);
+    });
+
+  group
+    .command("sessions")
+    .description("Attach sessions an optimization can rerun")
+    .command("add <id> <runIds...>")
+    .description(
+      "Attach sessions to rerun, up to 12 in all; a goal starts with none. Optimization reruns cannot be sources",
+    )
+    .action(async (id: string, runIds: string[], _opts: unknown, cmd: Command) => {
+      const res = await createClient().post<{
+        sourceRunIds: string[];
+        added: string[];
+      }>(`${itemPath(await resolveOrg(cmd), id)}/sessions`, { runIds });
+      if (resolveOutput(cmd) === "json") printJson(res);
+      else
+        console.log(
+          `Attached ${plural(res.added.length, "session")}; ${id} has ${plural(res.sourceRunIds.length, "source session")}.`,
+        );
     });
 
   const file = group
