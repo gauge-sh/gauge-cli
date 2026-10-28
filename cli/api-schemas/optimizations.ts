@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { cliRuleAuthorInputSchema, cliRuleBundleSchema } from "./cli-rules";
-import { normalizeWebFixtureUrl } from "./web-page-identity";
+
+function normalizeWebFixtureUrl(raw: string): string {
+  const url = new URL(raw);
+  url.hash = "";
+  url.pathname = url.pathname.replace(/\/+$/, "") || "/";
+  return url.href;
+}
 
 export const OPTIMIZATION_STATUSES = ["OPEN", "DONE", "ARCHIVED"] as const;
 export type OptimizationStatus = (typeof OPTIMIZATION_STATUSES)[number];
