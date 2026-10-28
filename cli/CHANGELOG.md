@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+
+- `gauge optimizations sessions add <id> <runId...>` attaches sessions an
+  optimization can rerun, up to 12 in all. A `--goal` optimization starts with
+  none, so attach sessions before `launch`.
+
 ## 0.25.1 — 2026-10-27
 
 ### Added
