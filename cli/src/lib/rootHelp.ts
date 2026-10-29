@@ -6,6 +6,7 @@ import { CLI_VERSION } from "../version";
 
 const EXAMPLES: [string, string][] = [
   ["gauge init --local", "Initialize a workspace; creates no measurements"],
+  ['gauge run "<prompt>"', "Run one prompt now; saves no measurement"],
   ["gauge instructions hillclimb", "Choose inputs and prepare a first pilot"],
   ["gauge eval create --help", "Save a task and success criteria"],
   ["gauge run --eval <id> --local", "Run a saved eval; rerun after input changes"],

@@ -191,7 +191,7 @@ describe("gauge run", () => {
     );
     assert.match(
       await usageError(["run", "e1"]),
-      /unknown run command "e1"\. Launch a saved eval set or preference prompt with `gauge run --eval <id>`/,
+      /unknown run command "e1"\. Run a prompt with `gauge run "<prompt>"`\. Launch a saved eval set or preference prompt with `gauge run --eval <id>`/,
     );
   });
 
@@ -248,6 +248,54 @@ describe("gauge run", () => {
     const plan = JSON.parse(String(log.mock.calls[0].arguments[0]));
     assert.equal(plan.mode, "local");
     assert.equal(plan.expectedSessions, 2);
+  });
+
+  it("plans a bare prompt as one open-ended preference case for the caller's agent", async (t) => {
+    const requests = useApi(t);
+    const cwd = process.cwd();
+    const dir = mkdtempSync(join(tmpdir(), "gauge-local-prompt-"));
+    const previous = {
+      CLAUDECODE: process.env.CLAUDECODE,
+      CODEX_THREAD_ID: process.env.CODEX_THREAD_ID,
+      OPENCODE: process.env.OPENCODE,
+    };
+    t.after(() => {
+      process.chdir(cwd);
+      rmSync(dir, { recursive: true, force: true });
+      for (const [name, value] of Object.entries(previous))
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+    });
+    execFileSync("git", ["init", "-q"], { cwd: dir });
+    writeFileSync(join(dir, "gauge.json"), '{"version":2}');
+    process.chdir(dir);
+    delete process.env.CLAUDECODE;
+    delete process.env.OPENCODE;
+    process.env.CODEX_THREAD_ID = "t1";
+    const log = t.mock.method(console, "log", () => {});
+    await gauge(["run", "Which CLI should I deploy with?", "--dry-run"], "--local");
+    delete process.env.CODEX_THREAD_ID;
+    await gauge(["run", "Which CLI should I deploy with?", "--dry-run"], "--local");
+    process.env.OPENCODE = "1";
+    await gauge(["run", "Which CLI should I deploy with?", "--dry-run"], "--local");
+    delete process.env.OPENCODE;
+    await gauge(["run", "Which CLI should I deploy with?", "--agent", "codex", "--dry-run"], "--local");
+    assert.deepEqual(requests, []);
+    assert.deepEqual(
+      log.mock.calls.map((call) => {
+        const plan = JSON.parse(String(call.arguments[0]));
+        return `${plan.cases[0].path} ${plan.cases[0].sessions[0].agent}`;
+      }),
+      ["prompt CODEX_CLI", "prompt CLAUDE_CODE", "prompt OPENCODE", "prompt CODEX_CLI"],
+    );
+    assert.match(
+      await usageError(["run", "Which CLI?", "--samples", "2"], "--local"),
+      /a prompt run takes only --agent/,
+    );
+    assert.match(
+      await usageError(["run", "Which CLI?", "--eval", "e1"], "--local"),
+      /pass only one of a prompt, --eval/,
+    );
   });
 
   it("raises commander usage errors in subcommands through exitOverride", async () => {

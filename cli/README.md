@@ -264,6 +264,7 @@ target; `--copy` copies files instead of creating symlinks.
 ## Usage
 
 ```sh
+gauge run "Which CLI should I deploy with?"   # one open-ended preference run, nothing saved
 gauge status                      # the org at a glance
 gauge eval list                   # saved eval sets
 gauge preference list             # saved Agent Preference prompts

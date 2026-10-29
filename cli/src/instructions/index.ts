@@ -69,7 +69,8 @@ identify inputs, pilot representative tasks, analyze evidence, fix, rerun, compa
 - Confirm before launches. Use \`--yes\` for work already approved.
 - Retry writes with their supported idempotency flag; blind retries can launch
   duplicate paid sessions.
-- Report measured results with sample counts and evidence, including limits.
+- The user does not see gauge output. After each step, tell them what Gauge did,
+  what it found (sample counts, evidence, limits), and what you changed.
 - Run \`gauge update\` to install the latest published CLI.
 - Exit codes: 0 ok, 1 error, 2 usage, 3 billing-blocked, 4 needs your input.
 - When the CLI gets in your way (friction, a missing command or flag, a bug),
@@ -157,6 +158,9 @@ ${stepsMarkdown()}
 - \`gauge instructions <topic>\` is workflow guidance, not a page per command.
 - Pass \`-o json\` on reads and parse it. Tables are for people.
 - Exit codes: 0 ok, 1 error, 2 usage.
+- The user does not see gauge output. After each step, tell them in a line or
+  two what Gauge did and found: what launched (IDs, targets), progress,
+  pass/fail counts, and top friction. Offer \`gauge run diff <id>\` for code a run wrote.
 - Report CLI friction, gaps, or bugs, with no account:
   \`gauge feedback -m "<what happened>" --kind friction|missing|bug\`.
 

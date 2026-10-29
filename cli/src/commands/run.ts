@@ -56,7 +56,8 @@ import {
   resolveOutput,
 } from "../lib/context";
 import { runEvalSet } from "../lib/evalSets";
-import { collect, once, parseAgents } from "../lib/flags";
+import { detectSkillAgent } from "../lib/detectAgent";
+import { buildAgentRoster, collect, once, parseAgents } from "../lib/flags";
 import { gaugeState } from "../lib/gaugeState";
 import {
   type InputSnapshot,
@@ -439,6 +440,7 @@ async function streamRun(
 }
 
 type LaunchOpts = {
+  prompt?: string;
   profile?: string;
   eval?: string;
   preference?: string;
@@ -569,6 +571,23 @@ function printUnattachedInputs(names: string[], saved: boolean): void {
   if (names.length) console.log(unattachedNote(names, saved));
 }
 
+function promptSpec(prompt: string, agents: string[]): CaseSpec {
+  const caller = detectSkillAgent(process.env);
+  const detected =
+    caller === "codex" || caller === "opencode" ? caller : "claude-code";
+  return parseCaseSpec({
+    version: 2,
+    cases: [
+      {
+        key: "prompt",
+        prompt,
+        preference: { kind: "open-ended" },
+        config: { agents: buildAgentRoster(agents.length > 0 ? agents : [detected]) },
+      },
+    ],
+  });
+}
+
 async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
   if (opts.profile && gaugeState(cmd).mode !== "local")
     throw new CliError(
@@ -576,6 +595,7 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
       "--profile applies only to local runs. Pass --local.",
     );
   const sources = [
+    opts.prompt !== undefined && "a prompt",
     opts.eval !== undefined && "--eval",
     opts.preference !== undefined && "--preference",
     opts.apply !== undefined && "--apply",
@@ -624,7 +644,16 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
   if (opts.scenario.length > 0 && source !== "--preference")
     throw new CliError("usage", "--scenario applies with --preference only");
   if (
+    opts.prompt !== undefined &&
+    (opts.samples !== undefined || opts.input.length > 0)
+  )
+    throw new CliError(
+      "usage",
+      "a prompt run takes only --agent; use `gauge preference` or `gauge eval` for more settings",
+    );
+  if (
     (opts.agent.length > 0 || opts.samples !== undefined) &&
+    source !== "a prompt" &&
     source !== "--eval" &&
     source !== "--preference"
   )
@@ -680,6 +709,7 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
       );
     spec = parseCaseSpec(json);
   }
+  if (opts.prompt !== undefined) spec = promptSpec(opts.prompt, opts.agent);
   if (gaugeState(cmd).mode === "local" && (opts.eval || opts.preference)) {
     const saved = localMeasurementSpec(
       cmd,
@@ -1009,10 +1039,10 @@ export function register(program: Command): void {
   const run = program
     .command("run")
     .description(
-      "Start runs and read them. With no flag: run this repo's eval cases (gauge-cases/) (local: in local Docker)",
+      'Start runs and read them. `gauge run "<prompt>"` runs one open-ended preference prompt and saves no measurement. With no flag: run this repo\'s eval cases (gauge-cases/) (local: in local Docker)',
     )
-    .argument("[command]")
-    .usage("[options] [command]")
+    .argument("[prompt]")
+    .usage('[options] ["<prompt>"]')
     .option(
       "--eval <id>",
       "run a saved eval set (see `gauge eval`)",
@@ -1031,7 +1061,7 @@ export function register(program: Command): void {
     )
     .option(
       "--agent <agent[:m1,m2]>",
-      "with --eval/--preference: run these agents and model pins for this launch only; the stored roster stays (repeatable)",
+      "with a prompt (default: the calling agent if codex or opencode, else claude-code) or --eval/--preference: run these agents and model pins for this launch only; the stored roster stays (repeatable)",
       collect,
       [] as string[],
     )
@@ -1085,10 +1115,10 @@ export function register(program: Command): void {
     )
     .option("--yes", "skip the confirmation")
     .action(async (arg: string | undefined, opts: LaunchOpts, cmd: Command) => {
-      if (arg !== undefined)
+      if (arg !== undefined && !/\s/.test(arg.trim()))
         throw new CliError(
           "usage",
-          `unknown run command "${arg}". Launch a saved eval set or preference prompt with \`gauge run --eval <id>\` or \`--preference <id>\`; read runs with \`gauge run list\` or \`gauge run get <id> [--logs]\`.`,
+          `unknown run command "${arg}". Run a prompt with \`gauge run "<prompt>"\`. Launch a saved eval set or preference prompt with \`gauge run --eval <id>\` or \`--preference <id>\`; read runs with \`gauge run list\` or \`gauge run get <id> [--logs]\`.`,
         );
       if (
         opts.detach &&
@@ -1104,7 +1134,7 @@ export function register(program: Command): void {
           "usage",
           "--runtime-image and --gateway-image work only on local runs; pass --local",
         );
-      await launch(cmd, opts);
+      await launch(cmd, { ...opts, prompt: arg?.trim() });
     });
 
   run.hook("preAction", (parent, action) => {

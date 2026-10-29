@@ -92,6 +92,9 @@ function nextSteps(mode: Mode): string {
   lines.push(
     `Agents: add ${cyan("-o json")} to any gauge command for JSON output.`,
   );
+  lines.push(
+    "Agents: the user does not see gauge output. After each step, tell them what Gauge did and found.",
+  );
   lines.push(`Docs: ${cyan(DOCS_URL)}`);
   return lines.join("\n");
 }
