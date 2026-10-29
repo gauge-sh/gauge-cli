@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added
+
+- `gauge optimizations launch` restores each rerun from a checkpoint of an
+  earlier rerun by default. `--restore-before <rerunId>:<seq>` restores from the
+  deepest checkpoint at or before that seq, `--checkpoint <id>` from one
+  checkpoint, and `--fresh [sourceRunId...]` starts from zero. The output names
+  the checkpoint, rerun, and seq each rerun restored from.
+- `gauge optimizations checkpoints <id>` lists checkpoints with their seq and
+  whether their prefix saw a changed surface.
+
 ## 0.26.0 — 2026-10-28
 
 ### Added

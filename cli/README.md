@@ -760,8 +760,16 @@ gauge optimizations file write op_1 --skill acme --path SKILL.md --from SKILL.md
 gauge optimizations notes op_1 --from notes.md
 gauge optimizations launch op_1 --yes
 gauge optimizations watch op_1
+gauge optimizations launch op_1 --restore-before run_9:140 --yes
+gauge optimizations checkpoints op_1
 gauge optimizations finish op_1 --from result.json --yes
 ```
+
+`launch` restores each rerun from the deepest checkpoint of an earlier rerun
+taken before it saw a changed surface, or starts fresh. `--restore-before
+<rerun>:<seq>` restores from the deepest checkpoint at or before that seq,
+`--checkpoint <id>` from one checkpoint, and `--fresh [sourceRunId...]` starts
+from zero. Launch prints the checkpoint and seq each rerun restored from.
 
 `watch` waits until every rerun finishes and is analyzed, then shows each source
 finding as resolved or returned, and new findings as introduced. `launches

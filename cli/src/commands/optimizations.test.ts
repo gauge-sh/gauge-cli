@@ -10,6 +10,7 @@ import {
   latestLaunch,
   launchSettled,
   parseEdits,
+  parseRestoreBefore,
   parseStatus,
   parseSubjectRef,
   register,
@@ -129,6 +130,18 @@ describe("fileEditFromOpts", () => {
         ),
       /--delete or --from/,
     );
+  });
+});
+
+describe("parseRestoreBefore", () => {
+  it("splits on the last colon and keeps signed seqs", () => {
+    assert.deepEqual(parseRestoreBefore("run:a:12"), {
+      rerunId: "run:a",
+      seq: 12,
+    });
+    assert.deepEqual(parseRestoreBefore("r1:-4"), { rerunId: "r1", seq: -4 });
+    for (const bad of ["r1", ":4", "r1:", "r1:1.5", "r1:x"])
+      assert.throws(() => parseRestoreBefore(bad), /rerunId>:<seq>/);
   });
 });
 
@@ -261,6 +274,42 @@ describe("optimization command requests", () => {
       "POST",
       "/o1/launch",
       { runIds: ["r1", "r2"], note: "auth first" },
+    ],
+    [
+      [
+        "launch",
+        "o1",
+        "--restore-before",
+        "rr1:140",
+        "rr2:-4",
+        "--checkpoint",
+        "cp1",
+        "--fresh",
+        "r3",
+        "--yes",
+      ],
+      "POST",
+      "/o1/launch",
+      {
+        restore: { r3: "none" },
+        restoreAt: [
+          { checkpointId: "cp1" },
+          { rerunId: "rr1", seq: 140 },
+          { rerunId: "rr2", seq: -4 },
+        ],
+      },
+    ],
+    [
+      ["launch", "o1", "--run", "r1", "r2", "--fresh", "--yes"],
+      "POST",
+      "/o1/launch",
+      { runIds: ["r1", "r2"], restore: { r1: "none", r2: "none" } },
+    ],
+    [
+      ["checkpoints", "o1", "--run", "r1"],
+      "GET",
+      "/o1/checkpoints?sourceRunId=r1",
+      undefined,
     ],
     [["launches", "o1", "l1"], "GET", "/o1/launches/l1", undefined],
     [

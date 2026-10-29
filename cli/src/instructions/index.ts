@@ -206,15 +206,16 @@ the tree rerun as the source session had them.
 
 ## Rerun and compare
 
-    gauge optimizations launch <id> --run <run> --yes   # ask first
-    gauge optimizations watch <id>                      # waits for reruns and analysis
+    gauge optimizations launch <id> --run <run> --yes   # ask first; restores auto
+    gauge optimizations launch <id> --restore-before <rerun>:<seq> --yes  # or --fresh
+    gauge optimizations watch <id>                  # waits for reruns and analysis
 
-Check that launch lists every edit in your notes as changed. Rerun only the
-sessions your edits address. Findings come back resolved,
-returned (also the same barrier in other words), or introduced. Before you
-credit an edit, check with \`gauge run web <rerun>\` that the rerun read it;
-otherwise the result is unclear. Judge findings first, report criteria and
-failed reruns, and iterate in this optimization until resolved.
+Launch restores each rerun before its first read of a changed surface, or
+starts fresh, and prints the checkpoint and seq. Rerun only the sessions your
+edits address; check that launch lists every edit as changed. Findings come
+back resolved, returned (also the same barrier in other words), or introduced.
+Before you credit an edit, check with \`gauge run web <rerun>\` that the rerun
+read it. Judge findings first, report criteria and failed reruns, and iterate.
 
     gauge optimizations finish <id> --from result.json --yes
 
