@@ -323,7 +323,7 @@ Check your setup, then preview and run the current working-tree cases and inputs
 gauge run --verify              # local; includes uncommitted working-tree edits
 gauge run --verify -o json      # versioned global/per-input yes/no/unknown checklist
 gauge run --dry-run
-gauge run --yes
+gauge run
 gauge run wait <request-id> -o json
 ```
 
@@ -529,7 +529,7 @@ rerun Gauge to test the latest build.
 With CLI 0.18.0 or later, supply built inputs directly to run without the GitHub App:
 
 ```sh
-gauge --org my-org run --input product-analytics=./dist/skill.zip --yes -o json > request.json
+gauge --org my-org run --input product-analytics=./dist/skill.zip -o json > request.json
 gauge --org my-org run wait "$(jq -er '.runRequestId' request.json)" --check -o json > results.json
 ```
 
@@ -709,8 +709,8 @@ the app. `--cadence daily|weekly|monthly` puts it back on a rhythm, and
 `gauge preference get <id>` reads a manual prompt back as `cadence: manual`.
 
 `gauge run --eval <id>` and `gauge run --preference <id>` are the separate
-immediate launches. They use the stored configuration and ask before spending
-(`--yes` skips the prompt for scripts).
+immediate launches. They use the stored configuration and start without a
+prompt.
 `gauge run --preference <id> --scenario <scenarioId>` (repeatable) runs a subset;
 omit it and every scenario runs. On a recurring cadence, an eval launch or a
 full preference launch moves the next scheduled run to one period from now. A
@@ -758,10 +758,18 @@ gauge optimizations file read op_1 page:https://docs.acme.dev/auth --query "API 
 gauge optimizations file edit op_1 --page https://docs.acme.dev/auth --edits edits.json
 gauge optimizations file write op_1 --skill acme --path SKILL.md --from SKILL.md
 gauge optimizations notes op_1 --from notes.md
-gauge optimizations launch op_1 --yes
+gauge optimizations launch op_1
 gauge optimizations watch op_1
-gauge optimizations finish op_1 --from result.json --yes
+gauge optimizations launch op_1 --restore-before run_9:140
+gauge optimizations checkpoints op_1
+gauge optimizations finish op_1 --from result.json
 ```
+
+`launch` restores each rerun from the deepest checkpoint of an earlier rerun
+taken before it saw a changed surface, or starts fresh. `--restore-before
+<rerun>:<seq>` restores from the deepest checkpoint at or before that seq,
+`--checkpoint <id>` from one checkpoint, and `--fresh [sourceRunId...]` starts
+from zero. Launch prints the checkpoint and seq each rerun restored from.
 
 `watch` waits until every rerun finishes and is analyzed, then shows each source
 finding as resolved or returned, and new findings as introduced. `launches

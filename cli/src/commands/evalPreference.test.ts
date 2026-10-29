@@ -211,7 +211,7 @@ describe("gauge run", () => {
       return true;
     });
     await assert.rejects(
-      gauge(["run", "--eval", "e1", "--yes"], "--local"),
+      gauge(["run", "--eval", "e1"], "--local"),
       (error) =>
         error instanceof CliError && /No Gauge workspace/.test(error.message),
     );

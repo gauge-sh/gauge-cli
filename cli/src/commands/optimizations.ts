@@ -2,7 +2,6 @@ import { readFileSync, writeFileSync } from "node:fs";
 import type { optimizations } from "@withgauge/api-schemas";
 import type { Command } from "commander";
 import { CliError, createClient } from "../lib/client";
-import { confirmOrAbort } from "../lib/confirm";
 import { hostedOnly, resolveOrg, resolveOutput } from "../lib/context";
 import { printItems, printJson } from "../lib/output";
 
@@ -15,10 +14,18 @@ type SubjectRef = optimizations.OptimizationSubjectRef;
 type FileEdit = optimizations.WriteOptimizationFileBody;
 type FileSource = optimizations.AddOptimizationFileBody;
 type TreeFile = optimizations.OptimizationFile;
+type Checkpoint = optimizations.OptimizationCheckpointView;
+type RestorePoint = optimizations.OptimizationRestorePoint;
 type LaunchResult = {
   launchId: string;
   changed: string[];
-  batches: { batchId: string; sourceRunId: string; runIds: string[] }[];
+  batches: {
+    batchId: string;
+    sourceRunId: string;
+    runIds: string[];
+    restoredFrom: { checkpointId: string; rerunId: string; seq: number } | null;
+    warnings: string[];
+  }[];
 };
 
 const STATUSES = ["OPEN", "DONE", "ARCHIVED"] as const;
@@ -294,6 +301,10 @@ function printLaunch(launch: LaunchDetail): void {
     console.log(
       `\n${run.id} rerun of ${run.sourceRunId ?? "?"}: ${run.status}, ${run.agent} ${run.model}`,
     );
+    if (run.restoredFrom)
+      console.log(
+        `  restored at seq ${run.restoredFrom.seq} (${run.restoredFrom.checkpointId}); cost and time cover only the part after the restore`,
+      );
     if (!run.findings) {
       console.log("  not analyzed");
       continue;
@@ -375,6 +386,52 @@ function printPageView(view: PageView): void {
   }
   if (view.truncated) console.log("… more matches; search a longer phrase");
   if (view.hint) console.log(view.hint);
+}
+
+export function parseRestoreBefore(raw: string): RestorePoint {
+  const at = raw.lastIndexOf(":");
+  const rerunId = raw.slice(0, at);
+  const seq = raw.slice(at + 1);
+  if (at <= 0 || !/^-?\d+$/.test(seq))
+    throw new CliError(
+      "usage",
+      `--restore-before takes <rerunId>:<seq>, e.g. run_1:140 (got ${raw})`,
+    );
+  return { rerunId, seq: Number(seq) };
+}
+
+function checkpointRow(cp: Checkpoint) {
+  const exposure = [
+    ...cp.exposure.surfaces,
+    ...(cp.exposure.skillChanged ? ["skill changed"] : []),
+    ...(cp.exposureIncomplete ? ["trace incomplete"] : []),
+  ];
+  return {
+    checkpoint: cp.checkpointId,
+    source: cp.sourceRunId,
+    rerun: cp.rerunId,
+    seq: `${cp.seq}/${cp.rerunEventCount}`,
+    exposure: exposure.join(", ") || "clean",
+    "last step": cp.lastSteps.at(-1) ?? "",
+    captured: cp.capturedAt,
+  };
+}
+
+function printLaunchResult(id: string, res: LaunchResult): void {
+  console.log(
+    `Launched ${plural(res.batches.flatMap((b) => b.runIds).length, "rerun")} (${res.launchId}) with ${plural(res.changed.length, "changed file")}:`,
+  );
+  for (const key of res.changed) console.log(`  ${key}`);
+  for (const batch of res.batches) {
+    const from = batch.restoredFrom;
+    console.log(
+      from
+        ? `${batch.sourceRunId}: restored at seq ${from.seq} of rerun ${from.rerunId} (${from.checkpointId})`
+        : `${batch.sourceRunId}: fresh`,
+    );
+    for (const warning of batch.warnings) console.log(`  ! ${warning}`);
+  }
+  console.log(`Follow with \`gauge optimizations watch ${id}\`.`);
 }
 
 export function register(program: Command): void {
@@ -630,35 +687,77 @@ export function register(program: Command): void {
 
   group
     .command("launch <id>")
-    .description("Rerun the source sessions with the tree injected")
+    .description(
+      "Rerun the source sessions with the tree injected; each rerun restores from the deepest checkpoint before any changed surface, or starts fresh",
+    )
     .option("--run <runId...>", "rerun only these source runs")
     .option("--note <text>", "one line on what this launch tests")
-    .option("--yes", "skip the confirmation")
+    .option(
+      "--restore-before <rerunId:seq...>",
+      "restore from the deepest checkpoint at or before this seq of an earlier rerun",
+    )
+    .option(
+      "--checkpoint <checkpointId...>",
+      "restore from this checkpoint (see `checkpoints`)",
+    )
+    .option(
+      "--fresh [sourceRunId...]",
+      "start from zero: these source runs, or every one",
+    )
     .action(
       async (
         id: string,
-        opts: { run?: string[]; note?: string; yes?: boolean },
+        opts: {
+          run?: string[];
+          note?: string;
+          restoreBefore?: string[];
+          checkpoint?: string[];
+          fresh?: true | string[];
+        },
         cmd: Command,
       ) => {
         const path = itemPath(await resolveOrg(cmd), id);
-        await confirmOrAbort(
-          `Rerun ${opts.run?.length ? plural(opts.run.length, "source session") : "every source session"} of ${id} with the tree?`,
-          opts.yes,
-        );
-        const res = await createClient().post<LaunchResult>(`${path}/launch`, {
+        const client = createClient();
+        const restoreAt: RestorePoint[] = [
+          ...(opts.checkpoint ?? []).map((checkpointId) => ({ checkpointId })),
+          ...(opts.restoreBefore ?? []).map(parseRestoreBefore),
+        ];
+        const fresh =
+          opts.fresh === true
+            ? (opts.run ?? (await client.get<Detail>(path)).sourceRunIds)
+            : (opts.fresh ?? []);
+        const res = await client.post<LaunchResult>(`${path}/launch`, {
           ...(opts.run?.length ? { runIds: opts.run } : {}),
           ...(opts.note ? { note: opts.note } : {}),
+          ...(fresh.length
+            ? {
+                restore: Object.fromEntries(
+                  fresh.map((runId) => [runId, "none"]),
+                ),
+              }
+            : {}),
+          ...(restoreAt.length ? { restoreAt } : {}),
         });
         if (resolveOutput(cmd) === "json") printJson(res);
-        else {
-          console.log(
-            `Launched ${plural(res.batches.flatMap((b) => b.runIds).length, "rerun")} (${res.launchId}) with ${plural(res.changed.length, "changed file")}:`,
-          );
-          for (const key of res.changed) console.log(`  ${key}`);
-          console.log(`Follow with \`gauge optimizations watch ${id}\`.`);
-        }
+        else printLaunchResult(id, res);
       },
     );
+
+  group
+    .command("checkpoints <id>")
+    .description(
+      "Checkpoints captured on fresh reruns, with how far in each is and whether its prefix saw a changed surface",
+    )
+    .option("--run <sourceRunId>", "only this source run")
+    .action(async (id: string, opts: { run?: string }, cmd: Command) => {
+      const res = await createClient().get<{ items: Checkpoint[] }>(
+        `${itemPath(await resolveOrg(cmd), id)}/checkpoints`,
+        { sourceRunId: opts.run },
+      );
+      if (resolveOutput(cmd) === "json") printJson(res.items);
+      else if (!res.items.length) console.log("(no checkpoints)");
+      else printItems(res.items.map(checkpointRow), "table");
+    });
 
   group
     .command("launches <id> [launchId]")
@@ -744,19 +843,14 @@ export function register(program: Command): void {
       "--from <file>",
       "result JSON: {summary, changed, resolved, returned, introduced}",
     )
-    .option("--yes", "skip the confirmation")
     .action(
       async (
         id: string,
-        opts: { from: string; yes?: boolean },
+        opts: { from: string },
         cmd: Command,
       ) => {
         const path = itemPath(await resolveOrg(cmd), id);
         const result = readJson(opts.from);
-        await confirmOrAbort(
-          `Finish ${id}? Its tree can no longer change.`,
-          opts.yes,
-        );
         const detail = await createClient().post<Detail>(
           `${path}/finish`,
           result,

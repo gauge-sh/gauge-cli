@@ -59,7 +59,7 @@ Use the product documentation to complete the task.
     });
   for (const args of [
     ["--dry-run"],
-    ["--yes"],
+    [],
     ["--detach"],
     ["--dry-run", "--input", "docs=./missing"],
     ["--dry-run", "--input", "docs=https://preview.example.com"],

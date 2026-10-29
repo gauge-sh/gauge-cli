@@ -66,7 +66,7 @@ identify inputs, pilot representative tasks, analyze evidence, fix, rerun, compa
 - \`gauge run\` starts and reads runs. \`gauge eval\` and \`gauge preference\`
   save what it runs again: \`gauge instructions eval|preference\`.
 - Pass \`-o json\` on reads and parse it. Tables are for people.
-- Confirm before launches. Use \`--yes\` for work already approved.
+- Launches start without a prompt and spend credits; get approval first.
 - Retry writes with their supported idempotency flag; blind retries can launch
   duplicate paid sessions.
 - Report measured results with sample counts and evidence, including limits.
@@ -206,17 +206,18 @@ the tree rerun as the source session had them.
 
 ## Rerun and compare
 
-    gauge optimizations launch <id> --run <run> --yes   # ask first
-    gauge optimizations watch <id>                      # waits for reruns and analysis
+    gauge optimizations launch <id> --run <run>     # restores from an earlier rerun
+    gauge optimizations launch <id> --restore-before <rerun>:<seq>   # or --fresh
+    gauge optimizations watch <id>                  # waits for reruns and analysis
 
-Check that launch lists every edit in your notes as changed. Rerun only the
-sessions your edits address. Findings come back resolved,
-returned (also the same barrier in other words), or introduced. Before you
-credit an edit, check with \`gauge run web <rerun>\` that the rerun read it;
-otherwise the result is unclear. Judge findings first, report criteria and
-failed reruns, and iterate in this optimization until resolved.
+Launch restores each rerun before its first read of a changed surface, or
+starts fresh, and prints the checkpoint and seq. Rerun only the sessions your
+edits address; check that launch lists every edit as changed. Findings come
+back resolved, returned (also the same barrier in other words), or introduced.
+Before you credit an edit, check with \`gauge run web <rerun>\` that the rerun
+read it. Judge findings first, report criteria and failed reruns, and iterate.
 
-    gauge optimizations finish <id> --from result.json --yes
+    gauge optimizations finish <id> --from result.json
 
 result.json is {summary, changed, resolved, returned, introduced}: a PR-style
 summary, the changed tree keys, and {runId, label} findings.

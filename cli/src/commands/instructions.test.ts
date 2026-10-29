@@ -185,7 +185,7 @@ describe("gauge instructions", () => {
     assert.match(all, /gauge auth login/);
     assert.match(all, /gauge orgs use <org>/);
     assert.match(all, /-o json/);
-    assert.match(all, /Confirm before launches\./);
+    assert.match(all, /get approval first\./);
     assert.doesNotMatch(all, /Migration prompt and criteria|## The loop/);
     for (const topic of TOPIC_NAMES) {
       const body = documentBody(TOPICS[topic].hosted).trim();

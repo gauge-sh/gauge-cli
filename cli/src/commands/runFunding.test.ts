@@ -42,7 +42,6 @@ for (const [flag, path] of [
         "run",
         flag,
         "target",
-        "--yes",
       ],
       { from: "user" },
     );

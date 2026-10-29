@@ -11,7 +11,6 @@ import { readFileSync } from "node:fs";
 import type { evals } from "@withgauge/api-schemas";
 import type { Command } from "commander";
 import { CliError, createClient } from "./client";
-import { confirmOrAbort } from "./confirm";
 import { creatorLabel } from "./createdBy";
 import { resolveOrg, resolveOutput } from "./context";
 import { parseAgents, readPromptText } from "./flags";
@@ -242,19 +241,12 @@ export async function runEvalSet(
   cmd: Command,
   id: string,
   opts: {
-    yes?: boolean;
     agent: string[];
     samples?: string;
   },
 ): Promise<void> {
   const org = await resolveOrg(cmd);
   const overrides = runOverridesFromOpts(opts);
-  await confirmOrAbort(
-    Object.keys(overrides).length > 0
-      ? "Run this eval now with these overrides? The stored configuration stays unchanged."
-      : "Run this eval's stored configuration now?",
-    opts.yes,
-  );
   const result = await createClient().post<evals.RunEvalSetResponse>(
     `${evalSetPath(org, id)}/run`,
     overrides,

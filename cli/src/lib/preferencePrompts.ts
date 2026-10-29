@@ -10,7 +10,6 @@ import {
 import type { ownedConfigurations, visibility } from "@withgauge/api-schemas";
 import type { Command } from "commander";
 import { CliError, createClient } from "./client";
-import { confirmOrAbort } from "./confirm";
 import { creatorLabel } from "./createdBy";
 import { resolveOrg, resolveOutput } from "./context";
 import { readPromptText } from "./flags";
@@ -340,23 +339,12 @@ export async function runPreferencePrompt(
   id: string,
   opts: {
     scenario: string[];
-    yes?: boolean;
     agent: string[];
     samples?: string;
   },
 ): Promise<void> {
   const org = await resolveOrg(cmd);
   const overrides = runOverridesFromOpts(opts);
-  const settings =
-    Object.keys(overrides).length > 0
-      ? "these overrides (stored settings stay unchanged)"
-      : "the stored settings";
-  await confirmOrAbort(
-    opts.scenario.length > 0
-      ? `Run ${opts.scenario.length} selected scenario${opts.scenario.length === 1 ? "" : "s"} with ${settings} now?`
-      : `Run every scenario of this prompt with ${settings} now?`,
-    opts.yes,
-  );
   const result =
     await createClient().post<visibility.RunVisibilityPromptResponse>(
       `${promptPath(org, id)}/run`,

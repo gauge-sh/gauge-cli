@@ -188,10 +188,29 @@ export const patchOptimizationBodySchema = z
   })
   .strict();
 
+export const optimizationRestoreSchema = z.record(
+  z.string().min(1),
+  z.string().min(1),
+);
+
+export const optimizationRestorePointSchema = z.union([
+  z.object({ checkpointId: z.string().min(1) }).strict(),
+  z.object({ rerunId: z.string().min(1), seq: z.number().int() }).strict(),
+]);
+export type OptimizationRestorePoint = z.infer<
+  typeof optimizationRestorePointSchema
+>;
+
 export const launchOptimizationBodySchema = z
   .object({
     runIds: z.array(z.string().min(1)).min(1).max(50).optional(),
     note: z.string().trim().max(500).optional(),
+    restore: optimizationRestoreSchema.optional(),
+    restoreAt: z
+      .array(optimizationRestorePointSchema)
+      .min(1)
+      .max(50)
+      .optional(),
   })
   .strict();
 
@@ -280,7 +299,7 @@ export type OptimizationPageChange = {
 };
 
 export const runTraceQuerySchema = z.object({
-  seq: z.coerce.number().int().nonnegative(),
+  seq: z.coerce.number().int(),
   before: z.coerce.number().int().nonnegative().max(200).default(30),
   after: z.coerce.number().int().nonnegative().max(200).default(10),
 });
@@ -306,6 +325,10 @@ export const optimizationRunSchema = z.object({
   sourceRunId: z.string().nullable(),
   analyzed: z.boolean(),
   startedAt: z.string().nullable(),
+  restoredFrom: z
+    .object({ checkpointId: z.string(), seq: z.number().int().nonnegative() })
+    .nullable()
+    .optional(),
 });
 
 export const optimizationLaunchSchema = z.object({
@@ -393,3 +416,31 @@ export type OptimizationBrief = {
   }[];
   findings: number;
 };
+
+export const optimizationCheckpointsQuerySchema = z.object({
+  sourceRunId: z.string().min(1).optional(),
+});
+
+export const optimizationCheckpointSchema = z.object({
+  checkpointId: z.string(),
+  sourceRunId: z.string(),
+  rerunId: z.string(),
+  launchId: z.string(),
+  launchNote: z.string().nullable(),
+  seq: z.number().int().nonnegative(),
+  rerunEventCount: z.number().int().nonnegative(),
+  capturedAt: z.string(),
+  agent: z.string(),
+  model: z.string(),
+  lastSteps: z.array(z.string()),
+  exposure: z.object({
+    firstSeq: z.number().int().nonnegative().nullable(),
+    surfaces: z.array(z.string()),
+    skillChanged: z.boolean(),
+  }),
+  /** The trace before this checkpoint has gaps, so `exposure` may miss a read. */
+  exposureIncomplete: z.boolean(),
+});
+export type OptimizationCheckpointView = z.infer<
+  typeof optimizationCheckpointSchema
+>;
