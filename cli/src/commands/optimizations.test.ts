@@ -270,7 +270,7 @@ describe("optimization command requests", () => {
     ],
     [["notes", "o1", "--from", PAGE_FILE], "PATCH", "/o1", { notes: "# Docs" }],
     [
-      ["launch", "o1", "--run", "r1", "r2", "--note", "auth first"],
+      ["launch", "o1", "--run", "r1", "r2", "--note", "auth first", "--yes"],
       "POST",
       "/o1/launch",
       { runIds: ["r1", "r2"], note: "auth first" },
@@ -286,6 +286,7 @@ describe("optimization command requests", () => {
         "cp1",
         "--fresh",
         "r3",
+        "--yes",
       ],
       "POST",
       "/o1/launch",
@@ -299,7 +300,7 @@ describe("optimization command requests", () => {
       },
     ],
     [
-      ["launch", "o1", "--run", "r1", "r2", "--fresh"],
+      ["launch", "o1", "--run", "r1", "r2", "--fresh", "--yes"],
       "POST",
       "/o1/launch",
       { runIds: ["r1", "r2"], restore: { r1: "none", r2: "none" } },
@@ -312,7 +313,7 @@ describe("optimization command requests", () => {
     ],
     [["launches", "o1", "l1"], "GET", "/o1/launches/l1", undefined],
     [
-      ["finish", "o1", "--from", RESULT_FILE],
+      ["finish", "o1", "--from", RESULT_FILE, "--yes"],
       "POST",
       "/o1/finish",
       RESULT,

@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import type { optimizations } from "@withgauge/api-schemas";
 import type { Command } from "commander";
 import { CliError, createClient } from "../lib/client";
+import { confirmOrAbort } from "../lib/confirm";
 import { hostedOnly, resolveOrg, resolveOutput } from "../lib/context";
 import { printItems, printJson } from "../lib/output";
 
@@ -704,6 +705,7 @@ export function register(program: Command): void {
       "--fresh [sourceRunId...]",
       "start from zero: these source runs, or every one",
     )
+    .option("--yes", "skip the confirmation")
     .action(
       async (
         id: string,
@@ -713,10 +715,15 @@ export function register(program: Command): void {
           restoreBefore?: string[];
           checkpoint?: string[];
           fresh?: true | string[];
+          yes?: boolean;
         },
         cmd: Command,
       ) => {
         const path = itemPath(await resolveOrg(cmd), id);
+        await confirmOrAbort(
+          `Rerun ${opts.run?.length ? plural(opts.run.length, "source session") : "every source session"} of ${id} with the tree?`,
+          opts.yes,
+        );
         const client = createClient();
         const restoreAt: RestorePoint[] = [
           ...(opts.checkpoint ?? []).map((checkpointId) => ({ checkpointId })),
@@ -843,14 +850,19 @@ export function register(program: Command): void {
       "--from <file>",
       "result JSON: {summary, changed, resolved, returned, introduced}",
     )
+    .option("--yes", "skip the confirmation")
     .action(
       async (
         id: string,
-        opts: { from: string },
+        opts: { from: string; yes?: boolean },
         cmd: Command,
       ) => {
         const path = itemPath(await resolveOrg(cmd), id);
         const result = readJson(opts.from);
+        await confirmOrAbort(
+          `Finish ${id}? Its tree can no longer change.`,
+          opts.yes,
+        );
         const detail = await createClient().post<Detail>(
           `${path}/finish`,
           result,

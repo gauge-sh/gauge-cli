@@ -36,7 +36,7 @@ test("hosted saved eval and preference launches forward Antigravity overrides", 
   for (const source of ["eval", "preference"]) {
     await program().parseAsync([
       "--org", "8c7f0e1a-1111-4222-8333-944455556666", "-o", "json", "run", `--${source}`, "saved-1",
-      "--agent", "antigravity:gemini-3.1-pro-preview",
+      "--agent", "antigravity:gemini-3.1-pro-preview", "--yes",
     ], { from: "user" });
   }
   assert.deepEqual(calls.map(({ path }) => path), [
@@ -89,9 +89,9 @@ test("Antigravity cases load, preview and launch hosted, and refuse local execut
   t.mock.method(console, "log", () => {});
   for (const args of [
     ["--files", "task.md", "--dry-run"],
-    ["--files", "task.md"],
+    ["--files", "task.md", "--yes"],
     ["--apply", "cases.json", "--dry-run"],
-    ["--apply", "cases.json"],
+    ["--apply", "cases.json", "--yes"],
   ]) {
     await program().parseAsync([
       "-o", "json", "run", ...args,

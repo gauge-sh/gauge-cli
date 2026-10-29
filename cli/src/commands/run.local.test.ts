@@ -165,6 +165,7 @@ test("CLI uploads a local candidate, launches without Git, and returns failed re
     "run",
     "--input",
     "skill=./built",
+    "--yes",
     "-o",
     "json",
   ]);

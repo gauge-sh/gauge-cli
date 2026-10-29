@@ -47,6 +47,7 @@ import {
   parseCaseSpec,
 } from "../lib/caseSpec";
 import { CliError, createClient } from "../lib/client";
+import { confirmOrAbort } from "../lib/confirm";
 import { triggeredByLabel } from "../lib/createdBy";
 import {
   hostedOnly,
@@ -456,6 +457,7 @@ type LaunchOpts = {
   schema?: boolean;
   example?: boolean;
   format?: "case" | "battery";
+  yes?: boolean;
 };
 
 async function loadWorkingTree(
@@ -477,6 +479,7 @@ async function loadWorkingTree(
   );
   try {
     const org = await resolveOrg(cmd, loaded.org);
+    if (upload) await confirmOrAbort("Run these cases now?", opts.yes);
     await uploadLocalInputs(createClient(), org, loaded.uploads);
     return {
       definition: loaded.definition,
@@ -1080,6 +1083,7 @@ export function register(program: Command): void {
         "schema/example format (default: case)",
       ).choices(["case", "battery"]),
     )
+    .option("--yes", "skip the confirmation")
     .action(async (arg: string | undefined, opts: LaunchOpts, cmd: Command) => {
       if (arg !== undefined)
         throw new CliError(
