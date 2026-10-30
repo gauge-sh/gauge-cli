@@ -6,9 +6,9 @@ import { openLocalStore } from "./localStore";
 export type ScaffoldResult = {
   root: string;
   backend: Mode;
-  gaugeJson: "created" | "kept";
+  gaugeJson: "created" | "kept" | "not-requested";
   casesDir: "created" | "kept" | "not-requested";
-  agentsMd: "created" | "added" | "updated" | "unchanged";
+  agentsMd: "created" | "added" | "updated" | "unchanged" | "not-requested";
 };
 const START = "<!-- gauge:start -->";
 const END = "<!-- gauge:end -->";
@@ -32,16 +32,23 @@ export function scaffoldWorkspace(
   const manifest = join(root, "gauge.json");
   const casesPath = join(root, "gauge-cases");
   const gaugeDir = join(root, ".gauge");
+  const shared = cases || existsSync(casesPath);
   const result: ScaffoldResult = {
     root,
     backend,
-    gaugeJson: existsSync(manifest) ? "kept" : "created",
+    gaugeJson: existsSync(manifest)
+      ? "kept"
+      : shared
+        ? "created"
+        : "not-requested",
     casesDir: cases
       ? existsSync(casesPath)
         ? "kept"
         : "created"
       : "not-requested",
-    agentsMd: writeAgentsBlock(join(root, "AGENTS.md")),
+    agentsMd: shared
+      ? writeAgentsBlock(join(root, "AGENTS.md"))
+      : "not-requested",
   };
   if (result.gaugeJson === "created")
     writeFileSync(

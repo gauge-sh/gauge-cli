@@ -19,9 +19,9 @@ Ask only for decisions that affect the test. For narrow requests, use just the r
    requirements. Honor requested models and state cases × targets × samples.
 3. **Prepare and run a small baseline.** Preserve supplied product/docs content during setup;
    propose fixes separately. Save groups with eval/preference or shared cases for automation. Build/pack,
-   verify cases, then preview selected files and runtime readiness. Preview is not execution.
-   Use existing authorization for the agreed scope and budget; otherwise ask before
-   launching sessions. A blocked prerequisite is a setup result, not a product failure.
+   verify cases, then preview selected files and runtime readiness (mention them only on failure).
+   Preview is not execution. A blocked prerequisite is a setup result, not a product failure.
+   Before the first launch, show the user each case's task, criteria, and targets, and the files you changed, then offer to start the runs. Say they run separately from this chat: in local Docker containers or on hosted Gauge.
 4. **Extract evidence and publish analysis.** Read transcripts and artifacts, not only
    grades. Distinguish product friction, agent mistakes, environment failures, and missing
    evidence. Locally your coding agent publishes structured analysis; hosted runs provide

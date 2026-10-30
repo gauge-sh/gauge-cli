@@ -37,7 +37,7 @@ export function assertTrustedOrigin(
     )
   )
     throw new Error(
-      "Stored shared credentials are not authorized for this API origin. Log in explicitly for this host.",
+      "Your saved login is for a different Gauge server. Check GAUGE_AUTH_URL and GAUGE_API_URL, then run `gauge auth login` for the server you want to use.",
     );
 }
 export class RefreshError extends Error {
@@ -50,7 +50,7 @@ export class RefreshError extends Error {
 }
 function uncertainRefresh(): RefreshError {
   return new RefreshError(
-    "Credential refresh outcome is uncertain. To avoid reusing a possibly consumed refresh token, run gauge auth login.",
+    "Gauge could not renew your login. Run `gauge auth login` to sign in again.",
     true,
   );
 }
@@ -61,7 +61,7 @@ export async function refreshCredentials(
   return withCredentialLock(async () => {
     const current = readCredentials();
     if (!current || typeof current === "string")
-      throw new Error("Credentials changed. Retry the command.");
+      throw new Error("Your saved login changed. Run the command again.");
     if (
       current.sessionId !== previous.sessionId ||
       current.authUrl !== previous.authUrl ||
@@ -98,13 +98,13 @@ export async function refreshCredentials(
     if (response.status === 429) {
       saveCredentials(current);
       throw new RefreshError(
-        "Credential refresh was rate limited. Retry later.",
+        "Gauge is receiving too many sign-in requests. Wait a moment, then try again.",
       );
     }
     if (!response.ok)
       throw response.status === 401
         ? new RefreshError(
-            "Credential refresh rejected. Run gauge auth login.",
+            "Your login is no longer valid. Run `gauge auth login` to sign in again.",
             true,
           )
         : uncertainRefresh();
@@ -119,7 +119,7 @@ export async function refreshCredentials(
         latest.refreshToken !== current.refreshToken
       )
         throw new Error(
-          "Credentials changed during refresh. Retry the command.",
+          "Your saved login changed while Gauge was renewing it. Run the command again.",
         );
       saveCredentials(next);
       return next;

@@ -1,7 +1,9 @@
+import { AUTHORING, MIGRATION_EXAMPLE } from "./authoring";
+
 export const EVAL = `---
 name: gauge-eval
-description: Save, edit, and schedule eval sets that gauge run launches. Read
-  before creating or changing a saved eval set.
+description: Write, save, edit, and schedule eval sets that gauge run launches. Read
+  before creating or changing a saved eval set; includes a migration example.
 ---
 
 # Eval sets
@@ -19,6 +21,10 @@ eval set.
     gauge eval get <id> -o json
     gauge run list --eval <id> -o json    # its runs; gauge run get <run-id> shows verdicts
 
+## Write the prompt and criteria
+
+${AUTHORING}
+
 ## Create and edit
 
     gauge eval create --name <name> --file prompt.md --criteria-file criteria.json --repo <url> --agent claude-code
@@ -34,8 +40,7 @@ eval set.
 - --agent belongs to the eval set. Hosted --skill, --mcp, and --connection
   references require hosted execution. Read
   \`gauge instructions run\` to choose models.
-- Hosted --setup-file/--teardown-file upload UTF-8 JS/TS files; import bindings from "@withgauge/session". For one launch only, pass the same flags to gauge run --hosted --eval <id>; saved configuration stays unchanged.
-  Edits keep the other hook/params; --clear-setup/--clear-teardown/--clear-lifecycle remove hooks (see --help).
+- Hosted --setup-file/--teardown-file upload UTF-8 JS/TS files; import bindings from "@withgauge/session". For one launch only, pass the same flags to gauge run --hosted --eval <id>; saved configuration stays unchanged. Edits keep the other hook/params; --clear-setup/--clear-teardown/--clear-lifecycle remove hooks (see --help).
 - Hosted --cadence daily|weekly|monthly and --samples schedule repeat runs that spend
   credits. Confirm the schedule with the user.
 - An edit to the prompt, criteria, repo, or persona starts a new eval revision
@@ -50,4 +55,6 @@ After an input change, rebuild/repack and rerun the same eval ID. Local launches
 snapshot current input files into a new batch. Keep prompts, criteria, and model
 pins fixed; analyze and compare baseline/candidate batches before claiming improvement.
 Creating or editing a measurement does not authorize additional paid launches.
+
+${MIGRATION_EXAMPLE}
 `;

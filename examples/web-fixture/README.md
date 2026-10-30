@@ -1,32 +1,45 @@
-# Transparent HTTPS origin mapping demo
+# Web fixture example: routing an origin
 
-The agent requests `https://example.com/`. The gateway fetches
-`https://example.org/` and returns that site's response over the intercepted
-HTTPS connection. The agent receives only the case prompt; routing is configured
-outside its container. Neither the host's traffic nor other sessions are changed.
+This example starts one agent session that fetches `https://example.com/`. The
+fixture in `fixtures/example-site.json` maps that origin to
+`https://example.org/`, so the gateway fetches `example.org` and returns its
+response over the intercepted HTTPS connection. The agent gets only the case
+prompt and runs nothing extra for routing. Your host's traffic and other
+sessions are not affected.
 
-From this directory, use the CLI built from this checkout:
+See [web fixture inputs](../../docs/local-web-fixtures.md) for the full format.
+
+## Requirements
+
+- Docker.
+- Local credentials for Codex. The case uses the CLI's default Codex model;
+  edit `gauge-cases/fetch-page.md` to choose another model or agent.
+- Network access to `example.org`, since this is a live origin mapping.
+
+The commands below use the CLI built from this checkout. Run `npm run build` at
+the repository root first. With an installed CLI, replace
+`node ../../cli/dist/index.js` with `gauge`.
+
+## Run it
+
+From this directory:
 
 ```sh
+node ../../cli/dist/index.js local runtime pull
 node ../../cli/dist/index.js run --verify --local
 node ../../cli/dist/index.js run --dry-run --local -o json
 node ../../cli/dist/index.js run --local
 ```
 
-The last command starts **one real Codex session** using your local credentials.
-The preview reports credential readiness, both Docker images, and the selected
-origin mapping. The case uses the CLI's default Codex model; edit
-`gauge-cases/fetch-page.md` to select a different supported model or harness.
+`local runtime pull` downloads the agent runtime and gateway images. The dry
+run reports credential readiness, both images, and the origin mapping. The
+last command starts **one real Codex session**.
 
-This development checkout must be built (`npm run build` at the repository root).
-It needs Docker, the supported agent runtime, and the gateway image. Until the
-gateway's first public release, build it from the repository root:
+Ctrl+C cancels a foreground run and removes its containers. To run in the
+background, use `run --detach --local`, which prints status, wait, and cancel
+commands.
 
-```sh
-docker build -t ghcr.io/gauge-sh/gauge-gateway:0.1.0 packages/local/gateway
-```
-
-## See the result
+## Check the result
 
 The run prints a run ID. From this directory:
 
@@ -36,17 +49,12 @@ cat .gauge/runs/<run-id>/attempts/1/session/gateway.log
 cat .gauge/runs/<run-id>/attempts/1/session/diff.patch
 ```
 
-The transcript shows the agent's fetch and answer. The diff contains its saved
-HTML and response headers. The gateway log should contain a record like:
+The transcript shows the agent's fetch and answer, and the diff contains the
+HTML and response headers it saved. The gateway log should contain a line like:
 
 ```json
-{"action":"rewrite","url":"https://example.com/","method":"GET","target":"https://example.org/"}
+{"at": "2026-10-26T02:33:37.615937+00:00", "action": "rewrite", "url": "https://example.com/", "method": "GET", "target": "https://example.org/"}
 ```
 
-The two example domains can serve similar content. The gateway's rewrite record
-is the direct evidence of which upstream was selected; the page title alone is
-not sufficient. This demo performs a live origin mapping, without modifying the
-response body. It therefore also requires network access to the upstream site.
-
-For background execution, use `run --detach --local`; it prints status, wait,
-and cancel commands. Ctrl+C cancels a foreground run and cleans up its containers.
+The two domains can serve similar pages, so the page title alone doesn't show
+which site answered. The `rewrite` record in the gateway log does.

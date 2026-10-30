@@ -1,7 +1,7 @@
 name: Gateway qualification
 on:
   pull_request:
-    paths: ["packages/local/**", "cli/api-schemas/web-fixtures.ts", ".github/workflows/gateway.yml"]
+    paths: ["packages/local/**", "cli/api-schemas/web-fixtures.ts", "cli/src/commands/run.lifecycle.test.ts", ".github/workflows/gateway.yml"]
   push:
     tags: ["gateway-v*"]
 permissions:

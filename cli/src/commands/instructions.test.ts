@@ -12,6 +12,7 @@ import type { GaugeState, Mode } from "../lib/gaugeState";
 import { formatCommandHelp } from "../lib/rootHelp";
 import { readGaugeState } from "../lib/gaugeState";
 import { register } from "./instructions";
+import { LOGO_ART } from "../lib/logo";
 
 function state(mode: Mode): GaugeState {
   return {
@@ -35,7 +36,7 @@ describe("gauge instructions", () => {
       const budget =
         topic === "root"
           ? OVERVIEW_LINE_BUDGET
-          : topic === "run"
+          : topic === "run" || topic === "eval"
             ? RUN_LINE_BUDGET
             : BODY_LINE_BUDGET;
       assert.ok(
@@ -72,6 +73,10 @@ describe("gauge instructions", () => {
     assert.match(instructions("run", state("local")), /# Run \(local\)/);
     assert.match(instructions("eval", state("local")), /# Eval sets/);
     assert.match(
+      instructions("eval", state("local")),
+      /Write the prompt as a real user's request[\s\S]*\*\*Complete migration:\*\*/,
+    );
+    assert.match(
       instructions("preference", state("local")),
       /# Preference prompts/,
     );
@@ -97,6 +102,18 @@ describe("gauge instructions", () => {
       instructions("root", unset, { setup: false }),
       /> Next:/,
     );
+  });
+
+  it("keeps the visual Docker launch preview in local guidance only", () => {
+    const local = instructions("init", state("local"));
+    assert.match(local, /including the dog, copied verbatim in a fenced text block/);
+    assert.match(local, /cases × targets × samples/);
+    assert.ok(local.includes(LOGO_ART));
+    for (const topic of ["root", "init"])
+      assert.doesNotMatch(
+        instructions(topic, state("hosted")),
+        /ASCII art|visual preview|█▀▀/,
+      );
   });
 
   it("emits installable frontmatter naming the skill", () => {
@@ -157,6 +174,7 @@ describe("gauge instructions", () => {
       "eval",
       "preference",
       "session-analysis",
+      "issues",
       "optimization",
     ]);
   });
@@ -184,7 +202,7 @@ describe("gauge instructions", () => {
     assert.match(all, /gauge auth login/);
     assert.match(all, /gauge orgs use <org>/);
     assert.match(all, /-o json/);
-    assert.match(all, /Confirm before launches spend credits/);
+    assert.match(all, /Confirm before launches\./);
     assert.doesNotMatch(all, /Migration prompt and criteria|## The loop/);
     for (const topic of TOPIC_NAMES) {
       const body = documentBody(TOPICS[topic].hosted).trim();
@@ -227,19 +245,28 @@ describe("gauge instructions", () => {
       );
   });
 
+  it("keeps the issue workflow in its named page", () => {
+    const issues = instructions("issues");
+    assert.match(issues, /Findings is an alternative term\s+for issues/);
+    assert.match(issues, /gauge issues list --type friction/);
+    assert.match(issues, /gauge issues get <id>/);
+    assert.match(issues, /optimizations create --issue/);
+    assert.match(instructions(), /`gauge instructions issues`/);
+    assert.match(instructions("optimization"), /`gauge instructions issues`/);
+  });
+
   it("keeps the complete optimization workflow in its named page", () => {
     const optimization = instructions("optimization");
     assert.match(optimization, /## The loop/);
-    assert.match(optimization, /gauge optimizations diagnose/);
-    assert.match(optimization, /--idempotency-key/);
-    assert.match(optimization, /baselines --eval/);
-    assert.match(optimization, /--from-run/);
-    assert.match(optimization, /selects checkpoints automatically/);
-    assert.match(optimization, /Checkpoints are saved states of baseline runs/);
-    assert.match(optimization, /candidateDelivery/);
+    assert.match(optimization, /gauge issues list/);
+    assert.match(optimization, /optimizations authoring/);
+    assert.match(optimization, /file add/);
+    assert.match(optimization, /file write/);
+    assert.match(optimization, /gauge run trace/);
+    assert.match(optimization, /optimizations finish/);
     assert.ok(
-      optimization.indexOf("baselines --eval") <
-        optimization.indexOf("optimizations start"),
+      optimization.indexOf("optimizations create") <
+        optimization.indexOf("optimizations launch"),
     );
     assert.equal(instructions("optimizations"), optimization);
   });

@@ -16,8 +16,11 @@ function hillclimbSteps(hosted: boolean): Step[] {
       details: [
         "Save ongoing measurements with eval/preference; use gauge-cases/ for shared or automated cases. Build/pack inputs, verify cases, and preview.",
         hosted
-          ? "State the session count and credit budget; launch with --hosted within the user's authorization. Otherwise ask before spending credits."
-          : "Check Docker, the runtime image, and agent credentials. Launch the agreed cases within the user's authorization; do not repeat approval already given.",
+          ? "Show the user each case's task and criteria, the targets, the session count, and the credit budget, then offer to start the runs with --hosted; say they run on Gauge, separate from this chat."
+          : "Check Docker, the runtime image, and agent credentials. Show the user each case's task and criteria, the targets, and the session count, then offer to start the runs; say they run in Docker containers on this machine, separate from this chat. Mention verify and preview only when they fail.",
+        ...(hosted
+          ? []
+          : ["Read gauge instructions init for how to present the plan."]),
       ],
     },
     {

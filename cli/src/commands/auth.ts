@@ -119,7 +119,11 @@ function printIdentity(me: IdentityResponse): void {
   console.log(`API URL: ${resolveBaseUrl()}`);
 }
 
-export function useOnlyOrg(me: IdentityResponse, shared = false): void {
+export function useOnlyOrg(
+  me: IdentityResponse,
+  shared = false,
+  log: (message: string) => void = console.log,
+): void {
   const org = me.orgs.length === 1 ? me.orgs[0] : undefined;
   const only = !org
     ? undefined
@@ -128,9 +132,9 @@ export function useOnlyOrg(me: IdentityResponse, shared = false): void {
       : "canonicalGaugeOrganizationId" in org
         ? org.canonicalGaugeOrganizationId
         : undefined;
-  if (!only || readConfig().orgId || readConfig().defaultOrg) return;
-  updateConfig({ orgId: only });
-  console.log(`Default org set to ${org?.name ?? only}.`);
+  if (!only || readConfig().orgId) return;
+  updateConfig({ orgId: only, defaultOrg: undefined });
+  log(`Default organization set to ${org?.name ?? only}.`);
 }
 
 function openBrowser(url: string): void {
@@ -183,7 +187,7 @@ export async function browserLogin(): Promise<void> {
         res.writeHead(400, {
           "content-type": "text/plain; charset=utf-8",
         });
-        res.end("Invalid callback. Retry gauge auth login.");
+        res.end("Could not complete sign-in. Run gauge auth login again.");
         return;
       }
       res.writeHead(200, {
@@ -193,7 +197,9 @@ export async function browserLogin(): Promise<void> {
       resolve(code);
     });
     server.on("error", (e) =>
-      reject(new CliError("network", `Loopback listener failed: ${e.message}`)),
+      reject(new CliError("network", `Could not receive browser sign-in on this computer: ${e.message}`, {
+        hint: "Try `gauge auth login --device` to sign in using a browser on another device.",
+      })),
     );
   });
 
@@ -203,7 +209,9 @@ export async function browserLogin(): Promise<void> {
   const address = server.address();
   if (!address || typeof address === "string") {
     server.close();
-    throw new CliError("internal", "Could not determine the listener port");
+    throw new CliError("internal", "Could not start browser sign-in on this computer.", {
+      hint: "Try `gauge auth login --device` instead.",
+    });
   }
 
   const base = resolveAuthUrl();
@@ -250,7 +258,7 @@ export async function browserLogin(): Promise<void> {
     if (!parsed.success) {
       throw new CliError(
         "internal",
-        "Unexpected response from the CLI token endpoint.",
+        "Gauge returned a sign-in response the CLI could not read. Try `gauge auth login` again.",
       );
     }
     const exchange = parsed.data;
@@ -356,7 +364,7 @@ export async function deviceLogin(opts: { email?: string }): Promise<{
     if (!parsed.success) {
       throw new CliError(
         "internal",
-        "Unexpected response from the device token endpoint.",
+        "Gauge returned a sign-in response the CLI could not read. Try `gauge auth login --device` again.",
       );
     }
     const result = parsed.data;
@@ -385,15 +393,15 @@ export async function deviceLogin(opts: { email?: string }): Promise<{
         } catch (e) {
           throw new CliError(
             "network",
-            `Authorization succeeded, but the issued token could not be verified ` +
-              `(${e instanceof Error ? e.message : String(e)}). Re-run to try again; existing credentials were not changed.`,
+            `You approved sign-in, but the CLI could not confirm access to your account ` +
+              `(${e instanceof Error ? e.message : String(e)}). Run \`gauge auth login --device\` again. Your saved login has not changed.`,
           );
         }
       }
       default:
         throw new CliError(
           "internal",
-          `Unexpected device authorization status: ${(result as { status: string }).status}`,
+          "Gauge could not complete sign-in. Try `gauge auth login --device` again.",
         );
     }
   }
@@ -521,7 +529,7 @@ export async function logout(): Promise<void> {
       }
     } catch (error) {
       console.error(
-        `Warning: local credentials removed, but server revocation failed (${error instanceof Error ? error.message : String(error)}). The server grant may remain active.`,
+        `Warning: your saved login was removed from this computer, but Gauge could not end it on the server (${error instanceof Error ? error.message : String(error)}). That login may still allow access. Contact Gauge support if you need to confirm it has been ended.`,
       );
     } finally {
       clearToken();
@@ -536,7 +544,7 @@ export function register(program: Command): void {
 
   auth
     .command("login")
-    .description("Log in via your browser (localhost callback flow)")
+    .description("Sign in to Gauge using your browser")
     .option("--with-token", "read a token from stdin (headless machines)")
     .option(
       "--device",
@@ -581,20 +589,20 @@ export function register(program: Command): void {
 
   auth
     .command("logout")
-    .description("Remove the stored token")
+    .description("Sign out of this CLI installation")
     .action(async () => {
       await logout();
       console.log(`Removed ${credentialsPath()}`);
       if (process.env.GAUGE_API_TOKEN?.trim()) {
         console.error(
-          "warning: GAUGE_API_TOKEN is set in your environment and still wins; unset it to fully log out.",
+          "warning: GAUGE_API_TOKEN is still set. Commands will continue using it; unset it to fully sign out.",
         );
       }
     });
 
   auth
     .command("status")
-    .description("Check the active credential, its source, scopes, and expiry")
+    .description("Check your login or API key, permissions, and expiration")
     .action(async (_opts: unknown, command: Command) => {
       const output = resolveOutput(command);
       const source = tokenSource();
@@ -611,7 +619,14 @@ export function register(program: Command): void {
         if (e instanceof CliError && e.code === "unauthorized") {
           throw new CliError(
             "unauthorized",
-            `Token (source: ${source}) was rejected — it may be revoked or expired. Run \`gauge auth login\`.`,
+            source === "env"
+              ? "The API key or token in GAUGE_API_TOKEN was rejected. It may have expired or been revoked."
+              : "Your saved login or API key was rejected. It may have expired or been revoked.",
+            {
+              hint: source === "env"
+                ? "Replace GAUGE_API_TOKEN with a valid key, or unset it and run `gauge auth login`."
+                : "Run `gauge auth login` to sign in again, or import a replacement API key with `gauge auth login --with-token`.",
+            },
           );
         }
         throw e;
@@ -626,25 +641,26 @@ export function register(program: Command): void {
         });
         return;
       }
-      console.log(`Credential: ${me.token.kind} (valid)`);
+      const label = me.token.kind === "session" ? "Login" : me.token.kind === "api_key" ? "API key" : "Agents token";
+      console.log(`${label}: valid`);
       console.log(
-        `Scopes: ${me.token.scopes ? describeScopes(me.token.scopes) : "not reported by the legacy API"}`,
+        `Permissions: ${me.token.scopes ? describeScopes(me.token.scopes) : "not available for this token"}`,
       );
       console.log(
-        `Expires: ${me.token.expiresAt ?? (me.token.kind === "legacy" ? "not reported by the legacy API" : "never")}`,
+        `Expires: ${me.token.expiresAt ?? (me.token.kind === "legacy" ? "not available for this token" : "never")}`,
       );
       console.log(
         `Auth URL: ${storedSharedCredentials()?.authUrl ?? resolveAuthUrl()}`,
       );
       console.log(`Agents API URL: ${resolveBaseUrl()}`);
       console.log(
-        `Token source: ${source === "env" ? "GAUGE_API_TOKEN environment variable" : credentialsPath()}`,
+        `Using: ${source === "env" ? "GAUGE_API_TOKEN environment variable" : credentialsPath()}`,
       );
     });
 
   const tokens = auth
     .command("tokens")
-    .description("Manage legacy Agents API tokens");
+    .description("Manage tokens created by older versions of Gauge Agents");
 
   tokens
     .command("list")
@@ -669,7 +685,8 @@ export function register(program: Command): void {
         if (resolveToken()?.startsWith("gauge_cli_"))
           throw new CliError(
             "forbidden",
-            "Shared CLI sessions cannot create legacy Agents tokens. Use an existing Agents credential to manage automation tokens.",
+            "You can't create this older type of Agents token with your current login.",
+            { hint: "For scripts and CI, create an organization API key in Settings → API Keys and set GAUGE_API_TOKEN." },
           );
         const expiresAt = parseExpiresIn(opts.expiresIn);
         const created = await createClient().post<CreateTokenResponse>(

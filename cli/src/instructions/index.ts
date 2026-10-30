@@ -1,7 +1,8 @@
 import { CliError } from "../lib/client";
 import { type GaugeState, header, instructionMode } from "../lib/gaugeState";
 import { EVAL } from "./eval";
-import { INIT } from "./init";
+import { INIT, INIT_LOCAL } from "./init";
+import { ISSUES } from "./issues";
 import { PREFERENCE } from "./preference";
 import { RUN, RUN_LOCAL } from "./run";
 import { SESSION_ANALYSIS, SESSION_ANALYSIS_LOCAL } from "./sessionAnalysis";
@@ -28,7 +29,7 @@ const MODES = `## Local or hosted
 | Project inputs and previews on saved measurement launches | yes | use case files/specs |
 | Structured findings and queries | yes, supported fields | yes |
 | Personas, recurring schedules, PR checks | no | yes |
-| Optimizations (managed docs rewriting) | no | yes |
+| Optimizations (edit and rerun sessions) | no | yes |
 | Stored credentials, stats, org settings | no | yes |
 
 Local uses Docker and agent credentials. Hosted needs a Gauge account (\`gauge onboard\`) and uses credits.
@@ -46,8 +47,8 @@ description: Understand Gauge, use its CLI, and choose the module guidance
 Gauge helps you understand and improve how coding agents discover and use your
 product. It runs real agents in sandboxes under reproducible conditions, then
 judges their work. Evals measure successful product use; Agent Preference
-measures which tools agents choose and why. Optimizations test improvements to
-your docs, CLI, and skills against those measurements.
+measures which tools agents choose and why. Optimizations edit the docs, CLI
+rules, and skills agents used, then rerun those sessions to test the change.
 
 ## Use Gauge and the CLI
 
@@ -65,10 +66,11 @@ identify inputs, pilot representative tasks, analyze evidence, fix, rerun, compa
 - \`gauge run\` starts and reads runs. \`gauge eval\` and \`gauge preference\`
   save what it runs again: \`gauge instructions eval|preference\`.
 - Pass \`-o json\` on reads and parse it. Tables are for people.
-- Confirm before launches spend credits. Use \`--yes\` for work already approved.
+- Confirm before launches. Use \`--yes\` for work already approved.
 - Retry writes with their supported idempotency flag; blind retries can launch
   duplicate paid sessions.
-- Report measured results with sample counts and evidence, including limits.
+- The user does not see gauge output. Show them the files you wrote, each case's
+  task, criteria, and targets before launch, and results with counts and limits.
 - Run \`gauge update\` to install the latest published CLI.
 - Exit codes: 0 ok, 1 error, 2 usage, 3 billing-blocked, 4 needs your input.
 - When the CLI gets in your way (friction, a missing command or flag, a bug),
@@ -113,15 +115,14 @@ Full guidance: \`gauge instructions session-analysis\`.
 
 ### Optimization
 
-Gauge measures trials; you author changes. First run \`gauge optimizations baselines\`
-for an eval or preference prompt to discover observed surfaces and eligible runs.
-Inspect source evidence, then start with \`--from-run\` to reuse the chosen baseline.
-Read authoring context, write a hypothesis, preview the complete change, save,
-and launch. Gauge resumes saved baseline states (checkpoints) when compatible, or starts fresh.
-Follow \`nextAction\`; watch exits 4 when input is needed. Verify actual change
-exposure, task scores, sample counts, and failed sessions separately. Keep the
-measurement fixed, confirm paid launches, and retry writes safely. Adopt the
-winner; use \`handoff\` for implementation in your source repository.
+Optimizations can help hill climb your agent surfaces to improve Agent Preference
+and Agent Experience. Start from an issue (\`gauge instructions issues\`), one
+finding, or a goal. Create an optimization, then read \`authoring\` for the source sessions' findings and
+the editing practices. Copy each page, skill, or CLI rule set you change into
+the tree with \`file add\`, edit it locally, and save it with \`file write\`. Keep your
+diagnosis and plan in \`notes\`. Ask before \`launch\`: it reruns the source sessions
+with the tree. \`watch\` waits for the reruns and shows which
+findings resolved, returned, or appeared. Record the outcome with \`finish\`.
 
 Full guidance: \`gauge instructions optimization\`.
 `;
@@ -157,6 +158,12 @@ ${stepsMarkdown()}
 - \`gauge instructions <topic>\` is workflow guidance, not a page per command.
 - Pass \`-o json\` on reads and parse it. Tables are for people.
 - Exit codes: 0 ok, 1 error, 2 usage.
+- The user does not see gauge output. Stop and show them:
+  - before a launch, each case's task, criteria, targets, and session count,
+    and the files you changed, then offer to start the runs, which run in
+    Docker containers separate from this chat (mention verify and preview only
+    on failure);
+  - after runs, per-case results, top friction, and \`gauge run trace|diff <id>\`.
 - Report CLI friction, gaps, or bugs, with no account:
   \`gauge feedback -m "<what happened>" --kind friction|missing|bug\`.
 
@@ -167,55 +174,65 @@ To switch this repo to hosted, run \`gauge onboard\`, then \`gauge init --hosted
 
 const OPTIMIZATIONS = `---
 name: gauge-optimizations
-description: Discover observed surfaces, choose a baseline, and test docs, CLI,
-  or skill changes against a Gauge eval or preference prompt.
+description: Hill climb agent surfaces. Edit the pages, skills, and CLI rules agent
+  sessions used, rerun those sessions, and compare their findings.
 ---
 
 # Optimizations
 
-Gauge measures; you author. Use -o json on reads. Discover before starting.
+An optimization is a tree of files plus the sessions it came from. You edit the
+tree; Gauge reruns the source sessions with it injected. Nothing deploys. Use -o json.
+Choose what to improve: \`gauge instructions issues\`.
 
 ## The loop
 
-    gauge optimizations baselines --eval <id> -o json
-    gauge run insight <run-id> -o json
-    gauge run get <run-id> --logs -o json
-    gauge optimizations start --eval <id> --from-run <run-id> --yes
+    gauge issues list                               # by impact; --type friction|objection
+    gauge issues get <id>                           # the issue's findings and runs
+    gauge optimizations create --issue <id>         # or --finding <id> --run <run>, or --goal <text>
+    gauge optimizations authoring <id>              # findings, tree, editing practices
+    gauge run trace <run> --seq <n>                 # events around a finding's evidence seq
+    gauge run web <run>                             # every URL the agent fetched
+    gauge run commands <run> --query <text>         # shell output the agent saw
 
-Discovery returns observed owned surfaces, evidence, judging, eligibility, and nextCursor.
-Choose a run that encountered the surface you want to improve. Missing evidence is unknown.
---from-run reuses its eligible baseline (possibly several runs) and inherits its model.
-Use --preference for preference prompts, or --target <agent:model> to establish a baseline.
-A new baseline may spend credits. Only use --yes for approved spending.
+Before you edit, name the finding, the seq where the agent stalled, and what it
+will read differently there. Read a page before you change it, keep its purpose,
+and source every new fact. A surface the org does not own is a what-if the user
+cannot ship. Tree keys are page:<url>, skill:<name>, and cli:<package>.
 
-    gauge optimizations watch <id>              # exit 4 = your turn, not failure
-    gauge optimizations authoring <id>          # targets, guidance, revision
-    gauge optimizations page <id> --url <url> -o json
+    gauge optimizations file add <id> --page <url>  # copy the original in; or --skill, --cli
+    gauge optimizations file read <id> page:<url> --text     # or --query <text>: exact source
+    gauge optimizations file edit <id> --page <url> --edits edits.json   # [{find, replace}]
+    gauge optimizations file write <id> --skill <name> --path SKILL.md --from SKILL.md
+    gauge optimizations file write <id> --cli <package> --from rules.json
+    gauge optimizations notes <id> --from notes.md  # diagnosis, plan, each launch's result
 
-Follow nextAction: WAIT → watch; AUTHOR_TRIAL → author; LAUNCH_ROUND → launch.
-Check page.source: scrape is current content, not the captured baseline response.
-Write one hypothesis and the complete change in round.json, using the authoring revision.
-Docs use exact find/replace edits or body with rewriteReason; skills use the complete bundle.
-CLI: cli-change --file takes v3 {schemaVersion:3,target,rules,shippingIntent}; put its output in intervention.after.
+Copy find text from --query; check how much of the page each edit kept. Use
+file write --page only for a new page or a full rewrite. Skills need SKILL.md;
+CLI rules are {schemaVersion: 3, target, rules, shippingIntent}. Files not in
+the tree rerun as the source session had them.
 
-    gauge optimizations round preview <id> --file round.json -o json
-    gauge optimizations round save <id> --file round.json --digest <previewDigest>
-    gauge optimizations launch <id> --yes
-    gauge optimizations watch <id>
-    gauge optimizations trial <id> <trial> -o json
+## Rerun and compare
 
-Checkpoints are saved states of baseline runs: resuming one avoids repeating earlier work.
-Gauge selects checkpoints automatically before the affected interaction, or starts fresh with a reason.
-Omit startingPoints and fork flags; you do not select a checkpoint. Check candidateExecution,
-candidateDelivery (exposure, observedArtifacts, evidenceComplete), scores, counts, and failed sessions.
-Better scores alone are not proof. Keep eval/prompt/criteria fixed; repeat if inconclusive.
-Adopt <id> <trial> selects the winner; handoff <id> gives source instructions; complete <id> finishes.
-Neither deploys. Single-trial retries: trials add --idempotency-key. Optional: gauge optimizations diagnose.
+    gauge optimizations launch <id> --run <run> --yes   # ask first; restores auto
+    gauge optimizations launch <id> --restore-before <rerun>:<seq> --yes  # or --fresh
+    gauge optimizations watch <id>                  # waits for reruns and analysis
+
+Launch restores each rerun before its first read of a changed surface, or
+starts fresh, and prints the checkpoint and seq. Rerun only the sessions your
+edits address; check that launch lists every edit as changed. Findings come
+back resolved, returned (also the same barrier in other words), or introduced.
+Before you credit an edit, check with \`gauge run web <rerun>\` that the rerun
+read it. Judge findings first, report criteria and failed reruns, and iterate.
+
+    gauge optimizations finish <id> --from result.json --yes
+
+result.json is {summary, changed, resolved, returned, introduced}: a PR-style
+summary, the changed tree keys, and {runId, label} findings.
 `;
 
 export const TOPICS: Record<string, Topic> = {
   root: { name: "gauge", hosted: ROOT, local: ROOT_LOCAL },
-  init: { name: "gauge-init", hosted: INIT, shared: true, command: "init" },
+  init: { name: "gauge-init", hosted: INIT, local: INIT_LOCAL, command: "init" },
   hillclimb: { name: "gauge-hillclimb", hosted: HILLCLIMB, shared: true },
   run: { name: "gauge-run", hosted: RUN, local: RUN_LOCAL, command: "run" },
   eval: { name: "gauge-eval", hosted: EVAL, shared: true, command: "eval" },
@@ -230,6 +247,7 @@ export const TOPICS: Record<string, Topic> = {
     hosted: SESSION_ANALYSIS,
     local: SESSION_ANALYSIS_LOCAL,
   },
+  issues: { name: "gauge-issues", hosted: ISSUES, command: "issues" },
   optimization: {
     name: "gauge-optimizations",
     hosted: OPTIMIZATIONS,

@@ -34,10 +34,8 @@ test("init needs no Git, creates private SQLite state and optional shared cases"
   const root = mkdtempSync(join(tmpdir(), "gauge-init-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const result = scaffoldWorkspace(root, "local");
-  assert.deepEqual(JSON.parse(read(root, "gauge.json")), {
-    version: 2,
-    inputs: {},
-  });
+  assert.equal(existsSync(join(root, "gauge.json")), false);
+  assert.equal(existsSync(join(root, "AGENTS.md")), false);
   assert.deepEqual(JSON.parse(read(root, ".gauge/config.json")), {
     version: 1,
     backend: "local",
@@ -46,8 +44,12 @@ test("init needs no Git, creates private SQLite state and optional shared cases"
   assert.equal(existsSync(join(root, "gauge-cases")), false);
   assert.equal(result.casesDir, "not-requested");
   assert.equal(read(root, ".gauge/.gitignore"), "*\n");
-  assert.equal(read(root, "AGENTS.md"), `${AGENTS_BLOCK}\n`);
   assert.equal(scaffoldWorkspace(root, "local", true).casesDir, "created");
+  assert.deepEqual(JSON.parse(read(root, "gauge.json")), {
+    version: 2,
+    inputs: {},
+  });
+  assert.equal(read(root, "AGENTS.md"), `${AGENTS_BLOCK}\n`);
 });
 
 test("backend switches preserve the shared manifest and are repeatable", (t) => {
@@ -76,7 +78,7 @@ test("CLAUDE.md is never touched, even when it is only @AGENTS.md", (t) => {
 test("the block is appended to an existing AGENTS.md, then replaced in place", (t) => {
   const root = repo(t);
   writeFileSync(join(root, "AGENTS.md"), "# Rules\nBe nice.");
-  assert.equal(scaffoldWorkspace(root, "local").agentsMd, "added");
+  assert.equal(scaffoldWorkspace(root, "local", true).agentsMd, "added");
   assert.equal(
     read(root, "AGENTS.md"),
     `# Rules\nBe nice.\n\n${AGENTS_BLOCK}\n`,
@@ -86,7 +88,7 @@ test("the block is appended to an existing AGENTS.md, then replaced in place", (
     join(root, "AGENTS.md"),
     "# Rules\n<!-- gauge:start -->\nold\n<!-- gauge:end -->\nAfter.\n",
   );
-  const result = scaffoldWorkspace(root, "local");
+  const result = scaffoldWorkspace(root, "local", true);
   assert.equal(result.agentsMd, "updated");
   assert.equal(read(root, "AGENTS.md"), `# Rules\n${AGENTS_BLOCK}\nAfter.\n`);
 });
@@ -94,6 +96,6 @@ test("the block is appended to an existing AGENTS.md, then replaced in place", (
 test("an unmatched start marker gets a new block appended", (t) => {
   const root = repo(t);
   writeFileSync(join(root, "AGENTS.md"), "<!-- gauge:start -->\nstray\n");
-  assert.equal(scaffoldWorkspace(root, "local").agentsMd, "added");
+  assert.equal(scaffoldWorkspace(root, "local", true).agentsMd, "added");
   assert.ok(read(root, "AGENTS.md").endsWith(`stray\n\n${AGENTS_BLOCK}\n`));
 });

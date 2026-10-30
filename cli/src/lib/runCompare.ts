@@ -167,7 +167,7 @@ export function printComparison(result: RunCompareResponse): void {
   for (const name of ["baseline", "candidate"] as const) {
     for (const trial of result.sides[name].trials ?? [])
       console.log(
-        `${name}: ${trial.runs} run${trial.runs === 1 ? "" : "s"} from optimization trial ${trial.key} "${trial.title}" (${trial.kind}). Inspect: gauge optimizations trial ${trial.optimizationId} ${trial.trialId}`,
+        `${name}: ${trial.runs} run${trial.runs === 1 ? "" : "s"} from optimization trial ${trial.key} "${trial.title}" (${trial.kind}).`,
       );
   }
   console.log("Medians are baseline → candidate (difference).");

@@ -141,6 +141,28 @@ const topics = [
 ];
 
 describe("gauge chat", { concurrency: false }, () => {
+  it("resolves an explicit non-member slug through the authorized org endpoint", async () => {
+    process.env.GAUGE_API_TOKEN = "gauge_cli_staff";
+    handler = (req) => {
+      if (req.path === api("/orgs")) return { body: { data: [] } };
+      if (req.path === api("/orgs/outside-org"))
+        return { body: { id: OTHER, slug: "outside-org", name: "Outside Org" } };
+      if (req.path === api(`/orgs/${OTHER}/tags`)) return { body: { data: [] } };
+      return apiError(404, "not_found", "Unexpected request");
+    };
+    const result = await run(
+      "chat", "tags", "list", "--org", "outside-org", "-o", "json",
+    );
+    assert.equal(result.error, undefined);
+    assert.deepEqual(result.json, { data: [], nextCursor: null });
+    assert.deepEqual(seen.map((req) => req.path), [
+      api("/orgs"),
+      api("/orgs/outside-org"),
+      api(`/orgs/${OTHER}/tags`),
+    ]);
+    assert.ok(seen.every((req) => req.auth === "Bearer gauge_cli_staff"));
+  });
+
   beforeEach(async () => {
     saved = { ...process.env };
     directory = mkdtempSync(join(tmpdir(), "gauge-chat-"));
@@ -328,6 +350,15 @@ describe("gauge chat", { concurrency: false }, () => {
     assert.ok(!renderError(report, false).includes("Docs:"));
     assert.ok(!("docs" in JSON.parse(renderError(report, true)).error));
     assert.match(errorReport(caught, "run list").docs ?? "", /docs\.withgauge/);
+  });
+
+  it("explains how to replace an environment API key that overrides saved login", async () => {
+    process.env.GAUGE_API_TOKEN = "gauge_sk_expired";
+    handler = () => apiError(401, "unauthorized", "This API key has expired.");
+    const { error } = await run("chat", "tags", "list", "--org", ORG);
+    const report = errorReport(error, "chat tags list");
+    assert.equal(report.code, "unauthorized");
+    assert.match(report.hint ?? "", /Replace GAUGE_API_TOKEN.*unset it.*gauge auth login/);
   });
 
   it("rejects the Agents-only --local and --hosted flags", async () => {
@@ -633,7 +664,7 @@ describe("gauge chat", { concurrency: false }, () => {
         ),
         "insufficient_scope",
         1,
-        /'write' scope/,
+        /write access/,
         { requiredScope: "write" },
       ],
       [
@@ -688,8 +719,7 @@ describe("gauge chat", { concurrency: false }, () => {
       assert.equal(report.code, code);
       assert.equal(report.exitCode, exitCode, code);
       assert.ok(!report.message.includes("\n"), "single-line message");
-      if (code !== "internal")
-        assert.match(report.message, new RegExp(`^${code}: `));
+      assert.ok(!report.message.startsWith(`${code}: `), "API codes belong in the structured code field");
       assert.match(`${report.hint ?? ""}${report.message}`, hint);
       for (const [key, value] of Object.entries(details ?? {}))
         assert.equal(report.details?.[key], value, `${code}.${key}`);
@@ -715,7 +745,7 @@ describe("gauge chat", { concurrency: false }, () => {
     const keyed = await run("chat", "tags", "create", "x", "--org", ORG);
     assert.equal(
       errorReport(keyed.error, "chat tags create").hint,
-      "This org API key is read-only and needs 'write'. Create a Read & write key in Settings → API Keys.",
+      "This API key has read-only access. Create a Read & write key in Settings → API Keys, then update GAUGE_API_TOKEN or import it with `gauge auth login --with-token`.",
     );
 
     me = {
@@ -730,14 +760,14 @@ describe("gauge chat", { concurrency: false }, () => {
     const session = await run("chat", "tags", "create", "x", "--org", ORG);
     assert.match(
       errorReport(session.error, "chat tags create").hint ?? "",
-      /^This login session has scopes \[read\] and needs 'write'\./,
+      /^Your login has read-only access. Ask an organization admin for write access/,
     );
 
     me = { unexpected: true };
     const unknown = await run("chat", "tags", "create", "x", "--org", ORG);
     assert.equal(
       errorReport(unknown.error, "chat tags create").hint,
-      "This credential needs the 'write' scope. If it is an org API key, create a Read & write key in Settings → API Keys.",
+      "Ask an organization admin for write access, or create a Read & write API key in Settings → API Keys.",
       "falls back to the generic hint",
     );
   });
@@ -794,14 +824,14 @@ describe("gauge chat", { concurrency: false }, () => {
       [api("/me")],
     );
     const text = (await run("auth", "status")).json;
-    assert.match(text, /Credential: api_key \(valid\)/);
+    assert.match(text, /API key: valid/);
     assert.match(text, /GAUGE_API_TOKEN/);
     assert.ok(!text.includes("Organizations:"));
     handler = () => apiError(401, "unauthorized", "Expired");
     const rejected = await run("auth", "status");
     assert.match(
       errorReport(rejected.error, "auth status").message,
-      /source: env.*rejected/,
+      /GAUGE_API_TOKEN was rejected/,
     );
   });
 
@@ -884,12 +914,12 @@ describe("gauge chat", { concurrency: false }, () => {
     const scoped = await run("chat", "tags", "create", "x", "--org", ORG);
     const report = errorReport(scoped.error, "chat tags create");
     assert.equal(report.code, "insufficient_scope");
-    assert.match(report.hint ?? "", /needs the 'write' scope/);
+    assert.match(report.hint ?? "", /write access/);
 
     const who = await run("whoami");
     const whoReport = errorReport(who.error, "whoami");
     assert.equal(whoReport.code, "not_found");
-    assert.match(whoReport.message, /\/api\/v1\/me is not available/);
+    assert.match(whoReport.message, /cannot show your account details yet/);
     assert.match(whoReport.hint ?? "", /gauge orgs/);
 
     handler = () => html404;
@@ -899,7 +929,7 @@ describe("gauge chat", { concurrency: false }, () => {
     assert.equal(unknownReport.exitCode, 1);
     assert.match(
       unknownReport.message,
-      /^not_found: \/api\/v1\/orgs\/[0-9a-f-]{36}\/tags on 127\.0\.0\.1:\d+ is not a Gauge Chat API endpoint/,
+      /^This Gauge server \(127\.0\.0\.1:\d+\) does not support this command/,
     );
     assert.ok(!unknownReport.message.includes("<"), "no HTML in the message");
   });
@@ -936,7 +966,7 @@ describe("gauge chat", { concurrency: false }, () => {
     const report = errorReport(caught, "chat query");
     assert.equal(report.code, "forbidden");
     assert.equal(report.details?.field, "explain");
-    assert.match(report.message, /^forbidden: explain is only available/);
+    assert.match(report.message, /^explain is only available/);
     assert.match(
       report.hint ?? "",
       /only available to Gauge staff; rerun without it/,

@@ -1,607 +1,446 @@
 import { z } from "zod";
-import { candidateDeliverySchema } from "./candidate-delivery";
-import { candidateStartsSchema } from "./candidate-starts";
-import { cliRuleCoverageSchema } from "./cli-rule-evidence";
-import {
-  climbDirectionPatchSchema,
-  climbDirectionSchema,
-  climbSubjectKindSchema,
-  interventionKindSchema,
-  leverKindSchema,
-  trialInputSchema,
-} from "./climb";
-import { schedulableAgentSchema } from "./runConfig";
-import { overrideFilesSchema } from "./sandbox-overrides";
+import { cliRuleAuthorInputSchema, cliRuleBundleSchema } from "./cli-rules";
 
-export const OPTIMIZATION_STATUSES = [
-  "DRAFT",
-  "ACTIVE",
-  "PAUSED",
-  "DONE",
-  "ARCHIVED",
-] as const;
-export const optimizationStatusSchema = z.enum(OPTIMIZATION_STATUSES);
-export type OptimizationStatus = z.infer<typeof optimizationStatusSchema>;
-
-export const TERMINAL_OPTIMIZATION_STATUSES = ["DONE", "ARCHIVED"] as const;
-
-export const ROUND_STATUSES = [
-  "PROPOSING",
-  "PROPOSED",
-  "RUNNING",
-  "JUDGING",
-  "SETTLED",
-  "FAILED",
-  "CANCELED",
-] as const;
-export const TRIAL_STATUSES = [
-  "DRAFT",
-  "RUNNING",
-  "SETTLED",
-  "FAILED",
-  "CANCELED",
-] as const;
-export const TRIAL_VERDICTS = [
-  "BETTER",
-  "WORSE",
-  "INCONCLUSIVE",
-  "NOT_EVALUABLE",
-] as const;
-
-export const OPTIMIZATION_EFFORTS = [
-  { value: "LOW", label: "Quick", sampleCount: 1, maxRounds: 3 },
-  { value: "MEDIUM", label: "Standard", sampleCount: 1, maxRounds: 5 },
-  { value: "HIGH", label: "Thorough", sampleCount: 2, maxRounds: 8 },
-  { value: "XHIGH", label: "Exhaustive", sampleCount: 3, maxRounds: 12 },
-] as const;
-export type OptimizationEffort = (typeof OPTIMIZATION_EFFORTS)[number]["value"];
-export const optimizationEffortSchema = z.enum(
-  OPTIMIZATION_EFFORTS.map((preset) => preset.value) as [
-    OptimizationEffort,
-    ...OptimizationEffort[],
-  ],
-);
-
-export function optimizationEffort(effort: OptimizationEffort) {
-  const match = OPTIMIZATION_EFFORTS.find((preset) => preset.value === effort);
-  if (!match) throw new Error(`Unknown optimization effort: ${effort}`);
-  return match;
+function normalizeWebFixtureUrl(raw: string): string {
+  const url = new URL(raw);
+  url.hash = "";
+  url.pathname = url.pathname.replace(/\/+$/, "") || "/";
+  return url.href;
 }
 
-export const listOptimizationsQuerySchema = z.object({
-  status: z
-    .string()
-    .optional()
-    .transform((value) =>
-      value
-        ? value
-            .split(",")
-            .map((part) => part.trim().toUpperCase())
-            .filter(Boolean)
-        : undefined,
+export const OPTIMIZATION_STATUSES = ["OPEN", "DONE", "ARCHIVED"] as const;
+export type OptimizationStatus = (typeof OPTIMIZATION_STATUSES)[number];
+
+const skillPath = z
+  .string()
+  .min(1)
+  .refine(
+    (path) => !path.startsWith("/") && !path.split("/").some((p) => p === ".."),
+    "Skill paths are relative and stay inside the skill",
+  );
+
+export const optimizationFileSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("page"),
+      url: z.url().transform(normalizeWebFixtureUrl),
+      contentType: z.string().trim().min(1).default("text/html"),
+      body: z.string(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("skill"),
+      name: z.string().min(1),
+      skillId: z.string().min(1).nullable().default(null),
+      versionId: z.string().min(1).nullable().default(null),
+      files: z.record(skillPath, z.string()),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("cli"),
+      package: z.string().min(1),
+      rules: cliRuleBundleSchema,
+    })
+    .strict(),
+]);
+export type OptimizationFile = z.infer<typeof optimizationFileSchema>;
+
+export const optimizationTreeSchema = z
+  .object({ files: z.record(z.string().min(1), optimizationFileSchema) })
+  .strict();
+export type OptimizationTree = z.infer<typeof optimizationTreeSchema>;
+
+export const EMPTY_TREE: OptimizationTree = { files: {} };
+
+export function surfaceKey(
+  file:
+    | { kind: "page"; url: string }
+    | { kind: "skill"; name: string }
+    | { kind: "cli"; package: string },
+): string {
+  switch (file.kind) {
+    case "page":
+      return `page:${normalizeWebFixtureUrl(file.url)}`;
+    case "skill":
+      return `skill:${file.name}`;
+    case "cli":
+      return `cli:${file.package}`;
+  }
+}
+
+export function surfaceLabel(file: OptimizationFile): string {
+  switch (file.kind) {
+    case "page":
+      return file.url.replace(/^https?:\/\//, "").replace(/\/$/, "");
+    case "skill":
+      return file.name;
+    case "cli":
+      return file.package;
+  }
+}
+
+export const optimizationSubjectSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("theme"),
+      themeId: z.string().min(1),
+      title: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("finding"),
+      observationId: z.string().min(1),
+      runId: z.string().min(1),
+      label: z.string().min(1),
+      detail: z.string(),
+    })
+    .strict(),
+  z.object({ kind: z.literal("free"), text: z.string().min(1) }).strict(),
+]);
+export type OptimizationSubject = z.infer<typeof optimizationSubjectSchema>;
+
+const findingRef = z
+  .object({ runId: z.string().min(1), label: z.string().min(1) })
+  .strict();
+
+export const optimizationResultSchema = z
+  .object({
+    summary: z.string().min(1),
+    changed: z.array(z.string().min(1)),
+    resolved: z.array(findingRef),
+    returned: z.array(findingRef),
+    introduced: z.array(findingRef),
+  })
+  .strict();
+export type OptimizationResult = z.infer<typeof optimizationResultSchema>;
+
+export type TreeChange = {
+  key: string;
+  status: "added" | "changed" | "removed";
+};
+
+export function treeChanges(base: OptimizationTree, head: OptimizationTree) {
+  const changes: TreeChange[] = [];
+  for (const key of Object.keys(head.files)) {
+    if (!(key in base.files)) changes.push({ key, status: "added" });
+    else if (
+      JSON.stringify(base.files[key]) !== JSON.stringify(head.files[key])
     )
-    .pipe(z.array(optimizationStatusSchema).optional()),
-  subjectKind: climbSubjectKindSchema.optional(),
-  subjectId: z.string().min(1).optional(),
-  limit: z.coerce.number().int().min(1).max(200).default(50),
-  includeDrafts: z
-    .union([z.boolean(), z.string()])
-    .optional()
-    .transform((value) => value === true || value === "true" || value === "1"),
+      changes.push({ key, status: "changed" });
+  }
+  for (const key of Object.keys(base.files))
+    if (!(key in head.files)) changes.push({ key, status: "removed" });
+  return changes.sort((a, b) => a.key.localeCompare(b.key));
+}
+
+// --- /api/v1 wire shapes ---------------------------------------------------
+
+/** The API names a subject by id; the server reads its title, label, and detail. */
+export const optimizationSubjectRefSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("issue"), issueId: z.string().min(1) }).strict(),
+  z
+    .object({
+      kind: z.literal("finding"),
+      observationId: z.string().min(1),
+      runId: z.string().min(1),
+    })
+    .strict(),
+  z.object({ kind: z.literal("free"), text: z.string().min(1) }).strict(),
+]);
+export type OptimizationSubjectRef = z.infer<
+  typeof optimizationSubjectRefSchema
+>;
+
+/** The API calls a finding theme an issue. */
+export type OptimizationWireSubject =
+  | { kind: "issue"; issueId: string; title: string }
+  | Exclude<OptimizationSubject, { kind: "theme" }>;
+
+export type OptimizationWire<T extends { subject: OptimizationSubject }> = Omit<
+  T,
+  "subject"
+> & { subject: OptimizationWireSubject };
+
+export function toWireSubject(
+  subject: OptimizationSubject,
+): OptimizationWireSubject {
+  return subject.kind === "theme"
+    ? { kind: "issue", issueId: subject.themeId, title: subject.title }
+    : subject;
+}
+
+export const createOptimizationBodySchema = z
+  .object({
+    subject: optimizationSubjectRefSchema,
+    title: z.string().trim().min(1).max(120).optional(),
+  })
+  .strict();
+
+export const patchOptimizationBodySchema = z
+  .object({
+    title: z.string().trim().min(1).max(120).optional(),
+    notes: z.string().max(200_000).optional(),
+    head: optimizationTreeSchema.optional(),
+    status: z.enum(OPTIMIZATION_STATUSES).optional(),
+  })
+  .strict();
+
+export const optimizationRestoreSchema = z.record(
+  z.string().min(1),
+  z.string().min(1),
+);
+
+export const optimizationRestorePointSchema = z.union([
+  z.object({ checkpointId: z.string().min(1) }).strict(),
+  z.object({ rerunId: z.string().min(1), seq: z.number().int() }).strict(),
+]);
+export type OptimizationRestorePoint = z.infer<
+  typeof optimizationRestorePointSchema
+>;
+
+export const launchOptimizationBodySchema = z
+  .object({
+    runIds: z.array(z.string().min(1)).min(1).max(50).optional(),
+    note: z.string().trim().max(500).optional(),
+    restore: optimizationRestoreSchema.optional(),
+    restoreAt: z
+      .array(optimizationRestorePointSchema)
+      .min(1)
+      .max(50)
+      .optional(),
+  })
+  .strict();
+
+export const finishOptimizationBodySchema = optimizationResultSchema;
+
+/** Authored CLI rules, or a bundle read back from the tree; the server seals them. */
+export const cliRuleEditSchema = z.preprocess((value) => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const {
+    bundleSha256: _digest,
+    limits: _limits,
+    ...authored
+  } = value as Record<string, unknown>;
+  return authored;
+}, cliRuleAuthorInputSchema);
+
+export const writeOptimizationFileBodySchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("page"),
+      url: z.url(),
+      body: z.string().min(1),
+      contentType: z.string().trim().min(1).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("skill"),
+      name: z.string().min(1),
+      path: skillPath,
+      body: z.string().nullable(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("cli"),
+      package: z.string().min(1),
+      rules: cliRuleEditSchema,
+    })
+    .strict(),
+]);
+export type WriteOptimizationFileBody = z.infer<
+  typeof writeOptimizationFileBodySchema
+>;
+
+export const addOptimizationFileBodySchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("page"), url: z.url() }).strict(),
+  z.object({ kind: z.literal("skill"), name: z.string().min(1) }).strict(),
+  z.object({ kind: z.literal("cli") }).strict(),
+]);
+export type AddOptimizationFileBody = z.infer<
+  typeof addOptimizationFileBodySchema
+>;
+
+export const optimizationFileQuerySchema = z.object({
+  key: z.string().min(1),
+  /** Page only: readable text or the exact source; omit for the stored file. */
+  view: z.enum(["text", "raw"]).optional(),
+  /** Page only: the exact source around each match. */
+  query: z.string().min(1).optional(),
+  offset: z.coerce.number().int().nonnegative().default(0),
+  limit: z.coerce.number().int().positive().max(200_000).default(200_000),
 });
-export type ListOptimizationsQuery = z.infer<
-  typeof listOptimizationsQuerySchema
+
+/** Find/replace on a page's exact source; each find must match once. */
+export const editOptimizationPageBodySchema = z
+  .object({
+    url: z.url(),
+    edits: z
+      .array(
+        z.object({ find: z.string().min(1), replace: z.string() }).strict(),
+      )
+      .min(1),
+  })
+  .strict();
+export type EditOptimizationPageBody = z.infer<
+  typeof editOptimizationPageBodySchema
+>;
+
+/** What a page write or edit changed. */
+export type OptimizationPageChange = {
+  linesBefore: number;
+  linesAfter: number;
+  retainedPercent: number | null;
+  hunks: string;
+};
+
+export const runTraceQuerySchema = z.object({
+  seq: z.coerce.number().int(),
+  before: z.coerce.number().int().nonnegative().max(200).default(30),
+  after: z.coerce.number().int().nonnegative().max(200).default(10),
+});
+
+export const runCommandsQuerySchema = z.object({
+  query: z.string().min(1).max(200).optional(),
+  seq: z.coerce.number().int().optional(),
+  offset: z.coerce.number().int().nonnegative().optional(),
+});
+
+export const listOptimizationsQuerySchema = z.object({
+  status: z.enum(OPTIMIZATION_STATUSES).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
+
+export const optimizationRunSchema = z.object({
+  id: z.string(),
+  status: z.string(),
+  agent: z.string(),
+  model: z.string(),
+  /** The eval or prompt name, else the prompt text. */
+  title: z.string(),
+  sourceRunId: z.string().nullable(),
+  analyzed: z.boolean(),
+  startedAt: z.string().nullable(),
+  restoredFrom: z
+    .object({ checkpointId: z.string(), seq: z.number().int().nonnegative() })
+    .nullable()
+    .optional(),
+});
+
+export const optimizationLaunchSchema = z.object({
+  id: z.string(),
+  number: z.number().int().positive(),
+  note: z.string().nullable(),
+  sourceRunIds: z.array(z.string()),
+  changed: z.array(z.string()),
+  runs: z.array(optimizationRunSchema),
+  createdAt: z.string(),
+});
+export type OptimizationLaunchView = z.infer<typeof optimizationLaunchSchema>;
+
+const launchFindingSchema = z.object({
+  label: z.string(),
+  detail: z.string(),
+  kind: z.string(),
+  effect: z.string(),
+  cause: z.string(),
+  seqs: z.array(z.number()),
+});
+
+export const optimizationLaunchDetailSchema = optimizationLaunchSchema.extend({
+  runs: z.array(
+    optimizationRunSchema.extend({
+      href: z.string(),
+      findings: z.array(launchFindingSchema).nullable(),
+      sourceFindings: z.array(launchFindingSchema),
+    }),
+  ),
+});
+export type OptimizationLaunchDetail = z.infer<
+  typeof optimizationLaunchDetailSchema
 >;
 
 export const optimizationSummarySchema = z.object({
   id: z.string(),
-  name: z.string(),
-  status: optimizationStatusSchema,
-  mode: z.enum(["MANUAL", "AUTO"]),
-  autonomous: z.boolean(),
-  stopReason: z.string().nullable(),
-  subjectKind: climbSubjectKindSchema,
-  subjectId: z.string(),
-  subjectName: z.string(),
-  lever: leverKindSchema.nullable(),
-  round: z.number().int(),
-  maxRounds: z.number().int(),
-  before: z.number().nullable(),
-  after: z.number().nullable(),
-  delta: z.number().nullable(),
-  path: z.array(z.number()),
-  creditsSpent: z.number().int(),
-  creditsReserved: z.number().int(),
-  summary: z.string().nullable(),
-  href: z.string(),
+  title: z.string(),
+  status: z.enum(OPTIMIZATION_STATUSES),
+  subject: optimizationSubjectSchema,
+  launches: z.number().int().nonnegative(),
+  changed: z.number().int().nonnegative(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
 export type OptimizationSummary = z.infer<typeof optimizationSummarySchema>;
 
-export const listOptimizationsResponseSchema = z.object({
-  items: z.array(optimizationSummarySchema),
-});
-export type ListOptimizationsResponse = z.infer<
-  typeof listOptimizationsResponseSchema
->;
-
-export const baselineDiscoveryQuerySchema = z
-  .object({
-    subjectKind: climbSubjectKindSchema,
-    subjectId: z.string().min(1),
-    limit: z.coerce.number().int().min(1).max(100).default(50),
-    cursor: z.string().min(1).optional(),
-  })
-  .strict();
-export const baselineRunSchema = z.object({
-  resolvedModel: z.string().nullable(),
-  runId: z.string(),
-  agent: z.string(),
-  model: z.string(),
-  status: z.string(),
-  createdAt: z.string(),
-  outcome: z.object({
-    passedCriteria: z.number(),
-    totalCriteria: z.number(),
-    judgingStatus: z.string().nullable(),
-  }),
-  surfaces: z.array(
-    z.object({
-      lever: z.string(),
-      label: z.string(),
-      targetRef: z.unknown(),
-      evidence: z.unknown(),
-      command: z.unknown().optional(),
-    }),
-  ),
-  evidenceStatus: z.object({
-    surfaces: z.string().nullable(),
-    cli: z.string().nullable(),
-  }),
-  eligibility: z.object({
-    eligible: z.boolean(),
-    reason: z.string().nullable(),
-    baselineRunIds: z.array(z.string()),
-  }),
-});
-export const baselineDiscoveryResponseSchema = z.object({
-  items: z.array(baselineRunSchema),
-  nextCursor: z.string().nullable(),
-  note: z.string(),
-});
-export type BaselineRun = z.infer<typeof baselineRunSchema>;
-export type BaselineDiscoveryResponse = z.infer<
-  typeof baselineDiscoveryResponseSchema
->;
-
-const targetSchema = z.object({
-  agent: schedulableAgentSchema.optional(),
-  model: z.string().optional(),
-});
-
-const planShape = {
-  effort: optimizationEffortSchema.optional(),
-  sampleCount: z.number().int().min(1).max(100).optional(),
-  maxRounds: z.number().int().min(1).max(100).optional(),
-  maxTrialsPerRound: z.number().int().min(1).max(10).optional(),
-};
-
-function refinePlan(
-  value: {
-    effort?: OptimizationEffort;
-    sampleCount?: number;
-    maxRounds?: number;
-    target?: { agent?: string; model?: string };
-  },
-  ctx: z.RefinementCtx,
-) {
-  if (value.effort && (value.sampleCount || value.maxRounds))
-    ctx.addIssue({
-      code: "custom",
-      path: ["effort"],
-      message: "Pass effort or sampleCount/maxRounds, not both",
-    });
-  if (value.target?.model && !value.target.agent)
-    ctx.addIssue({
-      code: "custom",
-      path: ["target", "agent"],
-      message: "Pin an agent with the model",
-    });
+/** The chat's optimization panel opens with its first change or rerun. */
+export function optimizationHasWork(
+  optimization: Pick<OptimizationSummary, "changed" | "launches">,
+): boolean {
+  return optimization.changed > 0 || optimization.launches > 0;
 }
-
-export const startOptimizationBodySchema = z
-  .object({
-    subjectKind: climbSubjectKindSchema,
-    subjectId: z.string().min(1),
-    name: z.string().trim().min(1).max(200).optional(),
-    ...planShape,
-    creditCap: z.number().int().nonnegative().optional(),
-    targetScore: z.number().min(0).max(1).optional(),
-    target: targetSchema.extend({ agent: schedulableAgentSchema }).optional(),
-    fromRun: z.string().min(1).optional(),
-  })
-  .strict()
-  .superRefine(refinePlan)
-  .superRefine((value, ctx) => {
-    if (!!value.target === !!value.fromRun)
-      ctx.addIssue({
-        code: "custom",
-        message: "Pass target or fromRun, not both",
-        path: ["target"],
-      });
-  });
-export type StartOptimizationBody = z.infer<typeof startOptimizationBodySchema>;
-export type StartOptimizationBodyInput = z.input<
-  typeof startOptimizationBodySchema
->;
-
-export function optimizationPlan(body: {
-  effort?: OptimizationEffort;
-  sampleCount?: number;
-  maxRounds?: number;
-}) {
-  const preset = optimizationEffort(body.effort ?? "MEDIUM");
-  return {
-    sampleCount: body.sampleCount ?? preset.sampleCount,
-    maxRounds: body.maxRounds ?? preset.maxRounds,
-  };
-}
-
-export const estimateOptimizationBodySchema = z
-  .object({
-    subjectKind: climbSubjectKindSchema,
-    subjectId: z.string().min(1),
-    ...planShape,
-    target: targetSchema.optional(),
-  })
-  .strict()
-  .superRefine(refinePlan);
-export type EstimateOptimizationBody = z.infer<
-  typeof estimateOptimizationBodySchema
->;
-
-export const RUN_CREDIT_BASES = [
-  "subject-history",
-  "model-history",
-  "catalog-rates",
-  "platform-history",
-  "byok",
-  "reserve",
-] as const;
-export const runCreditBasisSchema = z.enum(RUN_CREDIT_BASES);
-export type RunCreditBasis = z.infer<typeof runCreditBasisSchema>;
-
-export const optimizationEstimateSchema = z.object({
-  sampleCount: z.number().int(),
-  maxRounds: z.number().int(),
-  runsPerTrial: z.number(),
-  executionCredits: z.number(),
-  judgeCredits: z.number(),
-  leverPassCredits: z.number(),
-  trialCredits: z.number(),
-  estimate: z.number().int(),
-  approximate: z.boolean().default(false),
-  basis: runCreditBasisSchema.optional(),
-});
-export type OptimizationEstimate = z.infer<typeof optimizationEstimateSchema>;
-
-export const diagnoseBodySchema = z
-  .object({
-    subjectKind: climbSubjectKindSchema,
-    subjectId: z.string().min(1),
-  })
-  .strict();
-export type DiagnoseBody = z.infer<typeof diagnoseBodySchema>;
-
-export const diagnosisSchema = z.object({
-  id: z.string(),
-  status: z.enum(["GENERATING", "READY", "FAILED"]),
-  subjectKind: climbSubjectKindSchema,
-  subjectId: z.string(),
-  runCount: z.number().int(),
-  summary: z.string().nullable(),
-  recommendedLever: leverKindSchema.nullable(),
-  recommendedTarget: z.unknown().nullable(),
-  clusters: z.array(
-    z.object({
-      title: z.string(),
-      failureMode: z.string(),
-      criterionIds: z.array(z.string()),
-      runIds: z.array(z.string()),
-      lever: leverKindSchema.nullable(),
-      targetRef: z.unknown().nullable(),
-      confidence: z.number(),
-    }),
-  ),
-  unsupportedLevers: z.array(leverKindSchema).default([]),
-  createdAt: z.string(),
-});
-export type Diagnosis = z.infer<typeof diagnosisSchema>;
-
-export const candidateExecutionSchema = z.object({
-  runId: z.string(),
-  startMode: z.enum(["checkpoint", "fresh"]),
-  checkpointId: z.string().nullable(),
-  sourceRunId: z.string().nullable(),
-  status: z.string(),
-  continuation: z.literal("running-process").optional(),
-  sourceAttempt: z.number().int().positive().optional(),
-  estimatedSavedWork: z
-    .object({
-      elapsedMs: z.number().nonnegative(),
-      usage: z.object({
-        input_tokens: z.number().nonnegative(),
-        output_tokens: z.number().nonnegative(),
-        cache_read_input_tokens: z.number().nonnegative(),
-        cache_creation_input_tokens: z.number().nonnegative(),
-      }),
-      attribution: z.literal("approximate"),
-    })
-    .optional(),
-});
-export type CandidateExecution = z.infer<typeof candidateExecutionSchema>;
-
-export const trialRunSchema = z.object({
-  id: z.string(),
-  status: z.string(),
-  failureReason: z.string().nullable(),
-  exitReason: z.string().nullable(),
-  candidateDelivery: candidateDeliverySchema.nullable().optional(),
-  candidateExecution: candidateExecutionSchema.nullable().optional(),
-  cliCoverage: cliRuleCoverageSchema.nullable().optional(),
-  passed: z.boolean().nullable(),
-  criteria: z.array(
-    z.object({
-      name: z.string(),
-      passed: z.boolean().nullable(),
-      reasoning: z.string(),
-    }),
-  ),
-  levers: z.array(
-    z.object({
-      lever: z.string(),
-      attributed: z.boolean(),
-      note: z.string().nullable(),
-    }),
-  ),
-});
-export type TrialRun = z.infer<typeof trialRunSchema>;
-
-export const trialSchema = z.object({
-  id: z.string(),
-  climbId: z.string(),
-  roundNumber: z.number().int(),
-  key: z.string(),
-  parentTrialId: z.string().nullable(),
-  parentKey: z.string().nullable(),
-  title: z.string(),
-  hypothesis: z.string().nullable(),
-  lever: leverKindSchema.nullable(),
-  kind: interventionKindSchema,
-  status: z.enum(TRIAL_STATUSES),
-  verdict: z.enum(TRIAL_VERDICTS).nullable(),
-  score: z.number().nullable(),
-  baselineScore: z.number().nullable(),
-  sessions: z.number().int(),
-  failedSessions: z.number().int(),
-  isBaseline: z.boolean(),
-  adopted: z.boolean(),
-  adoptedAt: z.string().nullable(),
-  outcome: z.string().nullable(),
-  after: z.unknown(),
-  before: z.unknown(),
-  startingPoints: candidateStartsSchema.optional(),
-  runs: z.array(trialRunSchema),
-  createdAt: z.string(),
-});
-export type Trial = z.infer<typeof trialSchema>;
-
-export const roundSchema = z.object({
-  id: z.string(),
-  number: z.number().int(),
-  status: z.enum(ROUND_STATUSES),
-  narrative: z.string().nullable(),
-  trials: z.array(trialSchema),
-});
-export type Round = z.infer<typeof roundSchema>;
-
-export const OPTIMIZATION_NEXT_ACTIONS = [
-  "START",
-  "WAIT",
-  "AUTHOR_TRIAL",
-  "LAUNCH_ROUND",
-  "ADOPT",
-  "RESUME",
-  "NONE",
-] as const;
-export const optimizationNextActionSchema = z.enum(OPTIMIZATION_NEXT_ACTIONS);
-export type OptimizationNextAction = z.infer<
-  typeof optimizationNextActionSchema
->;
 
 export const optimizationDetailSchema = optimizationSummarySchema.extend({
-  baselineTrialId: z.string().nullable(),
-  nextAction: optimizationNextActionSchema,
-  settings: z.object({
-    sampleCount: z.number().int(),
-    maxRounds: z.number().int(),
-    maxTrialsPerRound: z.number().int(),
-    creditCap: z.number().int(),
-    targetScore: z.number(),
-    pinnedAgent: z.string().nullable(),
-    pinnedModel: z.string().nullable(),
-    continuedAtRound: z.number().int().nullable(),
-  }),
-  direction: climbDirectionSchema,
-  rounds: z.array(roundSchema),
+  notes: z.string(),
+  base: optimizationTreeSchema,
+  head: optimizationTreeSchema,
+  changes: z.array(
+    z.object({
+      key: z.string(),
+      status: z.enum(["added", "changed", "removed"]),
+    }),
+  ),
+  result: optimizationResultSchema.nullable(),
+  sourceRunIds: z.array(z.string()),
+  launchList: z.array(optimizationLaunchSchema),
 });
 export type OptimizationDetail = z.infer<typeof optimizationDetailSchema>;
 
-export const NOTHING_TO_CHANGE = "nothing to change";
-
-export function nextOptimizationAction(detail: {
-  status: OptimizationStatus;
-  stopReason?: string | null;
-  baselineTrialId: string | null;
-  rounds: readonly {
-    number: number;
-    status: (typeof ROUND_STATUSES)[number];
-    trials: readonly Pick<
-      Trial,
-      "id" | "kind" | "status" | "score" | "adopted"
-    >[];
+/** What the empty optimization chat shows before the first message. */
+export type OptimizationBrief = {
+  title: string;
+  description: string | null;
+  subjectKind: OptimizationSubject["kind"];
+  /** The theme's or finding's kind; null for a goal, or a finding a reanalysis replaced. */
+  kind: "FRICTION" | "OBJECTION" | "OPPORTUNITY" | null;
+  /** The source sessions, in optimization order. */
+  sessions: {
+    runId: string;
+    model: string;
+    /** The catalog name, else the slug made readable. */
+    modelName: string;
+    title: string;
   }[];
-}): OptimizationNextAction {
-  if (detail.status === "DRAFT") return "START";
-  if (detail.status === "PAUSED") return "RESUME";
-  if (detail.status === "DONE" || detail.status === "ARCHIVED") return "NONE";
-  if (detail.stopReason === NOTHING_TO_CHANGE) return "NONE";
-  const trials = detail.rounds.flatMap((round) => round.trials);
-  if (trials.some((trial) => trial.status === "RUNNING")) return "WAIT";
-  if (trials.some((trial) => trial.status === "DRAFT")) return "LAUNCH_ROUND";
-  const baseline = trials.find((trial) => trial.kind === "BASELINE");
-  const last = detail.rounds.at(-1);
-  if (
-    !last ||
-    last.number === 0 ||
-    ["PROPOSING", "PROPOSED", "SETTLED"].includes(last.status)
-  )
-    return baseline?.status === "SETTLED" ? "AUTHOR_TRIAL" : "WAIT";
-  return "WAIT";
-}
-
-export const optimizationHandoffSchema = z.object({
-  trialId: z.string(),
-  trialKey: z.string(),
-  prompt: z.string(),
-});
-export type OptimizationHandoff = z.infer<typeof optimizationHandoffSchema>;
-
-export const listTrialsResponseSchema = z.object({
-  items: z.array(trialSchema),
-});
-export type ListTrialsResponse = z.infer<typeof listTrialsResponseSchema>;
-
-export const trialDocumentSchema = z.object({
-  path: z.string(),
-  before: z.string(),
-  after: z.string(),
-});
-export const trialContentSchema = z.object({
-  trialId: z.string(),
-  kind: interventionKindSchema,
-  documents: z.array(trialDocumentSchema),
-  copyableBody: z.string().nullable(),
-  configSnapshot: z.unknown(),
-});
-export type TrialContent = z.infer<typeof trialContentSchema>;
-
-export const createTrialBodySchema = z
-  .object({
-    trial: trialInputSchema,
-    files: overrideFilesSchema.optional(),
-    fork: z
-      .object({ runId: z.string().min(1), boundarySeq: z.string().min(1) })
-      .strict()
-      .optional(),
-    launch: z.boolean().default(false),
-    idempotencyKey: z.string().min(1).max(200).optional(),
-  })
-  .strict();
-export type CreateTrialBody = z.infer<typeof createTrialBodySchema>;
-export type CreateTrialBodyInput = z.input<typeof createTrialBodySchema>;
-
-export const skillFilesResponseSchema = z.object({
-  versionId: z.string(),
-  files: overrideFilesSchema,
-});
-export type SkillFilesResponse = z.infer<typeof skillFilesResponseSchema>;
-
-export const pageBodyResponseSchema = z.object({
-  source: z.string().optional(),
-  url: z.string(),
-  body: z.string(),
-  contentType: z.string().optional(),
-});
-export type PageBodyResponse = z.infer<typeof pageBodyResponseSchema>;
-
-export const launchTrialResponseSchema = z.object({
-  trialId: z.string(),
-  batchIds: z.array(z.string()),
-  runIds: z.array(z.string()),
-});
-export type LaunchTrialResponse = z.infer<typeof launchTrialResponseSchema>;
-
-export const createDraftOptimizationBodySchema = z
-  .object({
-    subjectKind: climbSubjectKindSchema,
-    subjectId: z.string().min(1),
-    name: z.string().trim().min(1).max(200).optional(),
-    ...planShape,
-    target: targetSchema.optional(),
-    autonomous: z.boolean().optional(),
-  })
-  .strict()
-  .superRefine(refinePlan);
-export type CreateDraftOptimizationBody = z.infer<
-  typeof createDraftOptimizationBodySchema
->;
-
-const planPatchShape = {
-  name: z.string().trim().min(1).max(200).optional(),
-  ...planShape,
-  target: targetSchema.optional(),
+  findings: number;
 };
-export const optimizationPlanPatchSchema = z
-  .object(planPatchShape)
-  .strict()
-  .superRefine(refinePlan);
-export type OptimizationPlanPatch = z.infer<typeof optimizationPlanPatchSchema>;
 
-export const startDraftOptimizationBodySchema = z
-  .object({
-    ...planPatchShape,
-    creditCap: z.number().int().nonnegative().optional(),
-  })
-  .strict()
-  .superRefine(refinePlan);
-export type StartDraftOptimizationBody = z.infer<
-  typeof startDraftOptimizationBodySchema
->;
-
-export const setDirectionBodySchema = climbDirectionPatchSchema;
-export const setModeBodySchema = z.object({ autonomous: z.boolean() }).strict();
-
-export const launchRoundResponseSchema = z.object({
-  roundNumber: z.number().int().nullable(),
-  launched: z.array(z.string()),
-  alreadyLaunched: z.boolean(),
+export const optimizationCheckpointsQuerySchema = z.object({
+  sourceRunId: z.string().min(1).optional(),
 });
-export type LaunchRoundResponse = z.infer<typeof launchRoundResponseSchema>;
 
-export const resolveChatResponseSchema = z.object({
-  chatId: z.string(),
-  href: z.string(),
+export const optimizationCheckpointSchema = z.object({
+  checkpointId: z.string(),
+  sourceRunId: z.string(),
+  rerunId: z.string(),
+  launchId: z.string(),
+  launchNote: z.string().nullable(),
+  seq: z.number().int().nonnegative(),
+  rerunEventCount: z.number().int().nonnegative(),
+  capturedAt: z.string(),
+  agent: z.string(),
+  model: z.string(),
+  lastSteps: z.array(z.string()),
+  exposure: z.object({
+    firstSeq: z.number().int().nonnegative().nullable(),
+    surfaces: z.array(z.string()),
+    skillChanged: z.boolean(),
+  }),
+  /** The trace before this checkpoint has gaps, so `exposure` may miss a read. */
+  exposureIncomplete: z.boolean(),
 });
-export type ResolveChatResponse = z.infer<typeof resolveChatResponseSchema>;
-
-export const continueOptimizationBodySchema = z
-  .object({
-    rounds: z.number().int().min(1).max(20).default(1),
-    maxTrialsPerRound: z.number().int().min(1).max(10).optional(),
-  })
-  .strict();
-export type ContinueOptimizationBody = z.infer<
-  typeof continueOptimizationBodySchema
+export type OptimizationCheckpointView = z.infer<
+  typeof optimizationCheckpointSchema
 >;
-
-export const patchOptimizationBodySchema = z
-  .object({
-    ...planPatchShape,
-    direction: climbDirectionPatchSchema.optional(),
-    autonomous: z.boolean().optional(),
-  })
-  .strict()
-  .superRefine(refinePlan);
-export type PatchOptimizationBody = z.infer<typeof patchOptimizationBodySchema>;

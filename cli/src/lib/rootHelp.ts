@@ -6,6 +6,7 @@ import { CLI_VERSION } from "../version";
 
 const EXAMPLES: [string, string][] = [
   ["gauge init --local", "Initialize a workspace; creates no measurements"],
+  ['gauge run "<prompt>"', "Run one prompt now; saves no measurement"],
   ["gauge instructions hillclimb", "Choose inputs and prepare a first pilot"],
   ["gauge eval create --help", "Save a task and success criteria"],
   ["gauge run --eval <id> --local", "Run a saved eval; rerun after input changes"],
@@ -40,7 +41,7 @@ const GROUPS: [string, Record<string, string>][] = [
       personas: "Manage simulated-user personas",
       skills: "Manage agent skills",
       mcp: "Manage MCP servers",
-      optimizations: "Find the best change to an owned surface",
+      optimizations: "Edit what agents read and rerun their sessions",
     },
   ],
   [
@@ -48,7 +49,7 @@ const GROUPS: [string, Record<string, string>][] = [
     {
       stats: "Analytics over your runs",
       dashboards: "Saved dashboards",
-      actions: "Recommended follow-ups",
+      issues: "The same finding across many sessions (also called findings)",
     },
   ],
   [

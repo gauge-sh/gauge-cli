@@ -4,35 +4,94 @@
 
 ### Added
 
-- `gauge chat` commands for the Gauge Chat API: categories,
-  topics (list, create, rename), prompts (bulk add with `--dry-run`,
-  bulk move, tag, untag), tags, brands, `query` with
-  `datasets`/`fields`/`metadata` discovery, answers, and citations. They use
-  `gauge auth login` shared credentials or,
-  for scripts, an org API key (`GAUGE_API_TOKEN=gauge_sk_…`, created in
-  Settings → API Keys), which takes precedence over a login. Errors report the
-  API's error code; plan limits exit 3. `gauge chat categories use` saves a
-  default category (`chatCategory`) for the selected organization.
-- Add portable `web-fixture` inputs for exact web responses, scoped missing-page blocking, and HTTPS origin proxying through the existing local/hosted run surface.
-- Add a per-session local mitmproxy gateway, public CA distribution, fixture evidence, and worker-owned startup/cleanup. Runtime inspect/pull now covers the gateway image.
-- Require a qualified, digest-pinned public gateway image before releasing the CLI.
+- `gauge optimizations launch` restores each rerun from a checkpoint of an
+  earlier rerun by default. `--restore-before <rerunId>:<seq>` restores from the
+  deepest checkpoint at or before that seq, `--checkpoint <id>` from one
+  checkpoint, and `--fresh [sourceRunId...]` starts from zero. The output names
+  the checkpoint, rerun, and seq each rerun restored from.
+- `gauge optimizations checkpoints <id>` lists checkpoints with their seq and
+  whether their prefix saw a changed surface.
+
+## 0.26.0 — 2026-10-28
+
+### Added
+
+- `gauge issues list` ranks every issue (the same finding across many
+  sessions) by impact, with its type (friction or objection) and product;
+  `--type` filters, and `gauge issues get <id>` lists an issue's findings and runs.
+  `gauge run insight` shows each finding's id and issue. `gauge instructions
+  issues` explains issues, also called findings, and how to choose one.
+- `gauge run trace <id> --seq <n>` prints the trace around a seq,
+  `gauge run web <id>` lists every URL the agent fetched, and
+  `gauge run commands <id>` prints the shell output the agent saw.
+- `optimizations file edit` changes part of a page with find/replace on its
+  exact source; `file read --text` and `--query` show readable text or the
+  source around a match. Page writes and edits print how much of the page was
+  kept, and `launch` lists the changed files.
+- `optimizations file write --cli` takes CLI rules as authored
+  (`{schemaVersion: 3, target, rules, shippingIntent}`); Gauge seals them.
+- `gauge optimizations sessions add <id> <runId...>` attaches sessions an
+  optimization can rerun, up to 12 in all. A `--goal` optimization starts with
+  none, so attach sessions before `launch`.
 
 ### Changed
 
-- Public organization slugs now come only from the shared Gauge directory.
-  `gauge orgs use <slug>` stores a canonical `orgId`; `--project` saves it to
-  `gauge.json`. Old `defaultOrg` and project `org` selections require explicit
-  reselection. Internal Agents slugs, persistent alias caches, and unlinked
-  workspaces are no longer used for public organization selection.
-- `gauge whoami` identifies users and organization API keys. `gauge auth status`
-  reports credential source, validity, scopes, expiry, and API URLs. Their JSON
-  output is documented in the CLI README. There is no product-specific whoami.
-- Chat commands with an org API key default to the owning organization;
-  `--org` can select an agency key's client. Agents commands retain explicit or
-  saved selection. Directory access by legacy Agents tokens requires a shared
-  login; requests with canonical UUIDs still work.
+- **Breaking:** `gauge optimizations` drives the new optimizations: open one on an
+  issue, a finding, or a goal; edit pages, skills, and CLI rules with
+  `file add`, `file read`, `file write`, and `file rm`; read `authoring`
+  guidance; keep `notes`; `launch` reruns of the source sessions; `watch` them;
+  and `finish` with the result. Rounds, trials,
+  baselines, diagnoses, adoption, and handoff are removed. Earlier CLI versions
+  get an update message from the optimizations API.
+
+### Removed
+
+- `gauge actions`. `gauge status` no longer lists open actions.
+
+## 0.25.1 — 2026-10-27
+
+### Added
+
+- `gauge mcp add --oauth` authorizes an HTTP MCP server in your browser and
+  saves its connection for hosted runs. Use `--connection <id>` to reuse a
+  saved connection, or `--no-browser` to open the authorization URL yourself.
+
+### Fixed
+
+- Selecting an organization by public slug now checks access even when it is
+  absent from `gauge orgs`. Lookup outside the list requires Chat to be enabled.
+
+## 0.25.0 — 2026-10-26
+
+### Added
+
+- `gauge chat` commands to manage topics, prompts, tags, and brands, and read
+  reports, answers, and citations. Sign in with `gauge auth login` or use an
+  organization API key from Settings → API Keys.
+- One login for Chat and Agents. The CLI keeps you signed in automatically.
+- `web-fixture` inputs serve exact HTTPS pages, block missing pages under a
+  scope, or route a site's origin to a preview, in both local and hosted runs.
+  Declare one in `gauge.json`, select it with `config.inputs`, and override it
+  with `--input name=path.json`. See [web fixture inputs](../docs/local-web-fixtures.md).
+- Local runs that select a web fixture start a gateway container alongside the
+  agent. The agent image needs no changes or proxy settings. `gauge local
+  runtime inspect` and `pull` now cover the gateway image, and
+  `--gateway-image` selects a custom build.
+
+### Changed
+
+- Choose an organization once for both Chat and Agents with `gauge orgs use`.
+- **Upgrade:** Signing in updates your old saved default automatically if you
+  have only one organization. Otherwise, choose from `gauge orgs` with
+  `gauge orgs use <slug>`. Add `--project` to update an old project setting.
+  Projects updated this way require CLI 0.25.0 or later.
+- `gauge whoami` shows which account or API key you are using. `gauge auth
+  status` checks your login or API key and its permissions.
+- `gauge auth logout` signs out this CLI installation.
 - Command telemetry requests send a `gauge-cli/<version>` User-Agent, matching
   Gauge API requests.
+- Errors and help explain organization selection, sign-in recovery, permissions,
+  and local runs in plain language, with commands to resolve the problem.
 
 ## 0.24.0 — 2026-10-21
 

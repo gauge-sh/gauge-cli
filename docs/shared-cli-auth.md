@@ -1,64 +1,45 @@
-# Shared CLI authentication
+# Signing in
 
-Shared authentication is the default for browser and device login:
+Sign in once to use both Gauge Chat and Gauge Agents:
 
 ```sh
 gauge auth login
-# Remote terminals can use: gauge auth login --device
 ```
 
-Login uses `https://app.withgauge.com` without any configuration. For development
-or alternate deployments, `GAUGE_AUTH_URL` overrides `authUrl`.
-`GAUGE_API_URL` / `apiUrl` still select the Agents data API. Deploy and enable
-shared authentication on both Chat and Agents before releasing this CLI version.
+On a remote terminal, use `gauge auth login --device` and open the displayed
+link in your browser. The CLI keeps you signed in automatically. If it asks
+you to sign in again, rerun `gauge auth login`.
 
-Chat handles browser consent, device approval, credential issuance, refresh, and
-revocation. One opaque access token works with both APIs. Agents asks Chat for
-current identity and authorization; memberships and roles are not embedded in the
-token. `auth status` and `whoami` use Chat for shared credentials, including users
-who do not yet have an Agents workspace.
+Use `gauge whoami` to see which account you are using, `gauge auth status` to
+check your login, and `gauge auth logout` to sign out this CLI installation.
+Local runs do not require a Gauge account.
 
-The CLI stores access and rotating refresh credentials in an owner-only, atomically
-replaced credentials file. Existing plaintext tokens remain readable.
-`GAUGE_API_TOKEN` and explicitly supplied tokens retain precedence and are never
-automatically refreshed. Imported shared access tokens (`login --with-token`) have
-no refresh credential and therefore must be replaced when they expire.
+## API keys for scripts and CI
 
-Refresh runs before expiry and once after an HTTP 401, including event-stream
-handshakes. A permission denial or service outage is not treated as a reason to
-refresh. A rate-limited early renewal leaves a still-valid token usable. Before sending
-a refresh, the CLI persists a pending marker under its credential lock. Only a
-confirmed rotation saved to disk or a definite pre-rotation rate-limit rejection
-clears that marker. Network/server errors, malformed responses, process death,
-and credential-save failures require another login; later commands cannot
-automatically replay the old refresh token. Logout retains access to the old
-refresh secret for revocation. A dead process may also leave a lock file: remove
-it only after confirming no Gauge process is running. Removing the lock does
-not remove the pending marker. Replaying a consumed refresh token revokes its
-grant. Concurrent CLI processes serialize rotation through a lock file. If a
-process crashes while holding the lock, the error names the file to remove after
-confirming no Gauge process is running.
+Create an organization API key in Chat's Settings → API Keys, choosing Read or
+Read & write permissions. Supply it through `GAUGE_API_TOKEN` in your shell or
+CI secret settings. This overrides your saved login; unset the variable to
+return to that login. Logout does not remove or revoke an environment API key.
 
-Stored shared credentials are bound to the Chat and Agents origins chosen at
-login. Changing API hosts requires explicitly logging in for the new host.
-Credential-bearing HTTP requests do not follow redirects.
+Replace expired or revoked keys in your script or CI settings. Imported tokens
+(`gauge auth login --with-token`) also need replacing when they expire.
 
-`auth logout` revokes the shared grant and clears local credentials. If Chat is
-unreachable, local credentials are still cleared and the CLI reports that remote
-revocation failed. Environment credentials are unchanged. `auth tokens` manages
-legacy Agents tokens; shared sessions cannot mint legacy tokens that would escape
-the shared grant's revocation.
+## Upgrading from an earlier CLI
 
-Local execution is unchanged. Existing stored and imported Agents tokens can
-still identify the user, manage legacy tokens, and access Agents by canonical
-organization UUID. They cannot access the shared organization directory. Use
-`gauge auth login` for public slug selection; unset `GAUGE_API_TOKEN` if it
-contains a legacy token. The next browser or device login creates a shared
-session.
+If you used an older Agents token, run `gauge auth login` to access Chat and
+choose organizations with `gauge orgs`. Unset `GAUGE_API_TOKEN` first if it
+contains the old token.
 
-`gauge whoami` identifies the user or organization API key. `gauge auth status`
-validates the active credential and reports its source, scopes, expiry, and API
-URLs. Shared sessions and API keys use the public Chat `/api/v1/me` endpoint;
-legacy credentials use Agents `/api/v1/me`. Only `whoami` lists organizations,
-using the canonical directory for shared sessions and the owning organization
-for API keys.
+If your account has only one organization, signing in updates your old saved
+default automatically. If you have several, run `gauge orgs`, then
+`gauge orgs use <slug>` to choose one. Old defaults may have been saved when
+you signed in or created an organization, even if you never ran `orgs use`.
+Use `gauge orgs use <slug> --project` to update an old project setting;
+everyone using that project will need CLI 0.25.0 or later. See
+[organization selection](../cli/README.md#organizations).
+
+## Other deployments
+
+`GAUGE_AUTH_URL` (or the `authUrl` setting) chooses the login service;
+`GAUGE_API_URL` (or `apiUrl`) chooses the Agents API. Environment variables
+win over saved settings. Sign in again after changing servers.

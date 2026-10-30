@@ -23,7 +23,11 @@ export type Account = Pick<GaugeState, "signedIn" | "orgId"> & {
 export function findWorkspace(cwd = process.cwd()): string | undefined {
   let directory = resolve(cwd);
   while (true) {
-    if (existsSync(join(directory, "gauge.json"))) return directory;
+    if (
+      existsSync(join(directory, "gauge.json")) ||
+      existsSync(join(directory, ".gauge", "config.json"))
+    )
+      return directory;
     const parent = dirname(directory);
     if (parent === directory) return undefined;
     directory = parent;
@@ -53,17 +57,19 @@ export function readGaugeState(
   let config: Record<string, unknown> | null | undefined;
   let workspaceBackend: Mode | undefined;
   if (root) {
-    try {
-      const parsed: unknown = JSON.parse(
-        readFileSync(join(root, "gauge.json"), "utf8"),
-      );
-      config =
-        parsed && typeof parsed === "object" && !Array.isArray(parsed)
-          ? (parsed as Record<string, unknown>)
-          : null;
-    } catch {
-      config = null;
-    }
+    if (!existsSync(join(root, "gauge.json"))) config = {};
+    else
+      try {
+        const parsed: unknown = JSON.parse(
+          readFileSync(join(root, "gauge.json"), "utf8"),
+        );
+        config =
+          parsed && typeof parsed === "object" && !Array.isArray(parsed)
+            ? (parsed as Record<string, unknown>)
+            : null;
+      } catch {
+        config = null;
+      }
     if (config && "mode" in config)
       throw new CliError(
         "usage",
@@ -136,7 +142,7 @@ export function header(
     );
   else if (!state.root && !brief)
     lines.push(
-      "Run `gauge init` to initialize this directory. It writes gauge.json and private .gauge/ state. Add --cases only to scaffold shared gauge-cases/ files.",
+      "Run `gauge init` to initialize this directory. It writes only private .gauge/ state. Add --cases to also write shared gauge.json, gauge-cases/, and an AGENTS.md block.",
     );
   else if (!brief && (!topic || topic.key === "root"))
     lines.push(

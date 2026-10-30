@@ -178,6 +178,7 @@ export const mcpRefSchema = z
 export const mcpRefsSchema = z.array(mcpRefSchema).max(MAX_MCP_SET_ENTRIES);
 
 export const mcpVersionWireSchema = z.object({
+  connectionId: z.string().nullable().optional(),
   id: z.string(),
   label: z.string(),
   specDigest: z.string(),
@@ -212,6 +213,7 @@ export const mcpServerDetailSchema = mcpServerListItemSchema
 export type McpServerDetail = z.infer<typeof mcpServerDetailSchema>;
 
 export const saveMcpServerBodySchema = z.object({
+  connectionId: z.string().min(1).max(128).optional(),
   name: mcpServerHandleSchema,
   spec: z.unknown(),
   label: z.string().min(1).max(120).optional(),
@@ -219,7 +221,41 @@ export const saveMcpServerBodySchema = z.object({
 });
 export type SaveMcpServerBody = z.infer<typeof saveMcpServerBodySchema>;
 
+/** Begin human OAuth consent; credentials remain in Gauge, never in the CLI. */
+export const beginMcpOauthBodySchema = z
+  .object({
+    name: mcpServerHandleSchema,
+    url: z
+      .url()
+      .max(2048)
+      .refine(
+        (url) => url.startsWith("https://"),
+        "OAuth requires an HTTPS MCP URL",
+      ),
+    clientId: z.string().min(1).max(2048).optional(),
+    clientSecret: z.string().min(1).max(8192).optional(),
+  })
+  .strict();
+export type BeginMcpOauthBody = z.infer<typeof beginMcpOauthBodySchema>;
+
+export type BeginMcpOauthResponse =
+  | {
+      kind: "redirect";
+      authorizationId: string;
+      authorizationUrl: string;
+      expiresAt: string;
+    }
+  | { kind: "connected"; connectionId: string; handle: string }
+  | { kind: "needs-client-id"; redirectUri: string; reason: string }
+  | { kind: "problem"; problem: string };
+
+export type McpOauthStatus =
+  | { status: "pending"; expiresAt: string }
+  | { status: "connected"; connectionId: string }
+  | { status: "failed" | "expired"; message: string };
+
 export const saveMcpServerResponseSchema = z.object({
+  connectionId: z.string().nullable().optional(),
   serverId: z.string().nullable(),
   handle: z.string(),
   label: z.string(),

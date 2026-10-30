@@ -56,7 +56,8 @@ import {
   resolveOutput,
 } from "../lib/context";
 import { runEvalSet } from "../lib/evalSets";
-import { collect, once, parseAgents } from "../lib/flags";
+import { detectSkillAgent } from "../lib/detectAgent";
+import { buildAgentRoster, collect, once, parseAgents } from "../lib/flags";
 import { gaugeState } from "../lib/gaugeState";
 import {
   addLifecycleEditOptions,
@@ -268,6 +269,9 @@ function printInsight(insight: RunInsightResponse): void {
   console.log(`\nFindings (${analysis.observations.length})`);
   for (const finding of analysis.observations) {
     console.log(`  ${finding.kind}: ${finding.label}`);
+    console.log(
+      `    id ${finding.id}${finding.issueId ? `, issue ${finding.issueId}` : ""}`,
+    );
     console.log(`    ${finding.detail}`);
     console.log(`    Evidence: ${JSON.stringify(finding.evidence)}`);
   }
@@ -441,6 +445,7 @@ async function streamRun(
 }
 
 type LaunchOpts = LifecycleOpts & {
+  prompt?: string;
   profile?: string;
   eval?: string;
   preference?: string;
@@ -571,6 +576,25 @@ function printUnattachedInputs(names: string[], saved: boolean): void {
   if (names.length) console.log(unattachedNote(names, saved));
 }
 
+function callerAgent(): string {
+  const caller = detectSkillAgent(process.env);
+  return caller === "codex" || caller === "opencode" ? caller : "claude-code";
+}
+
+function promptSpec(prompt: string, agents: string[]): CaseSpec {
+  return parseCaseSpec({
+    version: 2,
+    cases: [
+      {
+        key: "prompt",
+        prompt,
+        preference: { kind: "open-ended" },
+        config: { agents: buildAgentRoster(agents) },
+      },
+    ],
+  });
+}
+
 async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
   if (opts.profile && gaugeState(cmd).mode !== "local")
     throw new CliError(
@@ -578,12 +602,18 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
       "--profile applies only to local runs. Pass --local.",
     );
   const sources = [
+    opts.prompt !== undefined && "a prompt",
     opts.eval !== undefined && "--eval",
     opts.preference !== undefined && "--preference",
     opts.apply !== undefined && "--apply",
   ].filter((flag): flag is string => Boolean(flag));
   const source = sources[0];
   if (hasLifecycleFlags(opts)) {
+    if (opts.prompt !== undefined)
+      throw new CliError(
+        "usage",
+        "Lifecycle flags apply only to a hosted --eval or --preference launch. For hooks, create a saved eval or preference first; prompt-only runs do not support hooks.",
+      );
     if (gaugeState(cmd).mode !== "hosted")
       throw new CliError(
         "usage",
@@ -644,7 +674,13 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
   }
   if (opts.scenario.length > 0 && source !== "--preference")
     throw new CliError("usage", "--scenario applies with --preference only");
-  if (
+  if (source === "a prompt") {
+    if (opts.samples !== undefined || opts.input.length > 0)
+      throw new CliError(
+        "usage",
+        "a prompt run takes only --agent; use `gauge preference` or `gauge eval` for more settings",
+      );
+  } else if (
     (opts.agent.length > 0 || opts.samples !== undefined) &&
     source !== "--eval" &&
     source !== "--preference"
@@ -666,7 +702,9 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
     throw new CliError(
       "usage",
       `Hosted saved measurements do not take project inputs; drop --input or pass --local`,
-      { hint: "For hosted project inputs, use eval case files or a case spec." },
+      {
+        hint: "For hosted project inputs, use eval case files or a case spec.",
+      },
     );
   if (opts.requireExperiment !== undefined && !opts.apply)
     throw new CliError("usage", "--require-experiment applies with --apply");
@@ -701,6 +739,11 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
       );
     spec = parseCaseSpec(json);
   }
+  if (opts.prompt !== undefined)
+    spec = promptSpec(
+      opts.prompt,
+      opts.agent.length > 0 ? opts.agent : [callerAgent()],
+    );
   if (gaugeState(cmd).mode === "local" && (opts.eval || opts.preference)) {
     const saved = localMeasurementSpec(
       cmd,
@@ -732,12 +775,7 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
     return;
   }
   const { definition, org, inputSnapshots, unattachedInputs } =
-    await loadWorkingTree(
-    cmd,
-    opts,
-    !opts.dryRun,
-    spec,
-  );
+    await loadWorkingTree(cmd, opts, !opts.dryRun, spec);
   const orgPath = `/api/v1/orgs/${encodeURIComponent(org)}/run-definitions`;
   if (opts.dryRun) {
     const result =
@@ -799,9 +837,19 @@ async function runLocalCases(
           gatewayImage: opts.gatewayImage,
         })),
         inputSnapshots: local.inputSnapshots,
-        webFixtures: Object.fromEntries(Object.entries(local.webFixtures).map(([path, { fixture, digest }]) => [path, {
-          digest, pages: fixture.pages.map((p) => p.url), scopes: fixture.scopes ?? [], origins: fixture.origins ?? [],
-        }])),
+        webFixtures: Object.fromEntries(
+          Object.entries(local.webFixtures).map(
+            ([path, { fixture, digest }]) => [
+              path,
+              {
+                digest,
+                pages: fixture.pages.map((p) => p.url),
+                scopes: fixture.scopes ?? [],
+                origins: fixture.origins ?? [],
+              },
+            ],
+          ),
+        ),
         unattachedInputs: local.unattachedInputs,
       };
       if (json) printJson(plan);
@@ -817,7 +865,12 @@ async function runLocalCases(
         local.definition,
         local.uploads,
         join(root, ".gauge"),
-        { profile: opts.profile, runtimeImage: opts.runtimeImage, gatewayImage: opts.gatewayImage, measurement },
+        {
+          profile: opts.profile,
+          runtimeImage: opts.runtimeImage,
+          gatewayImage: opts.gatewayImage,
+          measurement,
+        },
       );
       if (json) printJson(detached);
       else
@@ -891,7 +944,10 @@ function printLocalPlan(
   console.log(
     `Runtime: ${plan.runtime.reference}${plan.runtime.imageId ? ` (${plan.runtime.imageId})` : ""}. Compatibility probe runs at launch.`,
   );
-  if (plan.gateway) console.log(`Gateway: ${plan.gateway.reference}${plan.gateway.imageId ? ` (${plan.gateway.imageId})` : ""}`);
+  if (plan.gateway)
+    console.log(
+      `Gateway: ${plan.gateway.reference}${plan.gateway.imageId ? ` (${plan.gateway.imageId})` : ""}`,
+    );
   for (const item of plan.cases)
     console.log(
       `  ${item.path}: ${item.sessions.map((s) => `${s.agent} ${s.model} ×${s.samples}`).join(", ")}; ${item.criteria} criteria`,
@@ -1029,10 +1085,10 @@ function printLocalStatus(
 export function register(program: Command): void {
   const run = addLifecycleEditOptions(program.command("run"))
     .description(
-      "Start runs and read them. With no flag: run this repo's eval cases (gauge-cases/) (local: in local Docker). Lifecycle flags override hosted --eval/--preference hooks for this launch only.",
+      'Start runs and read them. `gauge run "<prompt>"` runs one open-ended preference prompt and saves no measurement. With no flag: run this repo\'s eval cases (gauge-cases/) (local: in local Docker). Lifecycle flags override hosted --eval/--preference hooks for this launch only.',
     )
-    .argument("[command]")
-    .usage("[options] [command]")
+    .argument("[prompt]")
+    .usage('[options] ["<prompt>"]')
     .option(
       "--eval <id>",
       "run a saved eval set (see `gauge eval`)",
@@ -1051,7 +1107,7 @@ export function register(program: Command): void {
     )
     .option(
       "--agent <agent[:m1,m2]>",
-      "with --eval/--preference: run these agents and model pins for this launch only; the stored roster stays (repeatable)",
+      "with a prompt or --eval/--preference: run these agents and model pins for this launch only (repeatable)",
       collect,
       [] as string[],
     )
@@ -1085,7 +1141,10 @@ export function register(program: Command): void {
       "--runtime-image <image>",
       "use a compatible custom Docker image for local runs (tag, digest, or image ID)",
     )
-    .option("--gateway-image <image>", "use a compatible custom gateway image for local web fixtures")
+    .option(
+      "--gateway-image <image>",
+      "use a compatible custom gateway image for local web fixtures",
+    )
     .option("--verify", "check this repo's eval files; start no sessions")
     .option(
       "--dry-run",
@@ -1105,10 +1164,10 @@ export function register(program: Command): void {
     )
     .option("--yes", "skip the confirmation")
     .action(async (arg: string | undefined, opts: LaunchOpts, cmd: Command) => {
-      if (arg !== undefined)
+      if (arg !== undefined && !/\s/.test(arg.trim()))
         throw new CliError(
           "usage",
-          `unknown run command "${arg}". Launch a saved eval set or preference prompt with \`gauge run --eval <id>\` or \`--preference <id>\`; read runs with \`gauge run list\` or \`gauge run get <id> [--logs]\`.`,
+          `unknown run command "${arg}". Run a prompt with \`gauge run "<prompt>"\`. Launch a saved eval set or preference prompt with \`gauge run --eval <id>\` or \`--preference <id>\`; read runs with \`gauge run list\` or \`gauge run get <id> [--logs]\`.`,
         );
       if (
         opts.detach &&
@@ -1119,12 +1178,15 @@ export function register(program: Command): void {
           opts.example)
       )
         throw new CliError("usage", "--detach requires a local run");
-      if ((opts.runtimeImage || opts.gatewayImage) && gaugeState(cmd).mode !== "local")
+      if (
+        (opts.runtimeImage || opts.gatewayImage) &&
+        gaugeState(cmd).mode !== "local"
+      )
         throw new CliError(
           "usage",
           "--runtime-image and --gateway-image work only on local runs; pass --local",
         );
-      await launch(cmd, opts);
+      await launch(cmd, { ...opts, prompt: arg?.trim() });
     });
 
   run.hook("preAction", (parent, action) => {
@@ -1285,7 +1347,7 @@ export function register(program: Command): void {
         if (!session)
           throw new CliError(
             "usage",
-            `Local run ${id} was not found. Use gauge run repair --local if its artifacts exist.`,
+            `Local run ${id} was not found. If its files are still in .gauge/runs, run \`gauge run repair --local\` to restore it to the run list.`,
           );
         if (opts.logs) {
           const path = join(
@@ -1300,7 +1362,7 @@ export function register(program: Command): void {
           if (!existsSync(path))
             throw new CliError(
               "usage",
-              "This run has no transcript artifact yet.",
+              "This run has no saved transcript yet.",
             );
           process.stdout.write(readFileSync(path, "utf8"));
         } else printJson({ ...session, analysis: getLocalAnalysis(dir, id) });
@@ -1404,7 +1466,7 @@ export function register(program: Command): void {
   run
     .command("repair")
     .description(
-      "Rebuild local session summaries from artifacts; preserve saved measurements and analysis",
+      "Restore local runs to the run list from their saved files, keeping measurements and analysis",
     )
     .action((_opts: unknown, command: Command) => {
       if (gaugeState(command).mode !== "local")
@@ -1448,6 +1510,71 @@ export function register(program: Command): void {
         pollStatus: true,
       });
     });
+
+  hostedOnly(run.command("trace <id>"))
+    .description(
+      "A window of the run's trace around a seq, one line per event: web fetches, tool calls, results, and messages",
+    )
+    .requiredOption(
+      "--seq <n>",
+      "the seq at the center, e.g. a finding's evidence seq",
+    )
+    .option("--before <n>", "events before the seq (default 30)")
+    .option("--after <n>", "events after the seq (default 10)")
+    .action(
+      async (
+        id: string,
+        opts: { seq: string; before?: string; after?: string },
+        command: Command,
+      ) => {
+        const res = await createClient().get<{ lines: string[] }>(
+          `${runPath(id)}/trace`,
+          { seq: opts.seq, before: opts.before, after: opts.after },
+        );
+        if (resolveOutput(command) === "json") printJson(res);
+        else for (const line of res.lines) console.log(line);
+      },
+    );
+
+  hostedOnly(run.command("web <id>"))
+    .description(
+      "Every URL the run's agent fetched, with the seqs, and its searches",
+    )
+    .action(async (id: string, _opts: unknown, command: Command) => {
+      const res = await createClient().get<{
+        pages: { url: string; seqs: number[] }[];
+        searches: { seq: number; query: string }[];
+      }>(`${runPath(id)}/web`);
+      if (resolveOutput(command) === "json") return printJson(res);
+      for (const page of res.pages)
+        console.log(`${page.seqs.join(",")}  ${page.url}`);
+      for (const search of res.searches)
+        console.log(`${search.seq}  search: ${search.query}`);
+      if (!res.pages.length && !res.searches.length)
+        console.log("No web activity recorded.");
+    });
+
+  hostedOnly(run.command("commands <id>"))
+    .description(
+      "Shell commands the run's agent executed: without --seq, commands matching --query with their first output; with --seq, that call's full output",
+    )
+    .option("--query <text>", "only commands whose text contains this")
+    .option("--seq <n>", "one call from the listing")
+    .option("--offset <n>", "page into a long output")
+    .action(
+      async (
+        id: string,
+        opts: { query?: string; seq?: string; offset?: string },
+      ) => {
+        printJson(
+          await createClient().get<unknown>(`${runPath(id)}/commands`, {
+            query: opts.query,
+            seq: opts.seq,
+            offset: opts.offset,
+          }),
+        );
+      },
+    );
 
   run
     .command("diff <id>")

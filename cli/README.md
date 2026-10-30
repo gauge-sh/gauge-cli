@@ -1,8 +1,8 @@
 # @withgauge/cli
 
 `gauge` — the [Gauge](https://agents.withgauge.com) command-line interface.
-Manage your eval sets, Agent Preference prompts, and agent runs, and watch runs
-live from your terminal.
+Access Gauge Chat data, manage eval sets and Agent Preference prompts, and
+watch agent runs live from your terminal.
 
 ```sh
 npm install -g @withgauge/cli
@@ -20,71 +20,50 @@ Requires Node.js ≥ 22.13.
 
 ## Organizations
 
-Use the public Gauge slug shown by `gauge orgs` with either product:
+Run `gauge orgs` to see your organizations and whether each has Chat, Agents,
+or both. Use the value in the `slug` column to choose one:
 
 ```sh
 gauge orgs use acme                 # save your default organization
 gauge orgs use acme --project       # save this project's organization
-gauge chat tags list --org acme     # override the selection for one command
+gauge chat tags list --org acme     # choose an organization for one command
 ```
 
-The CLI resolves slugs through the shared Gauge directory and sends the
-canonical organization ID to the product API. It stores that ID in `orgId`
-in user configuration or `gauge.json`; you do not need to find or enter a UUID.
-Explicit canonical UUIDs are also accepted. Slug lookups use the current
-directory without a persistent cache or fallback to internal Agents workspace
-names. Directory failures stop the command before it accesses product data.
-Saved IDs need no lookup; the product API checks access on every request.
+The selection works for both products. A command's `--org` takes priority,
+followed by its run specification, the project setting, then your default.
+Chat can pick your organization automatically if you have only one; Agents
+commands need a saved selection or `--org`.
 
-With a shared login, selection precedence is `--org`, a run specification,
-`gauge.json` `orgId`, then user configuration `orgId`. Run specifications with
-an old `org` slug require an explicit `--org <public-slug>` override, or removal
-of `org` to use the saved selection. Canonical UUIDs in run specifications are
-unambiguous and still work.
+If your account can access an organization that isn't listed by `gauge orgs`,
+select it by public slug with `--org` or `gauge orgs use`. The server checks
+whether your account has access. Lookup outside the list currently requires
+the organization to have Chat enabled. For an unlisted Agents-only organization,
+use `--org <canonical-uuid>`.
 
-An old `defaultOrg` or `gauge.json` `org` selection requires reselection using
-`gauge orgs use <slug>` or `gauge orgs use <slug> --project`, respectively.
-The CLI never guesses whether an old saved slug meant a canonical organization
-or an Agents workspace. Project migration preserves other manifest fields.
-Older CLI binaries retain their existing Agents slug semantics; the server
-continues to accept those legacy requests. They do not read the new user `orgId`
-field. A project migrated with `--project` requires the new CLI: older versions
-reject `orgId` in the manifest. To return to an older CLI, restore the prior
-`gauge.json` and select the Agents workspace there again. No compatibility slug
-is written by the new CLI.
+**Upgrading:** If your account has only one organization, `gauge auth login`
+updates your old saved default automatically. Otherwise, run `gauge orgs`, then
+`gauge orgs use <slug>` to choose your default. This includes defaults that an
+older CLI selected automatically when you signed in or created an organization.
+For an old project setting, run `gauge orgs use <slug> --project`.
+Everyone using an updated project needs
+CLI 0.25.0 or later; restore the previous `gauge.json` before using an older
+CLI. If an older run specification contains an `org` name, pass `--org` to
+choose the organization for that run.
 
-`gauge orgs` lists canonical organizations and their products (Chat, Agents, or
-both). Historical unlinked Agents workspaces are excluded. Commands for a
-product an organization does not use report that limitation.
-`gauge orgs -o json` returns `id`, `slug`, `name`, `products`, and `isDefault`;
-`products.agents: null` means availability could not be determined. Organization
-creation and onboarding use the existing user-driven canonical provisioning
-path and the canonical IDs exposed by the Agents identity response. Centralizing
-staff and system provisioning is a separate follow-up.
+Chat commands using an API key default to the key's organization, regardless
+of your saved selection. Agency keys can use `--org` to choose a client.
 
-Chat commands with an organization API key default to the key's organization
-and ignore saved user/project selections; `--org` can select an agency key's
-client organization. With a shared login and no selection, Chat commands select
-your only Chat-enabled organization or ask you to choose. Agents commands
-require an explicit or saved selection.
+## Checking your account
 
-Legacy Agents tokens can still identify their user and make requests using a
-canonical UUID. They cannot read the shared directory; use `gauge auth login`
-for selection by public slug.
+`gauge whoami` shows the account or API key you are using and its organizations.
+`gauge auth status` checks whether your login or API key works and shows its
+source, permissions, and expiry. See [signing in](../docs/shared-cli-auth.md)
+for login, logout, and API-key setup.
 
-## Identity and authentication diagnostics
-
-`gauge whoami` shows who you are acting as: a signed-in user and their Gauge
-organizations, or an organization API key and its owning organization.
-`gauge auth status` checks which credential is active, where it came from,
-whether the server accepts it, its scopes and expiry, and the API URLs.
-Neither command prints credential secrets. Legacy tokens can identify their
-user, but do not report canonical organization membership, scopes, or expiry.
-
-JSON consumers: `whoami` returns `user`, `apiKey`, and `orgs` (null for a legacy
-token). `auth status` returns `authenticated`, `source`, `apiUrl`, `authUrl`, and
-`credential` (`kind`, `scopes`, `expiresAt`). API-key identity and credential
-diagnostics are available at the root; there is no `gauge chat whoami` command.
+For scripts, add `-o json`: `whoami` returns `user`, `apiKey`, and `orgs`;
+`auth status` returns `authenticated`, `source`, `apiUrl`, `authUrl`, and
+`credential` (`kind`, `scopes`, `expiresAt`). Older Agents tokens do not report
+organizations, permissions, or expiry.
 
 ## Workspace and local storage
 
@@ -227,7 +206,7 @@ describe the transport and person-profile behavior.
 For an end-to-end improvement loop, run `gauge instructions hillclimb`. It guides
 your coding agent to identify product inputs, propose a representative pilot,
 inspect and publish findings, implement a focused change, and rerun to compare.
-Init and the generated `AGENTS.md` point to this guidance. `gauge install-skill`
+Init and the `AGENTS.md` block from `init --cases` point to this guidance. `gauge install-skill`
 installs the Gauge skill, which directs agents to the installed CLI's instructions.
 
 Execution backend is independent of definition source. Resolve an explicit
@@ -248,7 +227,7 @@ contains the execution preference. Git is optional for workspace initialization.
 | Project inputs and previews on saved measurement launches | yes | use case files/specs |
 | Findings and summary queries | yes, supported fields | yes |
 | Personas, recurring schedules, PR checks | no | yes |
-| Optimizations (managed docs rewriting) | no | yes |
+| Optimizations (edit and rerun sessions) | no | yes |
 | Stored credentials for MCP servers and connections | no | yes |
 | Additional reporting datasets, dashboards, org settings | no | yes |
 
@@ -285,6 +264,7 @@ target; `--copy` copies files instead of creating symlinks.
 ## Usage
 
 ```sh
+gauge run "Which CLI should I deploy with?"   # one open-ended preference run, nothing saved
 gauge status                      # the org at a glance
 gauge eval list                   # saved eval sets
 gauge preference list             # saved Agent Preference prompts
@@ -309,12 +289,13 @@ migration example. Use `gauge instructions eval` and `gauge instructions prefere
 preference prompts, and `gauge instructions session-analysis` to investigate
 product choices, source exposure, and interventions, from individual traces to
 larger cohorts.
-Use `gauge instructions optimization` for the full optimization workflow.
+Use `gauge instructions issues` to choose what to improve and
+`gauge instructions optimization` for the full optimization workflow.
 `gauge instructions --list` shows available topics.
 
 Run `gauge --help` (or `gauge <command> --help`) for the full command set:
 run, eval, preference, models, personas, skills, mcp, repos, optimizations,
-brands, tags, actions, dashboards, members, org, provider keys,
+brands, tags, issues, dashboards, members, org, provider keys,
 billing, usage, stats, query, and more.
 
 ## Run committed Markdown evals
@@ -362,11 +343,13 @@ tarball has a different hash and size. Each launch takes a fresh snapshot.
 Each case owns its agents, models, consumer repository/ref, Persona and criteria.
 The optional `config.inputs` selects named inputs; all attach by default.
 
-For transparent web fixtures, declare an input such as
-`"docs": { "type": "web-fixture", "path": "fixtures/docs.json" }`.
-Select it with `config.inputs` and override it with `--input docs=path.json` in
-either backend. Local runs use a separate mitmproxy gateway; `gauge local runtime
-inspect` and `pull` cover both images. See [web fixture setup and contract](../docs/local-web-fixtures.md).
+A `web-fixture` input controls what agents receive from specific HTTPS URLs:
+exact pages, 404s for missing pages under a scope, or an origin routed to a
+preview. Declare it as `"docs": { "type": "web-fixture", "path": "fixtures/docs.json" }`,
+select it with `config.inputs`, and override it with `--input docs=path.json`
+on either backend. Local runs serve fixtures through a gateway container;
+`gauge local runtime inspect` and `pull` cover its image. See
+[web fixture inputs](https://github.com/gauge-sh/gauge-cli/blob/main/docs/local-web-fixtures.md).
 
 `verify` reads the repository's current files, including non-ignored untracked files,
 without login, network access, a PR, built CI artifacts, or sandbox compute. It checks
@@ -604,9 +587,35 @@ run locally yet.
 
 ### Authenticated MCP servers
 
-Connect your account in Gauge's MCP setup, completing OAuth in your browser when
-required. Add the server's versioned reference to each case's `config.mcpRefs`.
-Gauge manages credentials for the session; keep tokens out of prompts and Git.
+Add an authenticated remote MCP from the CLI:
+
+```sh
+gauge mcp add --hosted --org <org> --name gauge --url https://app.withgauge.com/mcp --oauth --label v1
+```
+
+The command opens browser consent, waits for completion, then saves `gauge@v1`
+bound to the new connection. Gauge stores and refreshes OAuth credentials; the
+CLI receives only the connection ID. Use `--no-browser` in a remote terminal:
+the URL is printed to stderr and the command still waits. `--oauth-timeout`
+sets a shorter wait (default and maximum 600 seconds).
+
+To reuse an existing connection, run `gauge connections list --hosted`, then
+use `--connection <id>` instead of `--oauth`. Only connections belonging to the
+organization and permitting the MCP host can be bound. A connection binding is
+part of the saved version: include it when appending an authenticated version.
+`gauge mcp get <name> --hosted` shows each version's connection ID.
+
+If the server requires manual client registration, the command prints the
+callback URL. Retry with `--oauth-client-id <id>` and, if needed,
+`--oauth-client-secret-env <ENV_VAR_NAME>`. The variable's value goes only to
+Gauge's OAuth service, never into the saved MCP spec or command output.
+`--header Authorization` declares a name; it does not configure authentication.
+
+After setup, attach the version with `gauge eval edit <id> --hosted --mcp gauge@v1`
+or each case's `config.mcpRefs`. MCP execution is hosted-only. Keep tokens out of
+prompts and Git. The Gauge API must support MCP OAuth setup and connection
+bindings before using these flags. Existing UI-created authenticated servers
+continue to work.
 
 ### Website previews
 
@@ -756,7 +765,8 @@ prompt is never edited. Unspecified phases, timeouts, and parameters inherit
 the saved values. `--clear-lifecycle` disables both hooks for this launch only.
 Without lifecycle flags, runs use the saved hooks. One-off hook flags require
 hosted saved evals/preferences; they are not supported with `--local`, `--apply`,
-case files, or preview commands. Launching runs consumes credits normally.
+prompt-only runs (`gauge run "<prompt>"`), case files, or preview commands.
+Launching runs consumes credits normally.
 
 ## Hosted schedules
 
@@ -773,69 +783,68 @@ omit it and every scenario runs. On a recurring cadence, an eval launch or a
 full preference launch moves the next scheduled run to one period from now. A
 scenario subset leaves the schedule unchanged.
 
+## Issues (hosted)
+
+An issue groups the same finding across many sessions. `gauge issues list` shows
+every issue with the most sessions first, with its type and product. Friction
+shows how badly it hurt agents (blocked, recovered, extra work). Objections come
+from preference sessions and show where agents went instead. Filter with
+`--type friction|objection`. `gauge issues get <id>` lists the issue's
+findings with their runs. `gauge run insight <run>` shows each finding's issue.
+
 ## Optimizations (hosted)
 
-Start by finding runs that encountered the surface you want to improve:
+Optimizations can help hill climb your agent surfaces to improve Agent
+Preference and Agent Experience. You edit a tree of pages, skills,
+and CLI rules; Gauge reruns the source sessions with the tree injected
+and compares their findings. Nothing deploys.
 
 ```sh
 gauge instructions optimization
-gauge optimizations baselines --eval ev_1 -o json
-gauge run insight run_1 -o json
-gauge run get run_1 --logs -o json
-gauge optimizations start --eval ev_1 --from-run run_1 --yes
-gauge optimizations watch cl_1
+gauge issues list -o json                     # by impact; --type friction|objection
+gauge issues get is_1                         # the issue's findings and runs
+gauge optimizations create --issue is_1       # or --finding <id> --run <run>, or --goal <text>
+gauge optimizations sessions add op_1 run_1 run_2   # a goal starts with none; up to 12
+gauge optimizations authoring op_1
+gauge run trace run_1 --seq 42                # read the cited evidence
+gauge run web run_1                           # the exact URLs the session fetched
 ```
 
-`baselines` returns observed owned surfaces grouped by run, source evidence,
-judging status, eligibility (including the baseline's complete run set), and a
-`nextCursor` for `--cursor`. It uses the UI baseline picker's compatibility rules
-and recent 100-batch eligibility window. Missing evidence is unknown; the list
-is an analysis summary, not an exhaustive inventory of every trace event.
-`--from-run` inherits the eligible baseline's harness/model and reuses its runs.
-A stale choice fails instead of silently buying a new baseline. `--target` is
-an alternative when you need to establish a baseline; do not combine it with
-`--from-run`. Use `--preference` instead of `--eval` for preference prompts.
+Tree keys are `page:<url>`, `skill:<name>`, and `cli:<package>`. Copy an
+original in with `file add` so the diff shows only your edit. Change part of a
+page with `file edit`: `edits.json` is `[{find, replace}]` on the exact source,
+which `file read --query` shows. Each find must appear once, all edits apply or
+none do, and the output shows how much of the page you kept. Use `file write`
+for a new page, a full rewrite, a skill file, or CLI rules. Files not in the
+tree rerun as the source session had them.
 
 ```sh
-gauge optimizations authoring cl_1 > context.json
-gauge optimizations page cl_1 --url https://docs.acme.dev/auth -o json
-# Author round.json using context.revision and the observed baseline evidence.
-gauge optimizations round preview cl_1 --file round.json -o json
-gauge optimizations round save cl_1 --file round.json --digest <previewDigest>
-gauge optimizations launch cl_1 --yes
-gauge optimizations watch cl_1
-gauge optimizations trial cl_1 R1.1 -o json
-gauge optimizations adopt cl_1 R1.1 --yes
-gauge optimizations handoff cl_1
-gauge optimizations complete cl_1 --yes
+gauge optimizations file add op_1 --page https://docs.acme.dev/auth
+gauge optimizations file read op_1 page:https://docs.acme.dev/auth --text
+gauge optimizations file read op_1 page:https://docs.acme.dev/auth --query "API key"
+gauge optimizations file edit op_1 --page https://docs.acme.dev/auth --edits edits.json
+gauge optimizations file write op_1 --skill acme --path SKILL.md --from SKILL.md
+gauge optimizations notes op_1 --from notes.md
+gauge optimizations launch op_1 --yes
+gauge optimizations watch op_1
+gauge optimizations launch op_1 --restore-before run_9:140 --yes
+gauge optimizations checkpoints op_1
+gauge optimizations finish op_1 --from result.json --yes
 ```
 
-A round is `{revision, trials: [{trial: {title, hypothesis, lever, intervention}}]}`.
-Docs `REWRITE_DOCS` proposals supply `after.pages` with URL and exact `edits`
-(`find`/`replace`), or a complete `body` and `rewriteReason`. Check the page's
-`source`: `scrape` means current fetched content, not the captured response.
+`launch` restores each rerun from the deepest checkpoint of an earlier rerun
+taken before it saw a changed surface, or starts fresh. `--restore-before
+<rerun>:<seq>` restores from the deepest checkpoint at or before that seq,
+`--checkpoint <id>` from one checkpoint, and `--fresh [sourceRunId...]` starts
+from zero. Launch prints the checkpoint and seq each rerun restored from.
 
-For CLI trials, inspect `cliIntervention.guidance` and `targets` in authoring
-and use `gauge run get <id> --logs` for the cited command evidence. `cli-change --file change.json`
-accepts v3 `{schemaVersion:3, target, rules, shippingIntent}` and returns a sealed
-bundle to put in `CLI_INTERVENTION.after`. It does not save or launch. The old
-catalog/invocation-ID workflow is retired. Skills use `skill-files` and the
-complete edited file bundle.
+`watch` waits until every rerun finishes and is analyzed, then shows each source
+finding as resolved or returned, and new findings as introduced. `launches
+<id> <launchId> -o json` reads one launch again. `result.json` is
+`{summary, changed, resolved, returned, introduced}`.
 
-A checkpoint is a saved state of a baseline run. Resuming it avoids repeating
-earlier work. Gauge automatically selects a compatible checkpoint before the
-affected interaction for docs and CLI candidates, or starts fresh with a reason.
-You do not select a checkpoint; omit checkpoint choices and fork flags. Skills
-start fresh. Inspect
-`runs[].candidateExecution` for actual starting mode and `candidateDelivery`
-for exposure, observed artifacts, and evidence completeness. A score improvement
-does not prove the change was exercised. Report sample counts and failed sessions.
-
-Read `nextAction` on optimization detail; `watch` exits 4 when input is needed.
-Round save replaces pending drafts but never launches. Use `--yes` for approved
-spending and `trials add --idempotency-key` when retrying single-trial writes.
-Adoption selects a winner without changing the baseline or deploying the change;
-`handoff` supplies instructions to implement it in your source repository.
+CLI versions before 0.26.0 used an earlier optimizations API and now get an
+update message. Run `npm install -g @withgauge/cli`.
 
 ## Compare runs
 
@@ -911,22 +920,16 @@ index or background indexing process is maintained.
 
 Every read supports `-o json` for scripting. `GAUGE_API_TOKEN` overrides
 stored credentials (useful in CI). Exit codes: `0` ok · `1` error ·
-`2` usage · `3` billing-blocked · `4` needs your input (`optimizations watch`).
+`2` usage · `3` billing-blocked.
 
 ## Gauge Chat
 
-`gauge chat` manages tracked AI-visibility prompts and reads Gauge Chat data
-through the Chat API. Sign in with `gauge auth login` (shared credentials), or
-for scripts and CI set `GAUGE_API_TOKEN` to an org API key
-(`GAUGE_API_TOKEN=gauge_sk_…`, created in Settings → API Keys). A key acts as its
-organization with the scopes it was created with (Read, or Read & write);
-`GAUGE_API_TOKEN` takes precedence over a stored login. Commands use the
-shared [organization selection](#organizations), and an only Chat organization
-is picked when none is set. Category-scoped commands take `--category` (slug or
-id); `gauge chat categories use <category>` saves `chatCategory` for the
-selected organization, and an only category is picked automatically. The
-Agents-only `--local` and `--hosted` flags are rejected. Use `gauge whoami`
-for identity and `gauge auth status` for credential diagnostics.
+`gauge chat` manages tracked AI-visibility prompts and reads Gauge Chat data.
+Sign in with `gauge auth login`, or use an [API key](../docs/shared-cli-auth.md#api-keys-for-scripts-and-ci)
+for scripts and CI. Choose your [organization](#organizations), then use
+`--category` to select a category or `gauge chat categories use <category>`
+to save a default. If there is only one category, it is selected automatically.
+Chat commands do not use the Agents `--local` and `--hosted` flags.
 
 ```sh
 gauge chat topics create "Pricing" --if-exists

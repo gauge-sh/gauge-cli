@@ -270,6 +270,8 @@ for (const args of [
   ["--local", "run", "--eval", "e1"],
   ["run"],
   ["run", "--apply", "missing.json"],
+  ["run", "Build a dashboard"],
+  ["--local", "run", "Build a dashboard"],
   ["run", "--schema"],
   ["run", "--example"],
   ["run", "--verify"],

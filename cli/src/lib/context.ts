@@ -24,7 +24,8 @@ export function selectedOrg(
     if (!isUuid(project.orgId))
       throw new CliError(
         "usage",
-        "Invalid orgId in gauge.json. Run `gauge orgs use <slug> --project`.",
+        "The organization saved in gauge.json is not valid.",
+        { hint: "Run `gauge orgs`, then `gauge orgs use <slug> --project` to choose this project's organization." },
       );
     return { value: project.orgId, source: "project" };
   }
@@ -34,7 +35,8 @@ export function selectedOrg(
     if (!isUuid(orgId))
       throw new CliError(
         "usage",
-        "Invalid saved orgId. Run `gauge orgs use <slug>`.",
+        "Your saved organization is not valid.",
+        { hint: "Run `gauge orgs`, then `gauge orgs use <slug>` to choose your organization." },
       );
     return { value: orgId, source: "config" };
   }

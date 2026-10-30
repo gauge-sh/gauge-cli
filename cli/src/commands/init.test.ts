@@ -80,7 +80,8 @@ for (const signedIn of [false, true])
     const root = repo(t);
     const { result } = await run(t, root, ["-o", "json"]);
     assert.equal(result.backend, "local");
-    assert.deepEqual(gaugeJson(root), { version: 2, inputs: {} });
+    assert.equal(existsSync(join(root, "gauge.json")), false);
+    assert.equal(existsSync(join(root, "AGENTS.md")), false);
     assert.equal(existsSync(join(root, "gauge-cases")), false);
   });
 test("hosted init requires no account and changes only the private backend", async (t) => {

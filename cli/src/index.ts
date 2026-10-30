@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { Command, CommanderError, Help, Option } from "commander";
 import { fileURLToPath } from "node:url";
-import * as actions from "./commands/actions";
 import * as auth from "./commands/auth";
 import * as billing from "./commands/billing";
 import * as brands from "./commands/brands";
@@ -15,6 +14,7 @@ import * as feedback from "./commands/feedback";
 import * as instructions from "./commands/instructions";
 import * as init from "./commands/init";
 import * as installSkill from "./commands/installSkill";
+import * as issues from "./commands/issues";
 import * as keys from "./commands/keys";
 import * as localRuntime from "./commands/localRuntime";
 import * as mcp from "./commands/mcp";
@@ -115,7 +115,7 @@ for (const group of [
   optimizations,
   brands,
   tags,
-  actions,
+  issues,
   dashboards,
   keys,
   billing,
