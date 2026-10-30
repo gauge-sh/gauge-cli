@@ -8,6 +8,7 @@ import {
   runEvalBodySchema,
   runVisibilityBodySchema,
 } from "@withgauge/api-schemas/ownedConfigurations";
+import { runDefinitionSubmissionSchema } from "@withgauge/api-schemas/runDefinitions";
 import { register } from "./run";
 
 type RecordedRequest = { url: string; method: string; body: unknown };
@@ -16,7 +17,7 @@ async function gauge(
   t: TestContext,
   args: string[],
   response: unknown | ((request: RecordedRequest) => unknown),
-): Promise<{ requests: RecordedRequest[]; error?: unknown }> {
+): Promise<{ requests: RecordedRequest[]; output: string[]; error?: unknown }> {
   const oldToken = process.env.GAUGE_API_TOKEN;
   const oldUrl = process.env.GAUGE_API_URL;
   process.env.GAUGE_API_TOKEN = "gauge_test";
@@ -28,7 +29,10 @@ async function gauge(
     else process.env.GAUGE_API_URL = oldUrl;
   });
   const requests: RecordedRequest[] = [];
-  t.mock.method(console, "log", () => {});
+  const output: string[] = [];
+  t.mock.method(console, "log", (...args: unknown[]) =>
+    output.push(args.join(" ")),
+  );
   t.mock.method(console, "error", () => {});
   t.mock.method(
     globalThis,
@@ -66,9 +70,9 @@ async function gauge(
       },
     );
   } catch (error) {
-    return { requests, error };
+    return { requests, output, error };
   }
-  return { requests };
+  return { requests, output };
 }
 
 it("sends one-launch overrides with --eval", async (t) => {
@@ -122,6 +126,161 @@ function savedThenLaunch(request: RecordedRequest) {
     ? { lifecycle: savedLifecycle }
     : { batchIds: [], runIds: [] };
 }
+
+function promptDirectory(t: TestContext): void {
+  const cwd = process.cwd();
+  const root = mkdtempSync(join(tmpdir(), "gauge-prompt-hooks-"));
+  process.chdir(root);
+  t.after(() => {
+    process.chdir(cwd);
+    rmSync(root, { recursive: true, force: true });
+  });
+}
+
+for (const dryRun of [false, true]) {
+  it(`${dryRun ? "previews" : "launches"} a hosted prompt with uploaded hooks and no saved measurement`, async (t) => {
+    promptDirectory(t);
+    const setup = scriptFile(t, "console.log('prepare');");
+    const teardown = scriptFile(t, "console.log('clean up');");
+    const { requests, error } = await gauge(
+      t,
+      [
+        "run",
+        "Build a dashboard",
+        "--agent",
+        "codex:gpt-test",
+        "--setup-file",
+        setup,
+        "--teardown-file",
+        teardown,
+        "--setup-timeout",
+        "180",
+        "--teardown-timeout",
+        "45",
+        "--lifecycle-params",
+        '{"feature":"temporary-test"}',
+        ...(dryRun ? ["--dry-run"] : ["--yes"]),
+      ],
+      {},
+    );
+    assert.equal(error, undefined);
+    assert.equal(
+      requests.length,
+      1,
+      "no saved configuration is read or written",
+    );
+    assert.equal(requests[0].method, "POST");
+    assert.match(
+      requests[0].url,
+      new RegExp(`/run-definitions/${dryRun ? "plan" : "run"}$`),
+    );
+    const body = runDefinitionSubmissionSchema.parse(requests[0].body);
+    assert.deepEqual(body.lifecycle, {
+      version: 1,
+      setup: { source: "console.log('prepare');", timeoutSeconds: 180 },
+      teardown: { source: "console.log('clean up');", timeoutSeconds: 45 },
+      params: { feature: "temporary-test" },
+    });
+    assert.equal(body.cases.length, 1);
+    assert.equal(body.cases[0].prompt, "Build a dashboard");
+    assert.deepEqual(body.cases[0].preference, {
+      kind: "open-ended",
+      branded: false,
+    });
+    assert.deepEqual(body.cases[0].config.agents, [
+      { agent: "CODEX_CLI", models: ["gpt-test"] },
+    ]);
+    assert.equal("lifecycle" in body.cases[0].config, false);
+  });
+}
+
+it("keeps a hosted prompt without hook flags unchanged", async (t) => {
+  promptDirectory(t);
+  const { requests, error } = await gauge(
+    t,
+    ["run", "Build a dashboard", "--agent", "claude-code", "--yes"],
+    {},
+  );
+  assert.equal(error, undefined);
+  assert.equal(requests.length, 1);
+  assert.match(requests[0].url, /\/run-definitions\/run$/);
+  const body = runDefinitionSubmissionSchema.parse(requests[0].body);
+  assert.equal("lifecycle" in body, false);
+  assert.equal(body.cases[0].prompt, "Build a dashboard");
+});
+
+for (const withHooks of [true, false]) {
+  it(`shows ${withHooks ? "hook deadlines without source or params" : "no hook summary for an ordinary prompt"} in a preview`, async (t) => {
+    promptDirectory(t);
+    const script = scriptFile(t, "console.log('script-content-marker');");
+    const { output, requests, error } = await gauge(
+      t,
+      [
+        "run",
+        "Build a dashboard",
+        "--dry-run",
+        "-o",
+        "table",
+        ...(withHooks
+          ? [
+              "--setup-file",
+              script,
+              "--teardown-file",
+              script,
+              "--setup-timeout",
+              "180",
+              "--teardown-timeout",
+              "45",
+              "--lifecycle-params",
+              '{"value":"parameter-content-marker"}',
+            ]
+          : []),
+      ],
+      {
+        source: { verification: "LOCAL" },
+        expectedRuns: 1,
+        cases: [],
+        resources: [],
+        ...(withHooks
+          ? {
+              lifecycle: {
+                setupTimeoutSeconds: 180,
+                teardownTimeoutSeconds: 45,
+              },
+            }
+          : {}),
+      },
+    );
+    assert.equal(error, undefined);
+    assert.equal(requests.length, 1);
+    assert.match(requests[0].url, /\/run-definitions\/plan$/);
+    const text = output.join("\n");
+    assert.match(text, /Expected sessions: 1/);
+    if (withHooks) {
+      assert.match(text, /Setup hook: 180s deadline/);
+      assert.match(text, /Teardown hook: 45s deadline/);
+    } else {
+      assert.doesNotMatch(text, /Setup hook:|Teardown hook:/);
+    }
+    assert.doesNotMatch(text, /script-content-marker|parameter-content-marker/);
+  });
+}
+
+it("validates prompt scripts before making API requests", async (t) => {
+  const { requests, error } = await gauge(
+    t,
+    [
+      "run",
+      "Build a dashboard",
+      "--setup-file",
+      "/nonexistent/gauge-hook.ts",
+      "--yes",
+    ],
+    {},
+  );
+  assert.match(String(error), /could not read --setup-file/);
+  assert.equal(requests.length, 0);
+});
 
 for (const target of ["eval", "preference"] as const) {
   it(`uploads hooks for one --${target} launch without editing the saved configuration`, async (t) => {
@@ -270,8 +429,8 @@ for (const args of [
   ["--local", "run", "--eval", "e1"],
   ["run"],
   ["run", "--apply", "missing.json"],
-  ["run", "Build a dashboard"],
   ["--local", "run", "Build a dashboard"],
+  ["run", "Build a dashboard", "--schema"],
   ["run", "--schema"],
   ["run", "--example"],
   ["run", "--verify"],

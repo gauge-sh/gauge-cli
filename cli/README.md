@@ -750,8 +750,22 @@ gauge eval edit <evalId> --hosted --clear-lifecycle   # remove both and params
 Clearing the last script also removes its parameter object. Each new run freezes
 the uploaded configuration; editing it does not change existing sessions.
 
-For a one-off launch, pass the same upload, timeout, parameter, or clear flags
-to `run --eval` or `run --preference`:
+For a one-off prompt, attach scripts directly without creating a saved eval or
+preference prompt:
+
+```sh
+gauge run --hosted "Build a dashboard" --setup-file ./setup.ts --teardown-file ./teardown.ts \
+  --setup-timeout 180 --lifecycle-params '{"feature":"temporary-test"}'
+gauge run --hosted "Build a dashboard" --setup-file ./setup.ts --dry-run
+```
+
+`--dry-run` validates the prompt and hook configuration and shows the configured
+phases and deadlines without displaying source or parameters. It does not execute
+scripts or launch sessions. Only the supplied scripts and parameters apply;
+there is no saved configuration to inherit or update.
+
+To override hooks for one launch of a saved measurement, pass the same upload,
+timeout, parameter, or clear flags to `run --eval` or `run --preference`:
 
 ```sh
 gauge run --hosted --eval <evalId> --setup-file ./setup.ts --teardown-file ./teardown.ts
@@ -763,9 +777,9 @@ gauge run --hosted --eval <evalId> --clear-lifecycle
 These overrides affect only the requested launch; the saved eval or preference
 prompt is never edited. Unspecified phases, timeouts, and parameters inherit
 the saved values. `--clear-lifecycle` disables both hooks for this launch only.
-Without lifecycle flags, runs use the saved hooks. One-off hook flags require
-hosted saved evals/preferences; they are not supported with `--local`, `--apply`,
-prompt-only runs (`gauge run "<prompt>"`), case files, or preview commands.
+Without lifecycle flags, saved measurements use their saved hooks. One-off hook
+flags require hosted execution; they are not supported with `--local`, `--apply`,
+or case files. Saved measurement launches do not support `--dry-run`.
 Launching runs consumes credits normally.
 
 ## Hosted schedules

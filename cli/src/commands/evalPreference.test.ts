@@ -319,7 +319,7 @@ describe("gauge run", () => {
     );
     assert.match(
       await usageError(["run", "Which CLI?", "--samples", "2"], "--local"),
-      /a prompt run takes only --agent/,
+      /--samples and --input do not apply to prompt runs/,
     );
     assert.match(
       await usageError(["run", "Which CLI?", "--eval", "e1"], "--local"),
