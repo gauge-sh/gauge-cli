@@ -85,11 +85,11 @@ From your project directory (Git is optional):
 gauge init --local
 ```
 
-This creates a shared `gauge.json` manifest and private `.gauge/` workspace,
-including a SQLite database and local backend preference. It also adds guidance
-to `AGENTS.md`. Plain init creates no cases; add `--cases` when you want shared
-Markdown cases in `gauge-cases/`. Commit the manifest, optional cases, and agent
-guidance. Keep `.gauge/` private: it contains durable measurements and analyses.
+This creates a private `.gauge/` workspace, including a SQLite database and
+local backend preference. Plain init changes no tracked files. Add `--cases` when
+you want shared Markdown cases: it also writes a `gauge.json` manifest,
+`gauge-cases/`, and guidance in `AGENTS.md`. Commit those shared files. Keep
+`.gauge/` private: it contains durable measurements and analyses.
 
 ### 3. Install the skill
 

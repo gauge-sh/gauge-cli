@@ -1,3 +1,5 @@
+import { AUTHORING, MIGRATION_EXAMPLE } from "./authoring";
+
 const SNAPSHOTS = `Preview JSON separates the source \`path\` from \`gaugeArchive\` hash/bytes in \`inputSnapshots\`, and lists the archived \`files\` (first 100) with \`fileCount\`; check them before launching. \`unattachedInputs\` names gauge.json inputs this launch leaves out. The Gauge delivery archive contains the selected files; for npm it contains the .tgz, so its hash/size differ from the raw .tgz. Launch takes a fresh snapshot; preview does not reserve bytes or prove an eval passed.`;
 
 export const RUN = `---
@@ -10,9 +12,8 @@ description: Write Gauge eval cases, choose models and judging criteria, and
 
 - Antigravity is hosted-only and requires organization enrollment. Discover available model identifiers with \`gauge models list --hosted\`. Use \`--agent antigravity:<model>\` when creating or launching saved evals/preferences, or \`agent: ANTIGRAVITY\` with explicit \`models\` in case configuration. Preview case files or JSON case specs with \`--hosted --dry-run\`; launch with \`--hosted\`. The server checks access and model availability. Hosted launches use credits; previews contact Gauge and may upload inputs.
 - Launch with \`gauge run\` (this repo's gauge-cases/ cases), \`gauge run --eval <id>\` or \`--preference <id>\` (saved: \`gauge instructions eval\` or \`gauge instructions preference\`), or \`gauge run --apply <file>\` (\`-\` for stdin) with JSON: a case spec (\`cases\`: Markdown cases as JSON, each with criteria or preference; \`gauge run --example\`) or a battery spec (\`prompts\`: saved prompts and schedules; \`gauge run --example --format battery\`). Follow a launch with \`gauge run wait <request-id>\` (exits 0 once settled; \`--check\` exits 1 unless PASSED or MEASURED), \`gauge run status <request-id>\` (one snapshot), \`gauge run watch <run-id>\`, or \`gauge run get <run-id> --logs\`. For one launch with other agents or sample counts, pass \`--agent\` and \`--samples\` with \`--eval\` or \`--preference\`; do not edit or copy the eval set or preference prompt for a smoke test.
-- Measure one meaningful developer outcome. Record the learning goal, reproducible starting state, observable finish line, and execution budget; a coherent migration can span browser and server workflows.
-- Write the prompt as a real user's request, in their language. Describe their goal, relevant context, and intended outcome. Preserve constraints they actually supplied; do not assume technical expertise or invent features, UI actions, business rules, commands, filenames, or verification recipes. Leave discovery and implementation choices to the agent.
-- Align a small set of independently assessable criteria with the requested outcome and existing application. Accept equivalent supported approaches and execution evidence; remove hidden requirements when revising the prompt.
+- \`gauge run "<prompt>"\` runs one open-ended preference prompt and saves no measurement. It uses the calling agent if codex or opencode, else claude-code; \`--agent\` overrides.
+${AUTHORING}
 - Keep repository revisions, credentials, connections, runtime setup, and budgets in supported configuration or fixtures where possible. Inspect \`gauge eval create --help\` and \`gauge run --help\` for current controls; do not assume proposed limits are enforced.
 - For shared Markdown cases, preview with \`gauge run --dry-run\` before \`gauge run\`; \`gauge-cases/**/*.md\` cases are discovered automatically and \`--files\` overrides discovery with paths/globs. Root \`gauge.json\` can attach existing GitHub Actions artifacts and committed files; Gauge consumes them without building. Website inputs route a canonical HTTPS origin to an existing public preview; sources are GitHub Deployments or an existing provider PR comment with exact author, readiness pattern, and candidate SHA. Comments without commit identity and private or path-prefixed previews are unsupported.
 - Native command inputs use \`type: "binary"\`, \`platform: "linux-x64"\`, selected \`paths\`, and a \`commands\` map from command names to explicit relative ELF executable files. CI must upload already unpacked files. Gauge restores executable permissions and exposes declared commands on PATH; compatible system libraries are required, nested archives and arbitrary installers are unsupported.
@@ -55,34 +56,7 @@ Background: [Open models as preference proxies](https://www.withgauge.com/blog/o
 Replace \`criteria\` with \`preference: { kind: open-ended }\`, adding \`branded: true\` when the prompt names brands. For a comparison use \`preference: { kind: head-to-head, brandA: PostHog, brandB: Amplitude }\`. Specify exactly one of criteria/preference; the body remains the task and must name the comparison brands itself.
 Existing per-case settings, inputs, and path filters apply. The app's preference analyst reports advisory choices; competitor selections never fail criteria. Preference-only checks finish neutral; mixed case sets retain experience gating. With \`--check\`, the wait command succeeds for MEASURED/PASSED and fails on operational errors. No base/head delta is inferred.
 
-## Migration prompt and criteria
-
-This example tests migration of an existing feature-flag application across browser and server workflows. Its starting repository contains the application, while attached connections supply destination credentials. The source account's targeting configuration is unavailable.
-
-### Keep the substantial task
-
-A bad version of this migration prompt would add specific features, such as a flag selector, an account switcher, or an activity log. It might also specify exact UI layouts, clicks to perform, SDK calls, or files to edit. Those directions assume the user already knows the implementation and add requirements beyond their goal.
-
-Use the kind of language a user would naturally use to ask for a change. For example, "Let me pass a feature to the CLI and get instructions for it" describes the desired behavior without prescribing command registration or rendering code. Keep details the user actually requests; do not add exact specifications or UI/UX actions just to make grading easier.
-
-> Migrate this app from its current feature-flag provider to the replacement provider while preserving its existing functionality. Get it running locally, verify the migration works, and explain any limitations.
-
-If the user also asks for a complete replacement, carry that decision into the rubric. Do not add backward compatibility or a gradual production rollout solely because a migration guide recommends them.
-
-### Define observable success
-
-Inspect the starting application and relevant migration guidance before drafting criteria. For this application, success means existing browser and server workflows continue to work through the destination provider, live evaluations drive the running UI, and active dependencies on the source provider are removed when full replacement is requested. The rubric can assess behavior present in the source without dictating SDK methods, edited files, or an exact test sequence.
-
-Suitable criteria for this fixture:
-
-- **Complete migration:** Required flags and code references are accounted for. The active integration uses the destination provider, and the app no longer needs the source provider at runtime when full replacement is requested. A separate demo or hardcoded replacement is insufficient.
-- **Preserved behavior:** Existing browser/server workflows, context changes, and server-provided initial values continue to work. Available configuration is preserved or differences explained. Exact historical targeting parity cannot be established without source rules.
-- **Verified working application:** Execution evidence connects live flag evaluation from the destination provider to the running app's behavior across its browser and server workflows. A build or standalone SDK probe alone does not demonstrate the migration.
-- **Appropriate product surfaces:** Supported SDKs/providers fit the browser and server runtimes; supported management interfaces handle configuration; credentials fit each surface. Equivalent approaches are acceptable, and using every tool is unnecessary.
-
-Keep environment identifiers, credential mappings, repository revision, and resource isolation in supported connection or fixture mechanisms where possible. Authoring notes and source limitations must not become an extra implementation checklist.
-
-Missing source rules limit the parity claim. Record that uncertainty and assess observable application behavior; do not replace it with an invented targeting contract. If account-configuration migration is the requested outcome, prepare the required source data before calling the fixture ready.
+${MIGRATION_EXAMPLE}
 `;
 
 export const RUN_LOCAL = `---
@@ -102,6 +76,7 @@ Read their instruction topics for create/edit flags. Saved measurements live in
 \`.gauge/gauge.sqlite\` with stable identity and revision history. They require
 no committed case files. The file-based examples below are for measurements
 you intend to share or automate. Both sources work with local and hosted backends.
+\`gauge run "<prompt>"\` runs one open-ended preference prompt and saves no measurement. It uses the calling agent if codex or opencode, else claude-code; \`--agent\` overrides.
 
 ## How a run works
 

@@ -6,36 +6,12 @@ import { detectAgent } from "../lib/detectAgent";
 import { DOCS_URL } from "../lib/docs";
 import { printJson, style } from "../lib/output";
 import { HOSTED_STEPS, LOCAL_STEPS } from "../instructions/steps";
+import { BARK, LOGO, LOGO_ART, SMALL_LOGO } from "../lib/logo";
 import { type Mode, readGaugeState } from "../lib/gaugeState";
 import { resolve } from "node:path";
 import { scaffoldWorkspace, type ScaffoldResult } from "../lib/scaffold";
 export type InitDependencies = { cwd?: string };
 export type InitResult = ScaffoldResult;
-
-const LOGO = String.raw`
-
- ⣠⣶⣿⡿⠿⣿⣿⣦⡀                                            ⣼⣷⣄
-⣰⣿⡿⠁   ⠙⠿⠿⠄ ⢀⣤⣤⣤⣤⡀ ⢠⣤⡄  ⢠⣤⡄ ⢀⣤⣤⣤⡀⣤⣤  ⣀⣤⣤⣤⣄⡀         ⢀⣼⣿⣿⣿⣀
-⣿⣿⡇  ⣶⣶⣶⣶⣶⡆⠰⠿⠟⠉⠉⢿⣿⡆⢸⣿⡇  ⢸⣿⡇⢰⣿⡿⠋⠉⠻⣿⣿ ⣼⣿⠟⠉⠙⢿⣷⡄       ⢠⣾⣿⣿⣿⣿⠿⢿⣷⡄
-⢿⣿⣇  ⠉⠉⠉⣿⣿⡇⢠⣶⣾⠿⠿⢿⣿⡇⢸⣿⡇  ⢸⣿⡇⢸⣿⡇   ⣿⣿ ⣿⣿⣿⣿⣿⣿⣿⡇   ⣿⣄⢀⣴⣿⣿⣿⣿⣿⣷⣶⣶⣿⣿⣶⣶⣶⡆
-⠈⢿⣿⣦⣤⣀⣤⣾⢿⣿⡇⢿⣿⣇⡀⣀⣾⣿⡇⢸⣿⣷⣀⣀⣾⣿⡇⠘⣿⣿⣄⣀⣴⣿⣿ ⢻⣿⣦⣀⣀⣶⣶⠆  ⠙⠛⠋⠈⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠇
-  ⠉⠛⠛⠛⠛⠁⠘⠛⠃⠈⠙⠛⠛⠋⠘⠛⠃ ⠙⠛⠛⠋⠘⠛⠃⢀⣈⣙⠛⠋⠁⣿⣿  ⠉⠛⠛⠛⠛⠁        ⠹⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠿⠋
-                            ⠻⢿⣷⣶⣿⠿⠋                 ⠈⢿⠿⠋⠉
-`;
-
-const BARK = String.raw`
-                                                     ⣀
- ⣠⣶⣿⡿⠿⣿⣿⣦⡀                                          ⢠⣿⣷⣄
-⣰⣿⡿⠁   ⠙⠿⠿⠄ ⢀⣤⣤⣤⣤⡀ ⢠⣤⡄  ⢠⣤⡄ ⢀⣤⣤⣤⡀⣤⣤  ⣀⣤⣤⣤⣄⡀        ⢀⣾⣿⣿⣿⣤⣄⣀      ⣠⡾⠋
-⣿⣿⡇  ⣶⣶⣶⣶⣶⡆⠰⠿⠟⠉⠉⢿⣿⡆⢸⣿⡇  ⢸⣿⡇⢰⣿⡿⠋⠉⠻⣿⣿ ⣼⣿⠟⠉⠙⢿⣷⡄      ⢀⣾⣿⣿⣿⣿⠛⠛⣿⣧⣀⣠⣤⣄ ⠨⠶⠶⠶
-⢿⣿⣇  ⠉⠉⠉⣿⣿⡇⢠⣶⣾⠿⠿⢿⣿⡇⢸⣿⡇  ⢸⣿⡇⢸⣿⡇   ⣿⣿ ⣿⣿⣿⣿⣿⣿⣿⡇  ⢰⣄ ⣠⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠿⠿⠿⠿ ⠘⢷⣤⡀
-⠈⢿⣿⣦⣤⣀⣤⣾⢿⣿⡇⢿⣿⣇⡀⣀⣾⣿⡇⢸⣿⣷⣀⣀⣾⣿⡇⠘⣿⣿⣄⣀⣴⣿⣿ ⢻⣿⣦⣀⣀⣶⣶⠆  ⠾⠿⠋⠻⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⡦    ⠈
-  ⠉⠛⠛⠛⠛⠁⠘⠛⠃⠈⠙⠛⠛⠋⠘⠛⠃ ⠙⠛⠛⠋⠘⠛⠃⢀⣈⣙⠛⠋⠁⣿⣿  ⠉⠛⠛⠛⠛⠁       ⠈⠻⣿⣿⣿⣿⡿⠿⠛⠛⠛⠋
-                            ⠻⢿⣷⣶⣿⠿⠋                 ⠈⠿⠟⠁
-`;
-
-const SMALL_LOGO = String.raw`█▀▀ ▄▀█ █ █ █▀▀ █▀▀
-█▄█ █▀█ █▄█ █▄█ ██▄`;
 
 async function printLogo(): Promise<void> {
   const out = process.stdout;
@@ -44,7 +20,7 @@ async function printLogo(): Promise<void> {
     return;
   }
   if (process.env.CI || process.env.TERM === "dumb") {
-    console.log(LOGO.replace(/^\n+/, ""));
+    console.log(LOGO_ART);
     return;
   }
   out.write("\x1b[?25l");
@@ -92,12 +68,23 @@ function nextSteps(mode: Mode): string {
   lines.push(
     `Agents: add ${cyan("-o json")} to any gauge command for JSON output.`,
   );
+  lines.push(
+    "Agents: the user does not see gauge output. Show them the files you write, each case before launch, and the results.",
+  );
+  if (mode === "local")
+    lines.push(
+      `Agents: read ${cyan("gauge instructions init")} before you show the user the plan.`,
+    );
   lines.push(`Docs: ${cyan(DOCS_URL)}`);
   return lines.join("\n");
 }
 
 export function summarize(result: ScaffoldResult): string {
-  return `${result.gaugeJson === "created" ? "Created" : "Kept"} gauge.json. Backend: ${result.backend} (.gauge/config.json). Local state: .gauge/gauge.sqlite.${result.casesDir === "not-requested" ? "" : ` Shared cases: gauge-cases/ (${result.casesDir}).`}`;
+  const manifest =
+    result.gaugeJson === "not-requested"
+      ? ""
+      : `${result.gaugeJson === "created" ? "Created" : "Kept"} gauge.json. `;
+  return `${manifest}Backend: ${result.backend} (.gauge/config.json). Local state: .gauge/gauge.sqlite.${result.casesDir === "not-requested" ? "" : ` Shared cases: gauge-cases/ (${result.casesDir}).`}`;
 }
 
 export function register(
@@ -107,9 +94,12 @@ export function register(
   program
     .command("init")
     .description(
-      "Initialize a Gauge workspace: shared gauge.json and private .gauge/ state. No Git or account required. Backend defaults to local independently of login.",
+      "Initialize a Gauge workspace: private .gauge/ state, plus shared gauge.json, gauge-cases/, and an AGENTS.md block with --cases. No Git or account required. Backend defaults to local independently of login.",
     )
-    .option("--cases", "also scaffold shared gauge-cases/ files")
+    .option(
+      "--cases",
+      "also write shared gauge.json, gauge-cases/, and an AGENTS.md block",
+    )
     .action(async (opts: { cases?: boolean }, cmd: Command) => {
       const state = readGaugeState(cmd.optsWithGlobals(), cwd);
       if (state.config === null)

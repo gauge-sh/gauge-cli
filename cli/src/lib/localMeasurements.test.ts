@@ -63,10 +63,7 @@ test("workspace CLI creates, edits, tags, plans and queries saved measurements w
     await run("init");
     assert.equal(existsSync(join(root, ".git")), false);
     assert.equal(existsSync(join(root, "gauge-cases")), false);
-    assert.deepEqual(
-      JSON.parse(readFileSync(join(root, "gauge.json"), "utf8")),
-      { version: 2, inputs: {} },
-    );
+    assert.equal(existsSync(join(root, "gauge.json")), false);
     await assert.rejects(() => run("run", "--dry-run"), (error) => {
       assert.ok(error instanceof CliError);
       assert.equal(error.code, "not_found");

@@ -12,6 +12,7 @@ import type { GaugeState, Mode } from "../lib/gaugeState";
 import { formatCommandHelp } from "../lib/rootHelp";
 import { readGaugeState } from "../lib/gaugeState";
 import { register } from "./instructions";
+import { LOGO_ART } from "../lib/logo";
 
 function state(mode: Mode): GaugeState {
   return {
@@ -35,7 +36,7 @@ describe("gauge instructions", () => {
       const budget =
         topic === "root"
           ? OVERVIEW_LINE_BUDGET
-          : topic === "run"
+          : topic === "run" || topic === "eval"
             ? RUN_LINE_BUDGET
             : BODY_LINE_BUDGET;
       assert.ok(
@@ -72,6 +73,10 @@ describe("gauge instructions", () => {
     assert.match(instructions("run", state("local")), /# Run \(local\)/);
     assert.match(instructions("eval", state("local")), /# Eval sets/);
     assert.match(
+      instructions("eval", state("local")),
+      /Write the prompt as a real user's request[\s\S]*\*\*Complete migration:\*\*/,
+    );
+    assert.match(
       instructions("preference", state("local")),
       /# Preference prompts/,
     );
@@ -97,6 +102,18 @@ describe("gauge instructions", () => {
       instructions("root", unset, { setup: false }),
       /> Next:/,
     );
+  });
+
+  it("keeps the visual Docker launch preview in local guidance only", () => {
+    const local = instructions("init", state("local"));
+    assert.match(local, /including the dog, copied verbatim in a fenced text block/);
+    assert.match(local, /cases × targets × samples/);
+    assert.ok(local.includes(LOGO_ART));
+    for (const topic of ["root", "init"])
+      assert.doesNotMatch(
+        instructions(topic, state("hosted")),
+        /ASCII art|visual preview|█▀▀/,
+      );
   });
 
   it("emits installable frontmatter naming the skill", () => {

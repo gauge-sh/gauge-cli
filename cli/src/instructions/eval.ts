@@ -1,7 +1,9 @@
+import { AUTHORING, MIGRATION_EXAMPLE } from "./authoring";
+
 export const EVAL = `---
 name: gauge-eval
-description: Save, edit, and schedule eval sets that gauge run launches. Read
-  before creating or changing a saved eval set.
+description: Write, save, edit, and schedule eval sets that gauge run launches. Read
+  before creating or changing a saved eval set; includes a migration example.
 ---
 
 # Eval sets
@@ -18,6 +20,10 @@ eval set.
     gauge eval list -o json
     gauge eval get <id> -o json
     gauge run list --eval <id> -o json    # its runs; gauge run get <run-id> shows verdicts
+
+## Write the prompt and criteria
+
+${AUTHORING}
 
 ## Create and edit
 
@@ -48,4 +54,6 @@ After an input change, rebuild/repack and rerun the same eval ID. Local launches
 snapshot current input files into a new batch. Keep prompts, criteria, and model
 pins fixed; analyze and compare baseline/candidate batches before claiming improvement.
 Creating or editing a measurement does not authorize additional paid launches.
+
+${MIGRATION_EXAMPLE}
 `;

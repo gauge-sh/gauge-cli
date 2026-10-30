@@ -1,7 +1,7 @@
 import { CliError } from "../lib/client";
 import { type GaugeState, header, instructionMode } from "../lib/gaugeState";
 import { EVAL } from "./eval";
-import { INIT } from "./init";
+import { INIT, INIT_LOCAL } from "./init";
 import { ISSUES } from "./issues";
 import { PREFERENCE } from "./preference";
 import { RUN, RUN_LOCAL } from "./run";
@@ -69,7 +69,8 @@ identify inputs, pilot representative tasks, analyze evidence, fix, rerun, compa
 - Confirm before launches. Use \`--yes\` for work already approved.
 - Retry writes with their supported idempotency flag; blind retries can launch
   duplicate paid sessions.
-- Report measured results with sample counts and evidence, including limits.
+- The user does not see gauge output. Show them the files you wrote, each case's
+  task, criteria, and targets before launch, and results with counts and limits.
 - Run \`gauge update\` to install the latest published CLI.
 - Exit codes: 0 ok, 1 error, 2 usage, 3 billing-blocked, 4 needs your input.
 - When the CLI gets in your way (friction, a missing command or flag, a bug),
@@ -157,6 +158,12 @@ ${stepsMarkdown()}
 - \`gauge instructions <topic>\` is workflow guidance, not a page per command.
 - Pass \`-o json\` on reads and parse it. Tables are for people.
 - Exit codes: 0 ok, 1 error, 2 usage.
+- The user does not see gauge output. Stop and show them:
+  - before a launch, each case's task, criteria, targets, and session count,
+    and the files you changed, then offer to start the runs, which run in
+    Docker containers separate from this chat (mention verify and preview only
+    on failure);
+  - after runs, per-case results, top friction, and \`gauge run trace|diff <id>\`.
 - Report CLI friction, gaps, or bugs, with no account:
   \`gauge feedback -m "<what happened>" --kind friction|missing|bug\`.
 
@@ -225,7 +232,7 @@ summary, the changed tree keys, and {runId, label} findings.
 
 export const TOPICS: Record<string, Topic> = {
   root: { name: "gauge", hosted: ROOT, local: ROOT_LOCAL },
-  init: { name: "gauge-init", hosted: INIT, shared: true, command: "init" },
+  init: { name: "gauge-init", hosted: INIT, local: INIT_LOCAL, command: "init" },
   hillclimb: { name: "gauge-hillclimb", hosted: HILLCLIMB, shared: true },
   run: { name: "gauge-run", hosted: RUN, local: RUN_LOCAL, command: "run" },
   eval: { name: "gauge-eval", hosted: EVAL, shared: true, command: "eval" },
