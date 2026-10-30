@@ -12,7 +12,7 @@ import type { GaugeState, Mode } from "../lib/gaugeState";
 import { formatCommandHelp } from "../lib/rootHelp";
 import { readGaugeState } from "../lib/gaugeState";
 import { register } from "./instructions";
-import { LOGO } from "../instructions/init";
+import { LOGO_ART } from "../lib/logo";
 
 function state(mode: Mode): GaugeState {
   return {
@@ -106,9 +106,9 @@ describe("gauge instructions", () => {
 
   it("keeps the visual Docker launch preview in local guidance only", () => {
     const local = instructions("init", state("local"));
-    assert.match(local, /including the dog, copied\nverbatim in a fenced text block/);
+    assert.match(local, /including the dog, copied verbatim in a fenced text block/);
     assert.match(local, /cases × targets × samples/);
-    assert.ok(local.includes(LOGO.replace(/^\n+/, "").trimEnd()));
+    assert.ok(local.includes(LOGO_ART));
     for (const topic of ["root", "init"])
       assert.doesNotMatch(
         instructions(topic, state("hosted")),

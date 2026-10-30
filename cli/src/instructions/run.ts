@@ -12,6 +12,7 @@ description: Write Gauge eval cases, choose models and judging criteria, and
 
 - Antigravity is hosted-only and requires organization enrollment. Discover available model identifiers with \`gauge models list --hosted\`. Use \`--agent antigravity:<model>\` when creating or launching saved evals/preferences, or \`agent: ANTIGRAVITY\` with explicit \`models\` in case configuration. Preview case files or JSON case specs with \`--hosted --dry-run\`; launch with \`--hosted\`. The server checks access and model availability. Hosted launches use credits; previews contact Gauge and may upload inputs.
 - Launch with \`gauge run\` (this repo's gauge-cases/ cases), \`gauge run --eval <id>\` or \`--preference <id>\` (saved: \`gauge instructions eval\` or \`gauge instructions preference\`), or \`gauge run --apply <file>\` (\`-\` for stdin) with JSON: a case spec (\`cases\`: Markdown cases as JSON, each with criteria or preference; \`gauge run --example\`) or a battery spec (\`prompts\`: saved prompts and schedules; \`gauge run --example --format battery\`). Follow a launch with \`gauge run wait <request-id>\` (exits 0 once settled; \`--check\` exits 1 unless PASSED or MEASURED), \`gauge run status <request-id>\` (one snapshot), \`gauge run watch <run-id>\`, or \`gauge run get <run-id> --logs\`. For one launch with other agents or sample counts, pass \`--agent\` and \`--samples\` with \`--eval\` or \`--preference\`; do not edit or copy the eval set or preference prompt for a smoke test.
+- \`gauge run "<prompt>"\` runs one open-ended preference prompt and saves no measurement. It uses the calling agent if codex or opencode, else claude-code; \`--agent\` overrides.
 ${AUTHORING}
 - Keep repository revisions, credentials, connections, runtime setup, and budgets in supported configuration or fixtures where possible. Inspect \`gauge eval create --help\` and \`gauge run --help\` for current controls; do not assume proposed limits are enforced.
 - For shared Markdown cases, preview with \`gauge run --dry-run\` before \`gauge run\`; \`gauge-cases/**/*.md\` cases are discovered automatically and \`--files\` overrides discovery with paths/globs. Root \`gauge.json\` can attach existing GitHub Actions artifacts and committed files; Gauge consumes them without building. Website inputs route a canonical HTTPS origin to an existing public preview; sources are GitHub Deployments or an existing provider PR comment with exact author, readiness pattern, and candidate SHA. Comments without commit identity and private or path-prefixed previews are unsupported.
@@ -75,6 +76,7 @@ Read their instruction topics for create/edit flags. Saved measurements live in
 \`.gauge/gauge.sqlite\` with stable identity and revision history. They require
 no committed case files. The file-based examples below are for measurements
 you intend to share or automate. Both sources work with local and hosted backends.
+\`gauge run "<prompt>"\` runs one open-ended preference prompt and saves no measurement. It uses the calling agent if codex or opencode, else claude-code; \`--agent\` overrides.
 
 ## How a run works
 

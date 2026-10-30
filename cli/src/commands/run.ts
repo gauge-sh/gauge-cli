@@ -571,10 +571,12 @@ function printUnattachedInputs(names: string[], saved: boolean): void {
   if (names.length) console.log(unattachedNote(names, saved));
 }
 
-function promptSpec(prompt: string, agents: string[]): CaseSpec {
+function callerAgent(): string {
   const caller = detectSkillAgent(process.env);
-  const detected =
-    caller === "codex" || caller === "opencode" ? caller : "claude-code";
+  return caller === "codex" || caller === "opencode" ? caller : "claude-code";
+}
+
+function promptSpec(prompt: string, agents: string[]): CaseSpec {
   return parseCaseSpec({
     version: 2,
     cases: [
@@ -582,7 +584,7 @@ function promptSpec(prompt: string, agents: string[]): CaseSpec {
         key: "prompt",
         prompt,
         preference: { kind: "open-ended" },
-        config: { agents: buildAgentRoster(agents.length > 0 ? agents : [detected]) },
+        config: { agents: buildAgentRoster(agents) },
       },
     ],
   });
@@ -643,17 +645,14 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
   }
   if (opts.scenario.length > 0 && source !== "--preference")
     throw new CliError("usage", "--scenario applies with --preference only");
-  if (
-    opts.prompt !== undefined &&
-    (opts.samples !== undefined || opts.input.length > 0)
-  )
-    throw new CliError(
-      "usage",
-      "a prompt run takes only --agent; use `gauge preference` or `gauge eval` for more settings",
-    );
-  if (
+  if (source === "a prompt") {
+    if (opts.samples !== undefined || opts.input.length > 0)
+      throw new CliError(
+        "usage",
+        "a prompt run takes only --agent; use `gauge preference` or `gauge eval` for more settings",
+      );
+  } else if (
     (opts.agent.length > 0 || opts.samples !== undefined) &&
-    source !== "a prompt" &&
     source !== "--eval" &&
     source !== "--preference"
   )
@@ -674,7 +673,9 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
     throw new CliError(
       "usage",
       `Hosted saved measurements do not take project inputs; drop --input or pass --local`,
-      { hint: "For hosted project inputs, use eval case files or a case spec." },
+      {
+        hint: "For hosted project inputs, use eval case files or a case spec.",
+      },
     );
   if (opts.requireExperiment !== undefined && !opts.apply)
     throw new CliError("usage", "--require-experiment applies with --apply");
@@ -709,7 +710,11 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
       );
     spec = parseCaseSpec(json);
   }
-  if (opts.prompt !== undefined) spec = promptSpec(opts.prompt, opts.agent);
+  if (opts.prompt !== undefined)
+    spec = promptSpec(
+      opts.prompt,
+      opts.agent.length > 0 ? opts.agent : [callerAgent()],
+    );
   if (gaugeState(cmd).mode === "local" && (opts.eval || opts.preference)) {
     const saved = localMeasurementSpec(
       cmd,
@@ -741,12 +746,7 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
     return;
   }
   const { definition, org, inputSnapshots, unattachedInputs } =
-    await loadWorkingTree(
-    cmd,
-    opts,
-    !opts.dryRun,
-    spec,
-  );
+    await loadWorkingTree(cmd, opts, !opts.dryRun, spec);
   const orgPath = `/api/v1/orgs/${encodeURIComponent(org)}/run-definitions`;
   if (opts.dryRun) {
     const result =
@@ -808,9 +808,19 @@ async function runLocalCases(
           gatewayImage: opts.gatewayImage,
         })),
         inputSnapshots: local.inputSnapshots,
-        webFixtures: Object.fromEntries(Object.entries(local.webFixtures).map(([path, { fixture, digest }]) => [path, {
-          digest, pages: fixture.pages.map((p) => p.url), scopes: fixture.scopes ?? [], origins: fixture.origins ?? [],
-        }])),
+        webFixtures: Object.fromEntries(
+          Object.entries(local.webFixtures).map(
+            ([path, { fixture, digest }]) => [
+              path,
+              {
+                digest,
+                pages: fixture.pages.map((p) => p.url),
+                scopes: fixture.scopes ?? [],
+                origins: fixture.origins ?? [],
+              },
+            ],
+          ),
+        ),
         unattachedInputs: local.unattachedInputs,
       };
       if (json) printJson(plan);
@@ -826,7 +836,12 @@ async function runLocalCases(
         local.definition,
         local.uploads,
         join(root, ".gauge"),
-        { profile: opts.profile, runtimeImage: opts.runtimeImage, gatewayImage: opts.gatewayImage, measurement },
+        {
+          profile: opts.profile,
+          runtimeImage: opts.runtimeImage,
+          gatewayImage: opts.gatewayImage,
+          measurement,
+        },
       );
       if (json) printJson(detached);
       else
@@ -900,7 +915,10 @@ function printLocalPlan(
   console.log(
     `Runtime: ${plan.runtime.reference}${plan.runtime.imageId ? ` (${plan.runtime.imageId})` : ""}. Compatibility probe runs at launch.`,
   );
-  if (plan.gateway) console.log(`Gateway: ${plan.gateway.reference}${plan.gateway.imageId ? ` (${plan.gateway.imageId})` : ""}`);
+  if (plan.gateway)
+    console.log(
+      `Gateway: ${plan.gateway.reference}${plan.gateway.imageId ? ` (${plan.gateway.imageId})` : ""}`,
+    );
   for (const item of plan.cases)
     console.log(
       `  ${item.path}: ${item.sessions.map((s) => `${s.agent} ${s.model} ×${s.samples}`).join(", ")}; ${item.criteria} criteria`,
@@ -1061,7 +1079,7 @@ export function register(program: Command): void {
     )
     .option(
       "--agent <agent[:m1,m2]>",
-      "with a prompt (default: the calling agent if codex or opencode, else claude-code) or --eval/--preference: run these agents and model pins for this launch only; the stored roster stays (repeatable)",
+      "with a prompt or --eval/--preference: run these agents and model pins for this launch only (repeatable)",
       collect,
       [] as string[],
     )
@@ -1095,7 +1113,10 @@ export function register(program: Command): void {
       "--runtime-image <image>",
       "use a compatible custom Docker image for local runs (tag, digest, or image ID)",
     )
-    .option("--gateway-image <image>", "use a compatible custom gateway image for local web fixtures")
+    .option(
+      "--gateway-image <image>",
+      "use a compatible custom gateway image for local web fixtures",
+    )
     .option("--verify", "check this repo's eval files; start no sessions")
     .option(
       "--dry-run",
@@ -1129,7 +1150,10 @@ export function register(program: Command): void {
           opts.example)
       )
         throw new CliError("usage", "--detach requires a local run");
-      if ((opts.runtimeImage || opts.gatewayImage) && gaugeState(cmd).mode !== "local")
+      if (
+        (opts.runtimeImage || opts.gatewayImage) &&
+        gaugeState(cmd).mode !== "local"
+      )
         throw new CliError(
           "usage",
           "--runtime-image and --gateway-image work only on local runs; pass --local",
@@ -1510,7 +1534,10 @@ export function register(program: Command): void {
     .option("--seq <n>", "one call from the listing")
     .option("--offset <n>", "page into a long output")
     .action(
-      async (id: string, opts: { query?: string; seq?: string; offset?: string }) => {
+      async (
+        id: string,
+        opts: { query?: string; seq?: string; offset?: string },
+      ) => {
         printJson(
           await createClient().get<unknown>(`${runPath(id)}/commands`, {
             query: opts.query,

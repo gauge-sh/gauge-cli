@@ -1,20 +1,7 @@
-export const LOGO = String.raw`
+import { LOGO_ART } from "../lib/logo";
 
- ⣠⣶⣿⡿⠿⣿⣿⣦⡀                                            ⣼⣷⣄
-⣰⣿⡿⠁   ⠙⠿⠿⠄ ⢀⣤⣤⣤⣤⡀ ⢠⣤⡄  ⢠⣤⡄ ⢀⣤⣤⣤⡀⣤⣤  ⣀⣤⣤⣤⣄⡀         ⢀⣼⣿⣿⣿⣀
-⣿⣿⡇  ⣶⣶⣶⣶⣶⡆⠰⠿⠟⠉⠉⢿⣿⡆⢸⣿⡇  ⢸⣿⡇⢰⣿⡿⠋⠉⠻⣿⣿ ⣼⣿⠟⠉⠙⢿⣷⡄       ⢠⣾⣿⣿⣿⣿⠿⢿⣷⡄
-⢿⣿⣇  ⠉⠉⠉⣿⣿⡇⢠⣶⣾⠿⠿⢿⣿⡇⢸⣿⡇  ⢸⣿⡇⢸⣿⡇   ⣿⣿ ⣿⣿⣿⣿⣿⣿⣿⡇   ⣿⣄⢀⣴⣿⣿⣿⣿⣿⣷⣶⣶⣿⣿⣶⣶⣶⡆
-⠈⢿⣿⣦⣤⣀⣤⣾⢿⣿⡇⢿⣿⣇⡀⣀⣾⣿⡇⢸⣿⣷⣀⣀⣾⣿⡇⠘⣿⣿⣄⣀⣴⣿⣿ ⢻⣿⣦⣀⣀⣶⣶⠆  ⠙⠛⠋⠈⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠇
-  ⠉⠛⠛⠛⠛⠁⠘⠛⠃⠈⠙⠛⠛⠋⠘⠛⠃ ⠙⠛⠛⠋⠘⠛⠃⢀⣈⣙⠛⠋⠁⣿⣿  ⠉⠛⠛⠛⠛⠁        ⠹⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠿⠋
-                            ⠻⢿⣷⣶⣿⠿⠋                 ⠈⢿⠿⠋⠉
-`;
-
-export const SMALL_LOGO = `█▀▀ ▄▀█ █ █ █▀▀ █▀▀
-█▄█ █▀█ █▄█ █▄█ ██▄`;
-
-export const LOCAL_RUN_PRESENTATION = `Help users understand how Gauge OSS works. Users cannot see CLI output. Use this order, starting with the logo:
-Open with the FULL Gauge ASCII art, including the dog, copied
-verbatim in a fenced text block. Get the full logo from gauge instructions init --local; init's small wordmark is for CLI output.
+const LOCAL_RUN_PRESENTATION = `Help users understand how Gauge OSS works. Users cannot see CLI output. Use this order, starting with the logo:
+Open with the FULL Gauge ASCII art below, including the dog, copied verbatim in a fenced text block.
 Preserve the Braille characters and spacing in one code block with no blank lines between artwork rows; do not redraw it.
 Add one sentence naming the planned case count, agent/model, and local Docker.
 Draw a simple overview titled "How Gauge OSS works", with three boxes joined by arrows:
@@ -90,5 +77,5 @@ Gauge recommends the gauge-agents skill for future sessions:
 
 export const INIT_LOCAL = INIT.replace(
   "## Next\n",
-  `## Show the user what will happen\n\n${LOCAL_RUN_PRESENTATION}\n\n\`\`\`text\n${LOGO.replace(/^\n+/, "").trimEnd()}\n\`\`\`\n\n## Next\n`,
+  `## Show the user what will happen\n\n${LOCAL_RUN_PRESENTATION}\n\n\`\`\`text\n${LOGO_ART}\n\`\`\`\n\n## Next\n`,
 );
