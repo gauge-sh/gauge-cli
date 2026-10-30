@@ -702,6 +702,86 @@ A prompt with zero scenarios is a valid definition — it simply never comes due
 Sessions per launch = scenarios × agent/model targets × samples. Omit the
 run-settings flags on `create` and the org's default roster applies.
 
+## Hosted setup and teardown scripts
+
+Upload JavaScript or TypeScript source on an eval or preference prompt:
+
+```sh
+gauge eval edit <evalId> --hosted --setup-file ./setup.ts --teardown-file ./teardown.ts
+gauge preference edit <promptId> --hosted --setup-file ./setup.ts \
+  --setup-timeout 180 --lifecycle-params '{"feature":"checkout"}'
+```
+
+The same file flags work on `create`. The CLI reads UTF-8 files locally and
+uploads their contents; paths are not stored or resolved on the server. Files
+must be nonempty and at most 128 KiB. Each file is one script module; companion
+files are not uploaded. Hooks run in hosted sessions, and are not supported by
+`--local` or Git-authored case definitions.
+
+Scripts can use top-level await and the provided session bindings:
+
+```ts
+import { params, state } from "@withgauge/session";
+
+console.log("Preparing", params.feature);
+await state.set("prepared", true);
+```
+
+Setup runs before the coding agent. Teardown runs during cleanup, independently
+of the agent's result. Scripts use the session's configured MCP servers and
+Connections. Script authoring itself does not launch a paid session.
+
+Each phase defaults to 120 seconds for a new script. Set `--setup-timeout` or
+`--teardown-timeout` to an integer from 1 to 600; these flags can also update an
+existing script's timeout without re-uploading it. Replacing a script preserves
+its timeout unless overridden. `--lifecycle-params` replaces the JSON parameter
+object (maximum 64 KiB); pass `'{}'` to empty it.
+
+Hook edits fetch the saved lifecycle configuration and send its updated value,
+preserving the other phase, parameters, and timeouts when omitted. Ordinary
+edits leave lifecycle configuration untouched. To remove scripts:
+
+```sh
+gauge eval edit <evalId> --hosted --clear-setup       # keep teardown and params
+gauge preference edit <promptId> --hosted --clear-teardown
+gauge eval edit <evalId> --hosted --clear-lifecycle   # remove both and params
+```
+
+Clearing the last script also removes its parameter object. Each new run freezes
+the uploaded configuration; editing it does not change existing sessions.
+
+For a one-off prompt, attach scripts directly without creating a saved eval or
+preference prompt:
+
+```sh
+gauge run --hosted "Build a dashboard" --setup-file ./setup.ts --teardown-file ./teardown.ts \
+  --setup-timeout 180 --lifecycle-params '{"feature":"temporary-test"}'
+gauge run --hosted "Build a dashboard" --setup-file ./setup.ts --dry-run
+```
+
+`--dry-run` validates the prompt and hook configuration and shows the configured
+phases and deadlines without displaying source or parameters. It does not execute
+scripts or launch sessions. Only the supplied scripts and parameters apply;
+there is no saved configuration to inherit or update.
+
+To override hooks for one launch of a saved measurement, pass the same upload,
+timeout, parameter, or clear flags to `run --eval` or `run --preference`:
+
+```sh
+gauge run --hosted --eval <evalId> --setup-file ./setup.ts --teardown-file ./teardown.ts
+gauge run --hosted --preference <promptId> --scenario <scenarioId> \
+  --setup-file ./setup.ts --lifecycle-params '{"feature":"temporary-test"}'
+gauge run --hosted --eval <evalId> --clear-lifecycle
+```
+
+These overrides affect only the requested launch; the saved eval or preference
+prompt is never edited. Unspecified phases, timeouts, and parameters inherit
+the saved values. `--clear-lifecycle` disables both hooks for this launch only.
+Without lifecycle flags, saved measurements use their saved hooks. One-off hook
+flags require hosted execution; they are not supported with `--local`, `--apply`,
+or case files. Saved measurement launches do not support `--dry-run`.
+Launching runs consumes credits normally.
+
 ## Hosted schedules
 
 `--cadence none` is "manual": the measurement stops coming due and runs only

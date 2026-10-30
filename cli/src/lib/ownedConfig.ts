@@ -1,5 +1,13 @@
 import type { ownedConfigurations } from "@withgauge/api-schemas";
 import type { Command } from "commander";
+import type { Lifecycle } from "@withgauge/api-schemas/lifecycle";
+import {
+  addLifecycleOptions,
+  addLifecycleEditOptions,
+  hasLifecycleFlags,
+  lifecyclePatchFromOpts,
+  type LifecycleOpts,
+} from "./lifecycle";
 import { CliError } from "./client";
 import { buildAgentRoster, collect, validateAssetRefs } from "./flags";
 
@@ -23,7 +31,7 @@ export function parseSampleCount(raw: string | undefined): number {
   return value;
 }
 
-export type OwnedConfigCreateOpts = {
+export type OwnedConfigCreateOpts = LifecycleOpts & {
   repo?: string;
   ref?: string;
   persona?: string;
@@ -35,7 +43,7 @@ export type OwnedConfigCreateOpts = {
   samples: string;
 };
 
-export type OwnedConfigEditOpts = {
+export type OwnedConfigEditOpts = LifecycleOpts & {
   repo?: string;
   ref?: string;
   clearRef?: boolean;
@@ -61,6 +69,7 @@ export function ownedConfigFromOpts(
   if (opts.agent.length === 0)
     throw new CliError("usage", "at least one --agent is required");
   return {
+    ...lifecyclePatchFromOpts(opts),
     repoUrl: opts.repo ?? null,
     repoRef: opts.ref ?? null,
     profileId: opts.persona ?? null,
@@ -75,8 +84,12 @@ export function ownedConfigFromOpts(
 
 export function ownedConfigPatchFromOpts(
   opts: OwnedConfigEditOpts,
+  lifecycle?: Lifecycle | null,
 ): Partial<OwnedConfigInput> {
-  const patch: Partial<OwnedConfigInput> = {};
+  const patch: Partial<OwnedConfigInput> = lifecyclePatchFromOpts(
+    opts,
+    lifecycle,
+  );
 
   if ((opts.repo !== undefined || opts.ref !== undefined) && opts.clearRepo)
     throw new CliError("usage", "--repo/--ref and --clear-repo conflict");
@@ -140,7 +153,7 @@ type RunSettingsInput = Omit<
 > & { agents?: OwnedConfigInput["agents"] };
 
 export function addRunSettingsCreateOptions(command: Command): Command {
-  return command
+  return addLifecycleOptions(command)
     .option(
       "--agent <agent[:m1,m2]>",
       "agent and optional model pins (repeatable)",
@@ -170,7 +183,7 @@ export function addRunSettingsCreateOptions(command: Command): Command {
 }
 
 export function addRunSettingsEditOptions(command: Command): Command {
-  return command
+  return addLifecycleEditOptions(command)
     .option(
       "--agent <agent[:m1,m2]>",
       "replace agents and model pins (repeatable)",
@@ -204,6 +217,7 @@ export function addRunSettingsEditOptions(command: Command): Command {
 
 export function hasRunSettingsFlags(opts: RunSettingsCreateOpts): boolean {
   return (
+    hasLifecycleFlags(opts) ||
     opts.agent.length > 0 ||
     opts.skill.length > 0 ||
     opts.mcp.length > 0 ||
@@ -217,6 +231,7 @@ export function runSettingsFromOpts(
   opts: RunSettingsCreateOpts,
 ): RunSettingsInput {
   return {
+    ...lifecyclePatchFromOpts(opts),
     ...(opts.agent.length > 0 ? { agents: buildAgentRoster(opts.agent) } : {}),
     skillRefs: validateAssetRefs("skill", opts.skill),
     mcpRefs: validateAssetRefs("mcp", opts.mcp),
@@ -228,8 +243,9 @@ export function runSettingsFromOpts(
 
 export function runSettingsPatchFromOpts(
   opts: RunSettingsEditOpts,
+  lifecycle?: Lifecycle | null,
 ): Partial<RunSettingsInput> {
-  return ownedConfigPatchFromOpts(opts);
+  return ownedConfigPatchFromOpts(opts, lifecycle);
 }
 
 export function runOverridesFromOpts(opts: {

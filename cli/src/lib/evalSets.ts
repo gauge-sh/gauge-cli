@@ -10,6 +10,11 @@ import {
 import { readFileSync } from "node:fs";
 import type { evals } from "@withgauge/api-schemas";
 import type { Command } from "commander";
+import {
+  hasLifecycleFlags,
+  lifecyclePatchFromOpts,
+  type LifecycleOpts,
+} from "./lifecycle";
 import { CliError, createClient } from "./client";
 import { confirmOrAbort } from "./confirm";
 import { creatorLabel } from "./createdBy";
@@ -167,6 +172,12 @@ export async function createEvalSet(
   cmd: Command,
   opts: EvalSetCreateOpts,
 ): Promise<void> {
+  if (hasLifecycleFlags(opts) && isLocal(cmd))
+    throw new CliError(
+      "usage",
+      "Lifecycle scripts require hosted execution; pass --hosted",
+    );
+
   const criteria = criteriaFromOpts(opts);
   if (!criteria)
     throw new CliError(
@@ -186,7 +197,10 @@ export async function createEvalSet(
     );
   const created = isLocal(cmd)
     ? createLocalMeasurement(cmd, "eval", body)
-    : await createClient().post<EvalSet>(evalSetsPath(await resolveOrg(cmd)), body);
+    : await createClient().post<EvalSet>(
+        evalSetsPath(await resolveOrg(cmd)),
+        body,
+      );
   if (resolveOutput(cmd) === "json") printJson(created);
   else console.log(`Created eval set ${created.id}`);
 }
@@ -206,7 +220,23 @@ export async function editEvalSet(
   id: string,
   opts: EvalSetEditOpts,
 ): Promise<void> {
-  const body: evals.UpdateEvalSetBody = ownedConfigPatchFromOpts(opts);
+  if (hasLifecycleFlags(opts) && isLocal(cmd))
+    throw new CliError(
+      "usage",
+      "Lifecycle scripts require hosted execution; pass --hosted",
+    );
+  const lifecyclePath =
+    hasLifecycleFlags(opts) && !opts.clearLifecycle
+      ? evalSetPath(await resolveOrg(cmd), id)
+      : undefined;
+  const existing = lifecyclePath
+    ? await createClient().get<EvalSet>(lifecyclePath)
+    : undefined;
+
+  const body: evals.UpdateEvalSetBody = ownedConfigPatchFromOpts(
+    opts,
+    existing?.lifecycle,
+  );
   if (opts.name !== undefined) body.name = opts.name;
   if (opts.text !== undefined || opts.file !== undefined)
     body.promptText = readPromptText(opts);
@@ -224,7 +254,7 @@ export async function editEvalSet(
   const updated = isLocal(cmd)
     ? editLocalMeasurement(cmd, "eval", id, body)
     : await createClient().patch<EvalSet>(
-        evalSetPath(await resolveOrg(cmd), id),
+        lifecyclePath ?? evalSetPath(await resolveOrg(cmd), id),
         body,
       );
   if (resolveOutput(cmd) === "json") printJson(updated);
@@ -233,22 +263,30 @@ export async function editEvalSet(
 
 export async function removeEvalSet(cmd: Command, id: string): Promise<void> {
   if (isLocal(cmd)) removeLocalMeasurement(cmd, "eval", id);
-  else await createClient().delete<void>(evalSetPath(await resolveOrg(cmd), id));
+  else
+    await createClient().delete<void>(evalSetPath(await resolveOrg(cmd), id));
   if (resolveOutput(cmd) !== "json") console.log(`Deleted eval set ${id}`);
 }
-
 
 export async function runEvalSet(
   cmd: Command,
   id: string,
-  opts: {
+  opts: LifecycleOpts & {
     yes?: boolean;
     agent: string[];
     samples?: string;
   },
 ): Promise<void> {
   const org = await resolveOrg(cmd);
-  const overrides = runOverridesFromOpts(opts);
+  const overrides = {
+    ...runOverridesFromOpts(opts),
+    ...(hasLifecycleFlags(opts)
+      ? lifecyclePatchFromOpts(
+          opts,
+          (await createClient().get<EvalSet>(evalSetPath(org, id))).lifecycle,
+        )
+      : {}),
+  };
   await confirmOrAbort(
     Object.keys(overrides).length > 0
       ? "Run this eval now with these overrides? The stored configuration stays unchanged."

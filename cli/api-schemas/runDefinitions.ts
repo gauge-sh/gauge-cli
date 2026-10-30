@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { lifecycleSchema } from "./lifecycle";
 import { preferenceDefinitionSchema } from "./preference";
 import { runAddonsSchema } from "./runAddons";
 import {
@@ -139,6 +140,7 @@ export type RunDefinitionCase = z.infer<typeof runDefinitionCaseSchema>;
 export const runDefinitionSubmissionSchema = z
   .object({
     version: z.literal(2),
+    lifecycle: lifecycleSchema.nullish(),
     source: z
       .object({
         repoUrl: uncredentialedRepoUrlSchema.nullable(),
@@ -159,6 +161,16 @@ export const runDefinitionSubmissionSchema = z
   })
   .strict()
   .superRefine((definition, ctx) => {
+    if (
+      definition.source.verification === "GITHUB_VERIFIED" &&
+      definition.lifecycle !== undefined
+    )
+      ctx.addIssue({
+        code: "custom",
+        path: ["lifecycle"],
+        message:
+          "GitHub definitions cannot contain launch-only lifecycle scripts",
+      });
     if (
       definition.source.verification !== "LOCAL" &&
       (!definition.source.repoUrl || !definition.source.commit)
@@ -230,6 +242,12 @@ export const runDefinitionPublicSubmissionSchema =
 
 export const runDefinitionPlanResponseSchema = z.object({
   source: runDefinitionSubmissionSchema.shape.source,
+  lifecycle: z
+    .object({
+      setupTimeoutSeconds: z.number().int().min(1).max(600).optional(),
+      teardownTimeoutSeconds: z.number().int().min(1).max(600).optional(),
+    })
+    .optional(),
   measurementMode: z.enum(["AGENT_EXPERIENCE", "AGENT_PREFERENCE", "MIXED"]),
   cases: z.array(
     z.object({

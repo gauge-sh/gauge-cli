@@ -7,6 +7,10 @@ export function assertLocalCapabilities(
   config: Record<string, unknown>,
   prefix = "",
 ): void {
+  if (config.lifecycle != null)
+    throw new CliError("usage", `${prefix}lifecycle requires hosted Gauge.`, {
+      hint: "Setup and teardown scripts run in hosted sessions. Use --hosted or remove lifecycle.",
+    });
   for (const field of [
     "profileId",
     "marketId",
@@ -16,16 +20,12 @@ export function assertLocalCapabilities(
   ]) {
     const value = config[field];
     if (Array.isArray(value) ? value.length > 0 : Boolean(value))
-      throw new CliError(
-        "usage",
-        `${prefix}${field} requires hosted Gauge.`,
-        {
-          hint:
-            field === "mcpRefs"
-              ? LOCAL_MCP_HINT
-              : "Use --hosted for personas and hosted assets, or select local files and Skills through named inputs in gauge.json.",
-        },
-      );
+      throw new CliError("usage", `${prefix}${field} requires hosted Gauge.`, {
+        hint:
+          field === "mcpRefs"
+            ? LOCAL_MCP_HINT
+            : "Use --hosted for personas and hosted assets, or select local files and Skills through named inputs in gauge.json.",
+      });
   }
   if (config.addons && Object.keys(config.addons).length > 0)
     throw new CliError("usage", `${prefix}addons requires hosted Gauge.`, {

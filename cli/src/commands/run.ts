@@ -60,6 +60,12 @@ import { detectSkillAgent } from "../lib/detectAgent";
 import { buildAgentRoster, collect, once, parseAgents } from "../lib/flags";
 import { gaugeState } from "../lib/gaugeState";
 import {
+  addLifecycleEditOptions,
+  hasLifecycleFlags,
+  lifecyclePatchFromOpts,
+  type LifecycleOpts,
+} from "../lib/lifecycle";
+import {
   type InputSnapshot,
   loadLocalRunDefinition,
   parseInputBindings,
@@ -439,7 +445,7 @@ async function streamRun(
   }
 }
 
-type LaunchOpts = {
+type LaunchOpts = LifecycleOpts & {
   prompt?: string;
   profile?: string;
   eval?: string;
@@ -473,6 +479,8 @@ async function loadWorkingTree(
   inputSnapshots: InputSnapshot[];
   unattachedInputs: string[];
 }> {
+  const lifecycle =
+    opts.prompt !== undefined ? lifecyclePatchFromOpts(opts) : {};
   const loaded = await loadLocalRunDefinition(
     opts.files ?? [],
     opts.input,
@@ -484,7 +492,7 @@ async function loadWorkingTree(
     if (upload) await confirmOrAbort("Run these cases now?", opts.yes);
     await uploadLocalInputs(createClient(), org, loaded.uploads);
     return {
-      definition: loaded.definition,
+      definition: { ...loaded.definition, ...lifecycle },
       org,
       inputSnapshots: loaded.inputSnapshots,
       unattachedInputs: loaded.unattachedInputs,
@@ -504,6 +512,12 @@ function printPlan(
     `Definition: ${result.source.verification === "LOCAL" ? "current files" : result.source.commit}`,
   );
   console.log(`Expected sessions: ${result.expectedRuns}`);
+  if (result.lifecycle?.setupTimeoutSeconds !== undefined)
+    console.log(`Setup hook: ${result.lifecycle.setupTimeoutSeconds}s deadline`);
+  if (result.lifecycle?.teardownTimeoutSeconds !== undefined)
+    console.log(
+      `Teardown hook: ${result.lifecycle.teardownTimeoutSeconds}s deadline`,
+    );
   for (const item of result.cases)
     console.log(
       `  ${item.path}: ${item.expectedRuns} sessions, ${item.preference ? `${item.preference.kind} preference (advisory)` : `${item.criteriaCount} criteria`}`,
@@ -603,6 +617,25 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
     opts.apply !== undefined && "--apply",
   ].filter((flag): flag is string => Boolean(flag));
   const source = sources[0];
+  if (hasLifecycleFlags(opts)) {
+    if (gaugeState(cmd).mode !== "hosted")
+      throw new CliError(
+        "usage",
+        "Lifecycle hooks require hosted Gauge; pass --hosted.",
+      );
+    if (
+      (source !== "a prompt" && source !== "--eval" && source !== "--preference") ||
+      opts.apply !== undefined ||
+      opts.schema ||
+      opts.example ||
+      opts.verify ||
+      (opts.dryRun && source !== "a prompt")
+    )
+      throw new CliError(
+        "usage",
+        "Lifecycle flags apply only to a hosted prompt, --eval, or --preference launch; they do not apply to case files or --apply. Only prompt launches support --dry-run with hooks.",
+      );
+  }
   if (opts.schema || opts.example) {
     const flag = opts.schema ? "--schema" : "--example";
     if (source || (opts.schema && opts.example))
@@ -649,7 +682,7 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
     if (opts.samples !== undefined || opts.input.length > 0)
       throw new CliError(
         "usage",
-        "a prompt run takes only --agent; use `gauge preference` or `gauge eval` for more settings",
+        "--samples and --input do not apply to prompt runs; use `gauge preference` or `gauge eval` for more settings",
       );
   } else if (
     (opts.agent.length > 0 || opts.samples !== undefined) &&
@@ -1054,10 +1087,9 @@ function printLocalStatus(
 }
 
 export function register(program: Command): void {
-  const run = program
-    .command("run")
+  const run = addLifecycleEditOptions(program.command("run"))
     .description(
-      'Start runs and read them. `gauge run "<prompt>"` runs one open-ended preference prompt and saves no measurement. With no flag: run this repo\'s eval cases (gauge-cases/) (local: in local Docker)',
+      'Start runs and read them. `gauge run "<prompt>"` runs one open-ended preference prompt and saves no measurement. With no flag: run this repo\'s eval cases (gauge-cases/) (local: in local Docker). Lifecycle flags attach hooks to hosted prompts or override saved --eval/--preference hooks for this launch only.',
     )
     .argument("[prompt]")
     .usage('[options] ["<prompt>"]')
@@ -1120,7 +1152,7 @@ export function register(program: Command): void {
     .option("--verify", "check this repo's eval files; start no sessions")
     .option(
       "--dry-run",
-      "preview this repo's eval cases or an --apply spec; start no sessions",
+      "preview a prompt, this repo's eval cases, or an --apply spec; start no sessions",
     )
     .option(
       "--require-experiment <label>",
