@@ -741,6 +741,23 @@ gauge eval edit <evalId> --hosted --clear-lifecycle   # remove both and params
 Clearing the last script also removes its parameter object. Each new run freezes
 the uploaded configuration; editing it does not change existing sessions.
 
+For a one-off launch, pass the same upload, timeout, parameter, or clear flags
+to `run --eval` or `run --preference`:
+
+```sh
+gauge run --hosted --eval <evalId> --setup-file ./setup.ts --teardown-file ./teardown.ts
+gauge run --hosted --preference <promptId> --scenario <scenarioId> \
+  --setup-file ./setup.ts --lifecycle-params '{"feature":"temporary-test"}'
+gauge run --hosted --eval <evalId> --clear-lifecycle
+```
+
+These overrides affect only the requested launch; the saved eval or preference
+prompt is never edited. Unspecified phases, timeouts, and parameters inherit
+the saved values. `--clear-lifecycle` disables both hooks for this launch only.
+Without lifecycle flags, runs use the saved hooks. One-off hook flags require
+hosted saved evals/preferences; they are not supported with `--local`, `--apply`,
+case files, or preview commands. Launching runs consumes credits normally.
+
 ## Hosted schedules
 
 `--cadence none` is "manual": the measurement stops coming due and runs only

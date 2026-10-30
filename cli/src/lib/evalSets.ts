@@ -10,7 +10,11 @@ import {
 import { readFileSync } from "node:fs";
 import type { evals } from "@withgauge/api-schemas";
 import type { Command } from "commander";
-import { hasLifecycleFlags } from "./lifecycle";
+import {
+  hasLifecycleFlags,
+  lifecyclePatchFromOpts,
+  type LifecycleOpts,
+} from "./lifecycle";
 import { CliError, createClient } from "./client";
 import { confirmOrAbort } from "./confirm";
 import { creatorLabel } from "./createdBy";
@@ -267,14 +271,22 @@ export async function removeEvalSet(cmd: Command, id: string): Promise<void> {
 export async function runEvalSet(
   cmd: Command,
   id: string,
-  opts: {
+  opts: LifecycleOpts & {
     yes?: boolean;
     agent: string[];
     samples?: string;
   },
 ): Promise<void> {
   const org = await resolveOrg(cmd);
-  const overrides = runOverridesFromOpts(opts);
+  const overrides = {
+    ...runOverridesFromOpts(opts),
+    ...(hasLifecycleFlags(opts)
+      ? lifecyclePatchFromOpts(
+          opts,
+          (await createClient().get<EvalSet>(evalSetPath(org, id))).lifecycle,
+        )
+      : {}),
+  };
   await confirmOrAbort(
     Object.keys(overrides).length > 0
       ? "Run this eval now with these overrides? The stored configuration stays unchanged."

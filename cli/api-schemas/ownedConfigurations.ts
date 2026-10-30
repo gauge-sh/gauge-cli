@@ -144,12 +144,14 @@ export const runEvalBodySchema = z
   .object({
     agents: runAgentsOverrideSchema.optional(),
     sampleCount: runSampleCountOverrideSchema.optional(),
+    lifecycle: lifecycleSchema.nullish(),
   })
   .strict();
 export const runVisibilityBodySchema = z
   .object({
     agents: runAgentsOverrideSchema.optional(),
     sampleCount: runSampleCountOverrideSchema.optional(),
+    lifecycle: lifecycleSchema.nullish(),
     visibilityScenarioIds: z.array(z.string().min(1)).min(1).optional(),
   })
   .strict();

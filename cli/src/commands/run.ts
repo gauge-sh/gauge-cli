@@ -59,6 +59,11 @@ import { runEvalSet } from "../lib/evalSets";
 import { collect, once, parseAgents } from "../lib/flags";
 import { gaugeState } from "../lib/gaugeState";
 import {
+  addLifecycleEditOptions,
+  hasLifecycleFlags,
+  type LifecycleOpts,
+} from "../lib/lifecycle";
+import {
   type InputSnapshot,
   loadLocalRunDefinition,
   parseInputBindings,
@@ -435,7 +440,7 @@ async function streamRun(
   }
 }
 
-type LaunchOpts = {
+type LaunchOpts = LifecycleOpts & {
   profile?: string;
   eval?: string;
   preference?: string;
@@ -578,6 +583,25 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
     opts.apply !== undefined && "--apply",
   ].filter((flag): flag is string => Boolean(flag));
   const source = sources[0];
+  if (hasLifecycleFlags(opts)) {
+    if (gaugeState(cmd).mode !== "hosted")
+      throw new CliError(
+        "usage",
+        "Lifecycle hooks require hosted Gauge; pass --hosted.",
+      );
+    if (
+      (source !== "--eval" && source !== "--preference") ||
+      opts.apply !== undefined ||
+      opts.schema ||
+      opts.example ||
+      opts.verify ||
+      opts.dryRun
+    )
+      throw new CliError(
+        "usage",
+        "Lifecycle flags apply only to a hosted --eval or --preference launch; they do not apply to case files, --apply, or preview commands.",
+      );
+  }
   if (opts.schema || opts.example) {
     const flag = opts.schema ? "--schema" : "--example";
     if (source || (opts.schema && opts.example))
@@ -1003,10 +1027,9 @@ function printLocalStatus(
 }
 
 export function register(program: Command): void {
-  const run = program
-    .command("run")
+  const run = addLifecycleEditOptions(program.command("run"))
     .description(
-      "Start runs and read them. With no flag: run this repo's eval cases (gauge-cases/) (local: in local Docker)",
+      "Start runs and read them. With no flag: run this repo's eval cases (gauge-cases/) (local: in local Docker). Lifecycle flags override hosted --eval/--preference hooks for this launch only.",
     )
     .argument("[command]")
     .usage("[options] [command]")

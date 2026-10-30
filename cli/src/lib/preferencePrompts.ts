@@ -9,7 +9,11 @@ import {
 } from "./localMeasurements";
 import type { ownedConfigurations, visibility } from "@withgauge/api-schemas";
 import type { Command } from "commander";
-import { hasLifecycleFlags } from "./lifecycle";
+import {
+  hasLifecycleFlags,
+  lifecyclePatchFromOpts,
+  type LifecycleOpts,
+} from "./lifecycle";
 import { CliError, createClient } from "./client";
 import { confirmOrAbort } from "./confirm";
 import { creatorLabel } from "./createdBy";
@@ -358,7 +362,7 @@ export async function removeScenario(
 export async function runPreferencePrompt(
   cmd: Command,
   id: string,
-  opts: {
+  opts: LifecycleOpts & {
     scenario: string[];
     yes?: boolean;
     agent: string[];
@@ -366,7 +370,16 @@ export async function runPreferencePrompt(
   },
 ): Promise<void> {
   const org = await resolveOrg(cmd);
-  const overrides = runOverridesFromOpts(opts);
+  const overrides = {
+    ...runOverridesFromOpts(opts),
+    ...(hasLifecycleFlags(opts)
+      ? lifecyclePatchFromOpts(
+          opts,
+          (await createClient().get<VisibilityPrompt>(promptPath(org, id)))
+            .lifecycle,
+        )
+      : {}),
+  };
   const settings =
     Object.keys(overrides).length > 0
       ? "these overrides (stored settings stay unchanged)"
