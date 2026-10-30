@@ -6,22 +6,16 @@ import { detectAgent } from "../lib/detectAgent";
 import { DOCS_URL } from "../lib/docs";
 import { printJson, style } from "../lib/output";
 import { HOSTED_STEPS, LOCAL_STEPS } from "../instructions/steps";
+import {
+  LOCAL_RUN_PRESENTATION,
+  LOGO,
+  SMALL_LOGO,
+} from "../instructions/init";
 import { type Mode, readGaugeState } from "../lib/gaugeState";
 import { resolve } from "node:path";
 import { scaffoldWorkspace, type ScaffoldResult } from "../lib/scaffold";
 export type InitDependencies = { cwd?: string };
 export type InitResult = ScaffoldResult;
-
-const LOGO = String.raw`
-
- ⣠⣶⣿⡿⠿⣿⣿⣦⡀                                            ⣼⣷⣄
-⣰⣿⡿⠁   ⠙⠿⠿⠄ ⢀⣤⣤⣤⣤⡀ ⢠⣤⡄  ⢠⣤⡄ ⢀⣤⣤⣤⡀⣤⣤  ⣀⣤⣤⣤⣄⡀         ⢀⣼⣿⣿⣿⣀
-⣿⣿⡇  ⣶⣶⣶⣶⣶⡆⠰⠿⠟⠉⠉⢿⣿⡆⢸⣿⡇  ⢸⣿⡇⢰⣿⡿⠋⠉⠻⣿⣿ ⣼⣿⠟⠉⠙⢿⣷⡄       ⢠⣾⣿⣿⣿⣿⠿⢿⣷⡄
-⢿⣿⣇  ⠉⠉⠉⣿⣿⡇⢠⣶⣾⠿⠿⢿⣿⡇⢸⣿⡇  ⢸⣿⡇⢸⣿⡇   ⣿⣿ ⣿⣿⣿⣿⣿⣿⣿⡇   ⣿⣄⢀⣴⣿⣿⣿⣿⣿⣷⣶⣶⣿⣿⣶⣶⣶⡆
-⠈⢿⣿⣦⣤⣀⣤⣾⢿⣿⡇⢿⣿⣇⡀⣀⣾⣿⡇⢸⣿⣷⣀⣀⣾⣿⡇⠘⣿⣿⣄⣀⣴⣿⣿ ⢻⣿⣦⣀⣀⣶⣶⠆  ⠙⠛⠋⠈⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠇
-  ⠉⠛⠛⠛⠛⠁⠘⠛⠃⠈⠙⠛⠛⠋⠘⠛⠃ ⠙⠛⠛⠋⠘⠛⠃⢀⣈⣙⠛⠋⠁⣿⣿  ⠉⠛⠛⠛⠛⠁        ⠹⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠿⠋
-                            ⠻⢿⣷⣶⣿⠿⠋                 ⠈⢿⠿⠋⠉
-`;
 
 const BARK = String.raw`
                                                      ⣀
@@ -33,9 +27,6 @@ const BARK = String.raw`
   ⠉⠛⠛⠛⠛⠁⠘⠛⠃⠈⠙⠛⠛⠋⠘⠛⠃ ⠙⠛⠛⠋⠘⠛⠃⢀⣈⣙⠛⠋⠁⣿⣿  ⠉⠛⠛⠛⠛⠁       ⠈⠻⣿⣿⣿⣿⡿⠿⠛⠛⠛⠋
                             ⠻⢿⣷⣶⣿⠿⠋                 ⠈⠿⠟⠁
 `;
-
-const SMALL_LOGO = String.raw`█▀▀ ▄▀█ █ █ █▀▀ █▀▀
-█▄█ █▀█ █▄█ █▄█ ██▄`;
 
 async function printLogo(): Promise<void> {
   const out = process.stdout;
@@ -95,6 +86,7 @@ function nextSteps(mode: Mode): string {
   lines.push(
     "Agents: the user does not see gauge output. Show them the files you write, each case before launch, and the results.",
   );
+  if (mode === "local") lines.push(`Agents: ${LOCAL_RUN_PRESENTATION}`);
   lines.push(`Docs: ${cyan(DOCS_URL)}`);
   return lines.join("\n");
 }

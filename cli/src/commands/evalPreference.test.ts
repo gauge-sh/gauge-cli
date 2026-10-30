@@ -256,7 +256,12 @@ describe("gauge run", () => {
     const dir = mkdtempSync(join(tmpdir(), "gauge-local-prompt-"));
     const previous = {
       CLAUDECODE: process.env.CLAUDECODE,
+      CODEX_SANDBOX: process.env.CODEX_SANDBOX,
       CODEX_THREAD_ID: process.env.CODEX_THREAD_ID,
+      CODEX_CI: process.env.CODEX_CI,
+      CURSOR_AGENT: process.env.CURSOR_AGENT,
+      GEMINI_CLI: process.env.GEMINI_CLI,
+      CLINE_ACTIVE: process.env.CLINE_ACTIVE,
       OPENCODE: process.env.OPENCODE,
     };
     t.after(() => {
@@ -269,8 +274,7 @@ describe("gauge run", () => {
     execFileSync("git", ["init", "-q"], { cwd: dir });
     writeFileSync(join(dir, "gauge.json"), '{"version":2}');
     process.chdir(dir);
-    delete process.env.CLAUDECODE;
-    delete process.env.OPENCODE;
+    for (const name of Object.keys(previous)) delete process.env[name];
     process.env.CODEX_THREAD_ID = "t1";
     const log = t.mock.method(console, "log", () => {});
     await gauge(["run", "Which CLI should I deploy with?", "--dry-run"], "--local");

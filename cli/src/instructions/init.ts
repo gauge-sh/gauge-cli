@@ -1,3 +1,35 @@
+export const LOGO = String.raw`
+
+ ⣠⣶⣿⡿⠿⣿⣿⣦⡀                                            ⣼⣷⣄
+⣰⣿⡿⠁   ⠙⠿⠿⠄ ⢀⣤⣤⣤⣤⡀ ⢠⣤⡄  ⢠⣤⡄ ⢀⣤⣤⣤⡀⣤⣤  ⣀⣤⣤⣤⣄⡀         ⢀⣼⣿⣿⣿⣀
+⣿⣿⡇  ⣶⣶⣶⣶⣶⡆⠰⠿⠟⠉⠉⢿⣿⡆⢸⣿⡇  ⢸⣿⡇⢰⣿⡿⠋⠉⠻⣿⣿ ⣼⣿⠟⠉⠙⢿⣷⡄       ⢠⣾⣿⣿⣿⣿⠿⢿⣷⡄
+⢿⣿⣇  ⠉⠉⠉⣿⣿⡇⢠⣶⣾⠿⠿⢿⣿⡇⢸⣿⡇  ⢸⣿⡇⢸⣿⡇   ⣿⣿ ⣿⣿⣿⣿⣿⣿⣿⡇   ⣿⣄⢀⣴⣿⣿⣿⣿⣿⣷⣶⣶⣿⣿⣶⣶⣶⡆
+⠈⢿⣿⣦⣤⣀⣤⣾⢿⣿⡇⢿⣿⣇⡀⣀⣾⣿⡇⢸⣿⣷⣀⣀⣾⣿⡇⠘⣿⣿⣄⣀⣴⣿⣿ ⢻⣿⣦⣀⣀⣶⣶⠆  ⠙⠛⠋⠈⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠇
+  ⠉⠛⠛⠛⠛⠁⠘⠛⠃⠈⠙⠛⠛⠋⠘⠛⠃ ⠙⠛⠛⠋⠘⠛⠃⢀⣈⣙⠛⠋⠁⣿⣿  ⠉⠛⠛⠛⠛⠁        ⠹⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠿⠋
+                            ⠻⢿⣷⣶⣿⠿⠋                 ⠈⢿⠿⠋⠉
+`;
+
+export const SMALL_LOGO = `█▀▀ ▄▀█ █ █ █▀▀ █▀▀
+█▄█ █▀█ █▄█ █▄█ ██▄`;
+
+export const LOCAL_RUN_PRESENTATION = `Help users understand how Gauge OSS works. Users cannot see CLI output. Use this order, starting with the logo:
+Open with the FULL Gauge ASCII art, including the dog, copied
+verbatim in a fenced text block. Get the full logo from gauge instructions init --local; init's small wordmark is for CLI output.
+Preserve the Braille characters and spacing in one code block with no blank lines between artwork rows; do not redraw it.
+Add one sentence naming the planned case count, agent/model, and local Docker.
+Draw a simple overview titled "How Gauge OSS works", with three boxes joined by arrows:
+choose tasks + product inputs → agents try your product in local Docker sessions → this coding agent reviews the recorded sessions.
+Use one or two short, plain-language lines per box. Make clear the runs happen on this machine, separately from this chat, and the review explains what worked and where agents struggled.
+Keep the graphic conceptual: no actual prompts, implementation steps, rubric details, or findings. Do not expand the Docker box into a technical walkthrough.
+Use aligned boxes with whitespace; place them side by side if they fit, or stack them on narrow displays. Below the graphic show cases × targets × samples = total sessions, without implying concurrency.
+Follow with a compact table of case names, tasks, and success criteria. Use plain text in cells, with semicolons for multiple criteria; no HTML tags or nested lists.
+Summarize changed files and routine setup in at most one line.
+End with a short launch question, or the next step if launch is already approved.
+Include only what will run, what success means, and what happens next. Explain checks
+only on problems; omit rejected inputs, selection narration, and recaps unless requested.
+Use the diagram to explain Gauge OSS and the table for this run's tasks/criteria; avoid repeating either in prose.
+Show planned work as planned; honor existing approval without adding another approval step.`;
+
 export const INIT = `---
 name: gauge-init
 description: Initialize a Gauge workspace, choose local or hosted execution,
@@ -55,3 +87,8 @@ inputs and previews use case files/specs; read \`gauge instructions run\`.
 Gauge recommends the gauge-agents skill for future sessions:
 \`gauge install-skill\`. Coding agents install it for themselves in this project, without prompts.
 `;
+
+export const INIT_LOCAL = INIT.replace(
+  "## Next\n",
+  `## Show the user what will happen\n\n${LOCAL_RUN_PRESENTATION}\n\n\`\`\`text\n${LOGO.replace(/^\n+/, "").trimEnd()}\n\`\`\`\n\n## Next\n`,
+);

@@ -18,6 +18,9 @@ function hillclimbSteps(hosted: boolean): Step[] {
         hosted
           ? "Show the user each case's task and criteria, the targets, the session count, and the credit budget, then offer to start the runs with --hosted; say they run on Gauge, separate from this chat."
           : "Check Docker, the runtime image, and agent credentials. Show the user each case's task and criteria, the targets, and the session count, then offer to start the runs; say they run in Docker containers on this machine, separate from this chat. Mention verify and preview only when they fail.",
+        ...(hosted
+          ? []
+          : ["Keep prose compact: full Gauge ASCII art, one-line plan, and a simple 'How Gauge OSS works' diagram: choose tasks and inputs → agents try your product in local Docker → this coding agent reviews recorded sessions. Keep prompts, implementation details, and findings out of the graphic. Follow with session count, a plain-text case table, one-line setup summary, and next step. Read gauge instructions init for presentation guidance."]),
       ],
     },
     {

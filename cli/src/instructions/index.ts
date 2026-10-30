@@ -1,7 +1,7 @@
 import { CliError } from "../lib/client";
 import { type GaugeState, header, instructionMode } from "../lib/gaugeState";
 import { EVAL } from "./eval";
-import { INIT } from "./init";
+import { INIT, INIT_LOCAL } from "./init";
 import { ISSUES } from "./issues";
 import { PREFERENCE } from "./preference";
 import { RUN, RUN_LOCAL } from "./run";
@@ -231,7 +231,7 @@ summary, the changed tree keys, and {runId, label} findings.
 
 export const TOPICS: Record<string, Topic> = {
   root: { name: "gauge", hosted: ROOT, local: ROOT_LOCAL },
-  init: { name: "gauge-init", hosted: INIT, shared: true, command: "init" },
+  init: { name: "gauge-init", hosted: INIT, local: INIT_LOCAL, command: "init" },
   hillclimb: { name: "gauge-hillclimb", hosted: HILLCLIMB, shared: true },
   run: { name: "gauge-run", hosted: RUN, local: RUN_LOCAL, command: "run" },
   eval: { name: "gauge-eval", hosted: EVAL, shared: true, command: "eval" },
