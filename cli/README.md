@@ -206,7 +206,7 @@ describe the transport and person-profile behavior.
 For an end-to-end improvement loop, run `gauge instructions hillclimb`. It guides
 your coding agent to identify product inputs, propose a representative pilot,
 inspect and publish findings, implement a focused change, and rerun to compare.
-Init and the generated `AGENTS.md` point to this guidance. `gauge install-skill`
+Init and the `AGENTS.md` block from `init --cases` point to this guidance. `gauge install-skill`
 installs the Gauge skill, which directs agents to the installed CLI's instructions.
 
 Execution backend is independent of definition source. Resolve an explicit

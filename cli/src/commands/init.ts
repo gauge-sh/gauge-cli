@@ -93,14 +93,18 @@ function nextSteps(mode: Mode): string {
     `Agents: add ${cyan("-o json")} to any gauge command for JSON output.`,
   );
   lines.push(
-    "Agents: the user does not see gauge output. After each step, tell them what Gauge did and found.",
+    "Agents: the user does not see gauge output. Show them the files you write, each case before launch, and the results.",
   );
   lines.push(`Docs: ${cyan(DOCS_URL)}`);
   return lines.join("\n");
 }
 
 export function summarize(result: ScaffoldResult): string {
-  return `${result.gaugeJson === "created" ? "Created" : "Kept"} gauge.json. Backend: ${result.backend} (.gauge/config.json). Local state: .gauge/gauge.sqlite.${result.casesDir === "not-requested" ? "" : ` Shared cases: gauge-cases/ (${result.casesDir}).`}`;
+  const manifest =
+    result.gaugeJson === "not-requested"
+      ? ""
+      : `${result.gaugeJson === "created" ? "Created" : "Kept"} gauge.json. `;
+  return `${manifest}Backend: ${result.backend} (.gauge/config.json). Local state: .gauge/gauge.sqlite.${result.casesDir === "not-requested" ? "" : ` Shared cases: gauge-cases/ (${result.casesDir}).`}`;
 }
 
 export function register(
@@ -110,9 +114,12 @@ export function register(
   program
     .command("init")
     .description(
-      "Initialize a Gauge workspace: shared gauge.json and private .gauge/ state. No Git or account required. Backend defaults to local independently of login.",
+      "Initialize a Gauge workspace: private .gauge/ state, plus shared gauge.json, gauge-cases/, and an AGENTS.md block with --cases. No Git or account required. Backend defaults to local independently of login.",
     )
-    .option("--cases", "also scaffold shared gauge-cases/ files")
+    .option(
+      "--cases",
+      "also write shared gauge.json, gauge-cases/, and an AGENTS.md block",
+    )
     .action(async (opts: { cases?: boolean }, cmd: Command) => {
       const state = readGaugeState(cmd.optsWithGlobals(), cwd);
       if (state.config === null)

@@ -23,17 +23,17 @@ preference. The selection is private to this checkout.
 
 ## What it writes
 
-    gauge.json             shared manifest: { "version": 2, "inputs": {} }
     .gauge/config.json     private backend preference
     .gauge/gauge.sqlite    local measurements, launches, summaries, and analyses
     .gauge/.gitignore      ignores workspace state, including the database
-    AGENTS.md              a Gauge block pointing to these instructions
 
-Plain init creates no cases. Add \`--cases\` to scaffold \`gauge-cases/\` when
-shared, fully specified cases are useful. \`gauge.json\` can declare named
-inputs, case paths, and GitHub checks; it never chooses the execution backend.
-A configured org binds repository automation without forcing interactive runs
-onto hosted Gauge. Commands find the nearest parent \`gauge.json\`.
+Plain init changes no tracked files. Add \`--cases\` when shared, fully specified
+cases are useful; it also writes \`gauge.json\` ({ "version": 2, "inputs": {} }),
+\`gauge-cases/\`, and an AGENTS.md block pointing to these instructions.
+Create \`gauge.json\` yourself to declare named inputs, case paths, and GitHub
+checks; it never chooses the execution backend. A configured org binds repository
+automation without forcing interactive runs onto hosted Gauge. Commands find the
+nearest parent \`gauge.json\` or \`.gauge/\`.
 
 Repeat init safely: it preserves measurements and existing shared configuration,
 and refreshes the Gauge instructions block. Commit shared configuration, optional
