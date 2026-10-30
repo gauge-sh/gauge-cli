@@ -39,6 +39,8 @@ Read \`gauge instructions session-analysis\` to analyze the sessions.
 - --agent belongs to the prompt. Hosted --skill, --mcp, and --connection
   references require hosted execution.
   Read \`gauge instructions run\` to choose models.
+- Hosted --setup-file/--teardown-file upload UTF-8 JS/TS files; import bindings from "@withgauge/session".
+  Edits keep the other hook/params; --clear-setup/--clear-teardown/--clear-lifecycle remove hooks (see --help).
 - Hosted --cadence daily|weekly|monthly and --samples schedule repeat runs that spend
   credits. Confirm the schedule with the user.
 - For one launch with other agents or samples, use

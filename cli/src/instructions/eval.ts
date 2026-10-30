@@ -34,6 +34,8 @@ eval set.
 - --agent belongs to the eval set. Hosted --skill, --mcp, and --connection
   references require hosted execution. Read
   \`gauge instructions run\` to choose models.
+- Hosted --setup-file/--teardown-file upload UTF-8 JS/TS files; import bindings from "@withgauge/session".
+  Edits keep the other hook/params; --clear-setup/--clear-teardown/--clear-lifecycle remove hooks (see --help).
 - Hosted --cadence daily|weekly|monthly and --samples schedule repeat runs that spend
   credits. Confirm the schedule with the user.
 - An edit to the prompt, criteria, repo, or persona starts a new eval revision

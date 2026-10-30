@@ -9,6 +9,7 @@ import {
 } from "./localMeasurements";
 import type { ownedConfigurations, visibility } from "@withgauge/api-schemas";
 import type { Command } from "commander";
+import { hasLifecycleFlags } from "./lifecycle";
 import { CliError, createClient } from "./client";
 import { confirmOrAbort } from "./confirm";
 import { creatorLabel } from "./createdBy";
@@ -159,6 +160,12 @@ export async function createPreferencePrompt(
   cmd: Command,
   opts: PreferenceCreateOpts,
 ): Promise<void> {
+  if (hasLifecycleFlags(opts) && isLocal(cmd))
+    throw new CliError(
+      "usage",
+      "Lifecycle scripts require hosted execution; pass --hosted",
+    );
+
   if (opts.kind === undefined)
     throw new CliError(
       "usage",
@@ -216,8 +223,21 @@ export async function editPreferencePrompt(
   id: string,
   opts: PreferenceEditOpts,
 ): Promise<void> {
+  if (hasLifecycleFlags(opts) && isLocal(cmd))
+    throw new CliError(
+      "usage",
+      "Lifecycle scripts require hosted execution; pass --hosted",
+    );
+  const lifecyclePath =
+    hasLifecycleFlags(opts) && !opts.clearLifecycle
+      ? promptPath(await resolveOrg(cmd), id)
+      : undefined;
+  const existing = lifecyclePath
+    ? await createClient().get<VisibilityPrompt>(lifecyclePath)
+    : undefined;
+
   const body: visibility.UpdateVisibilityPromptBody = {
-    ...runSettingsPatchFromOpts(opts),
+    ...runSettingsPatchFromOpts(opts, existing?.lifecycle),
   };
   if (opts.name !== undefined) body.name = opts.name;
   if (opts.text !== undefined || opts.file !== undefined)
@@ -245,7 +265,7 @@ export async function editPreferencePrompt(
   const updated = isLocal(cmd)
     ? editLocalMeasurement(cmd, "preference", id, body)
     : await createClient().patch<VisibilityPrompt>(
-        promptPath(await resolveOrg(cmd), id),
+        lifecyclePath ?? promptPath(await resolveOrg(cmd), id),
         body,
       );
   if (resolveOutput(cmd) === "json") printJson(updated);
