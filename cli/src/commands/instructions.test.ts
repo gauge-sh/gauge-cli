@@ -35,7 +35,7 @@ describe("gauge instructions", () => {
       const budget =
         topic === "root"
           ? OVERVIEW_LINE_BUDGET
-          : topic === "run"
+          : topic === "run" || topic === "eval"
             ? RUN_LINE_BUDGET
             : BODY_LINE_BUDGET;
       assert.ok(
@@ -71,6 +71,10 @@ describe("gauge instructions", () => {
     }
     assert.match(instructions("run", state("local")), /# Run \(local\)/);
     assert.match(instructions("eval", state("local")), /# Eval sets/);
+    assert.match(
+      instructions("eval", state("local")),
+      /Write the prompt as a real user's request[\s\S]*\*\*Complete migration:\*\*/,
+    );
     assert.match(
       instructions("preference", state("local")),
       /# Preference prompts/,
