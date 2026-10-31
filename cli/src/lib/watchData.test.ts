@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -64,6 +64,8 @@ test("watch data lists the latest attempt, flags live sessions, and reads traces
   assert.deepEqual(trace?.events.map((e) => e.seq), [0, 1]);
   assert.deepEqual(trace?.inputs, [{ turn: 0, observedAt: "2026-10-02T00:00:00.500Z", text: "Do B" }]);
   assert.deepEqual((await readWatchTrace(root, "r_live", 0))?.events.map((e) => e.seq), [1]);
+  await appendFile(join(retry, "session/events.ndjson"), '"turn":1,"observedAt":"x","payload":{}}\n');
+  assert.deepEqual((await readWatchTrace(root, "r_live", 1))?.events.map((e) => e.seq), [2]);
   assert.equal(await readWatchDiff(root, "r_done"), "+line\n");
   assert.equal(await readWatchDiff(root, "r_live"), "");
 
@@ -75,6 +77,20 @@ test("watch data lists the latest attempt, flags live sessions, and reads traces
   const [orphan] = await listWatchSessions(root);
   assert.equal(orphan.state, "interrupted");
   assert.equal(orphan.live, false);
+
+  await attempt(root, "r_queued", 1, { createdAt: "2026-10-03T00:00:00.000Z" });
+  const batch = join(root, "batches", "b_one");
+  await mkdir(batch, { recursive: true });
+  await writeFile(join(batch, "status.json"), JSON.stringify({ state: "running", supervisorPid: process.pid }));
+  assert.deepEqual(
+    (await listWatchSessions(root)).filter((s) => s.id === "r_queued").map((s) => [s.state, s.live]),
+    [["preparing", true]],
+  );
+  await writeFile(join(batch, "status.json"), JSON.stringify({ state: "running", supervisorPid: 2 ** 30 }));
+  assert.deepEqual(
+    (await listWatchSessions(root)).filter((s) => s.id === "r_queued").map((s) => [s.state, s.live]),
+    [["interrupted", false]],
+  );
 });
 
 test("port probing skips busy ports; the server refuses foreign hosts and serves the API", async (t) => {
