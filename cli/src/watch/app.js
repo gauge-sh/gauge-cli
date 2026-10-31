@@ -1,7 +1,7 @@
 "use strict";
-var FILTERS = [["all", "All"], ["live", "Live"], ["completed", "Completed"], ["failed", "Failed"]];
+var STATUSES = [["all", "All"], ["running", "Running"], ["completed", "Completed"], ["failed", "Failed"]];
 var state = { sessions: [], filter: "all", query: "", selected: null, detail: null, tab: "trace",
-  events: [], inputs: [], lastSeq: -1, diff: null, diffOpen: {}, traceToken: 0, promptOpen: false };
+  events: [], inputs: [], lastSeq: -1, diff: null, diffOpen: {}, traceToken: 0, promptOpen: false, sessionsJson: "" };
 
 function h(tag, attrs) {
   var el = document.createElement(tag);
@@ -19,13 +19,12 @@ function h(tag, attrs) {
   return el;
 }
 
-function ago(iso) {
+function stamp(iso) {
   if (!iso) return "";
-  var s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
-  if (s < 60) return Math.floor(s) + "s";
-  if (s < 3600) return Math.floor(s / 60) + "m";
-  if (s < 86400) return Math.floor(s / 3600) + "h";
-  return Math.floor(s / 86400) + "d";
+  var d = new Date(iso);
+  return d.toDateString() === new Date().toDateString()
+    ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+    : d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 function duration(ms) {
   if (ms == null) return "";
@@ -48,21 +47,60 @@ async function get(path, type) {
   return type === "text" ? res.text() : res.json();
 }
 
+function icon(path, size) {
+  return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' + path + '</svg>';
+}
+var FUNNEL = icon('<path d="M2 3h12l-4.5 5.5V13l-3 1.5v-6z"/>', 13);
+var CHEVRON = icon('<path d="M4 6l4 4 4-4"/>', 12);
+var SEARCH = icon('<circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/>', 14);
+
+function params() {
+  var p = new URLSearchParams();
+  if (state.filter !== "all") p.set("status", state.filter);
+  if (state.query) p.set("q", state.query);
+  var q = p.toString();
+  return q ? "?" + q : "";
+}
+function go(path) { location.hash = path + params(); }
+function syncUrl() { history.replaceState(null, "", "#" + (location.hash.slice(1).split("?")[0] || "/") + params()); }
+
+function matches(s, status) {
+  if (status === "running") return s.live;
+  if (status === "completed") return s.state === "completed";
+  if (status === "failed") return s.state === "failed" || s.state === "interrupted" || s.state === "canceled";
+  return true;
+}
+
 function renderFilters() {
   var box = document.getElementById("filters");
-  var seg = box.querySelector(".seg");
-  if (!seg) {
-    seg = h("div", { class: "seg" });
-    var input = h("input", { placeholder: "Filter by case, agent, model, or ID" });
-    input.addEventListener("input", function () { state.query = input.value.toLowerCase(); renderList(); });
-    box.appendChild(seg);
-    box.appendChild(input);
+  if (!box.firstChild) {
+    var input = h("input", { id: "q", placeholder: "Search sessions" });
+    input.addEventListener("input", function () { state.query = input.value; syncUrl(); renderList(); });
+    var menu = h("div", { id: "status-menu", class: "menu", hidden: "" });
+    var button = h("button", { id: "status", title: "Filter by status", onclick: function (e) { e.stopPropagation(); menu.hidden = !menu.hidden; } });
+    document.addEventListener("click", function (e) { if (!menu.contains(e.target)) menu.hidden = true; });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") menu.hidden = true; });
+    button.innerHTML = FUNNEL + '<span class="label"></span>' + CHEVRON;
+    var glass = h("span", { class: "glass" });
+    glass.innerHTML = SEARCH;
+    STATUSES.forEach(function (f) {
+      menu.appendChild(h("button", { "data-status": f[0], onclick: function () {
+        state.filter = f[0]; menu.hidden = true; syncUrl(); renderFilters(); renderList();
+      } }, h("span", { class: "check" }), f[1], h("span", { class: "count" })));
+    });
+    box.appendChild(h("div", { class: "search", onclick: function (e) { if (e.target === this) input.focus(); } }, glass, button, input, menu));
   }
-  seg.textContent = "";
-  var live = state.sessions.filter(function (s) { return s.live; }).length;
-  FILTERS.forEach(function (f) {
-    var label = f[1] + (f[0] === "live" && live ? " " + live : "");
-    seg.appendChild(h("button", { class: state.filter === f[0] ? "on" : "", onclick: function () { state.filter = f[0]; renderFilters(); renderList(); } }, label));
+  var q = document.getElementById("q");
+  if (q.value !== state.query) q.value = state.query;
+  var button = document.getElementById("status");
+  var active = STATUSES.find(function (f) { return f[0] === state.filter; });
+  button.className = "status-btn" + (state.filter !== "all" ? " on" : "");
+  button.querySelector(".label").textContent = state.filter === "all" ? "Status" : active[1];
+  document.querySelectorAll("#status-menu button").forEach(function (item) {
+    var status = item.dataset.status;
+    item.className = state.filter === status ? "on" : "";
+    item.querySelector(".check").textContent = state.filter === status ? "✓" : "";
+    item.querySelector(".count").textContent = String(state.sessions.filter(function (s) { return matches(s, status); }).length);
   });
 }
 
@@ -77,11 +115,9 @@ function splitCase(path) {
 
 function visible() {
   return state.sessions.filter(function (s) {
-    if (state.filter === "live" && !s.live) return false;
-    if (state.filter === "completed" && s.state !== "completed") return false;
-    if (state.filter === "failed" && !(s.state === "failed" || s.state === "interrupted" || s.state === "canceled")) return false;
+    if (!matches(s, state.filter)) return false;
     if (!state.query) return true;
-    return [s.case, s.agent, agentName(s.agent), s.model, s.id, s.batchId].join(" ").toLowerCase().indexOf(state.query) >= 0;
+    return [s.case, s.agent, agentName(s.agent), s.model, s.id, s.batchId].join(" ").toLowerCase().indexOf(state.query.toLowerCase()) >= 0;
   });
 }
 
@@ -110,10 +146,10 @@ function renderRow(s) {
   var name = s.case ? splitCase(s.case) : ["", s.id];
   var stats = [s.state === "completed" ? null : s.state, s.turns ? turns(s.turns) : null, s.live ? null : duration(s.durationMs)].filter(Boolean).join(" · ");
   var who = [agentName(s.agent), s.model].filter(Boolean).join(" · ");
-  return h("div", { class: "row" + (s.id === state.selected ? " sel" : ""), title: s.case || s.id, onclick: function () { location.hash = "#/session/" + s.id; } },
+  return h("div", { class: "row" + (s.id === state.selected ? " sel" : ""), title: s.case || s.id, onclick: function () { go("#/session/" + s.id); } },
     h("span", { class: "dot " + stateClass(s) }),
     h("span", { class: "case" }, name[1]),
-    h("span", { class: "age", title: s.createdAt ? "Started " + new Date(s.createdAt).toLocaleString() : "" }, s.createdAt ? ago(s.createdAt) + " ago" : ""),
+    h("span", { class: "age", title: s.createdAt ? "Started " + new Date(s.createdAt).toLocaleString() : "" }, stamp(s.createdAt)),
     h("span", { class: "meta" }, who || "\u00a0"),
     h("span", { class: "meta" }, stats || "\u00a0"));
 }
@@ -157,7 +193,7 @@ function renderHead(view) {
     s.detail && !s.live && s.state !== "completed" ? h("div", { class: "detail" }, s.detail) : null));
   var tabs = h("div", { class: "tabs" });
   [["trace", "Trace"], ["task", "Task"], ["diff", "Diff"]].forEach(function (t) {
-    tabs.appendChild(h("button", { class: state.tab === t[0] ? "on" : "", onclick: function () { location.hash = "#/session/" + state.selected + "/" + t[0]; } }, t[1]));
+    tabs.appendChild(h("button", { class: state.tab === t[0] ? "on" : "", onclick: function () { go("#/session/" + state.selected + "/" + t[0]); } }, t[1]));
   });
   view.appendChild(tabs);
 }
@@ -469,7 +505,13 @@ async function select(id) {
 }
 
 function route() {
-  var m = /^#\/session\/([A-Za-z0-9_-]+)(?:\/(trace|task|diff))?$/.exec(location.hash);
+  var parts = location.hash.split("?");
+  var p = new URLSearchParams(parts[1] || "");
+  var status = p.get("status");
+  state.filter = STATUSES.some(function (f) { return f[0] === status; }) ? status : "all";
+  state.query = p.get("q") || "";
+  renderFilters(); renderList();
+  var m = /^#\/session\/([A-Za-z0-9_-]+)(?:\/(trace|task|diff))?$/.exec(parts[0]);
   if (m && m[2]) state.tab = m[2];
   if (m && m[1] === state.selected) { if (state.tab === "diff") loadDiff(); renderView(); return; }
   select(m ? m[1] : null);
@@ -478,10 +520,15 @@ function route() {
 async function tick() {
   var conn = document.getElementById("conn");
   try {
-    state.sessions = (await get("/api/sessions")).sessions;
-    var live = state.sessions.filter(function (s) { return s.live; }).length;
-    conn.textContent = state.sessions.length + (state.sessions.length === 1 ? " session" : " sessions") + (live ? " · " + live + " live" : "") + " · updated " + new Date().toLocaleTimeString();
-    renderFilters(); renderList();
+    var raw = await get("/api/sessions", "text");
+    if (raw !== state.sessionsJson) {
+      state.sessionsJson = raw;
+      state.sessions = JSON.parse(raw).sessions;
+      var live = state.sessions.filter(function (s) { return s.live; }).length;
+      conn.textContent = state.sessions.length + (state.sessions.length === 1 ? " session" : " sessions") + (live ? " · " + live + " live" : "");
+      renderFilters();
+      listStale = true;
+    }
     if (state.detail) {
       var row = state.sessions.find(function (s) { return s.id === state.selected; });
       var wasLive = state.detail.live;
@@ -496,16 +543,32 @@ async function tick() {
           changed = true;
         }
         if (wasLive && !row.live && state.tab === "diff") loadDiff();
-        if (changed) renderView();
+        if (changed) stale = true;
       }
     }
+    flush();
   } catch (e) {
+    state.sessionsJson = "";
     conn.textContent = "Disconnected. Run gauge watch again to restart the server.";
   }
 }
 
+function flush() {
+  if (pressing) return;
+  if (listStale) { listStale = false; renderList(); }
+  if (stale) { stale = false; renderView(); }
+}
+
+async function poll() {
+  await tick();
+  setTimeout(poll, state.sessions.some(function (s) { return s.live; }) ? 3000 : 10000);
+}
+
+// Rebuilding the list between mousedown and mouseup swallows the click.
+var pressing = false, stale = false, listStale = false;
+document.addEventListener("mousedown", function () { pressing = true; }, true);
+document.addEventListener("mouseup", function () { setTimeout(function () { pressing = false; flush(); }); }, true);
 window.addEventListener("hashchange", route);
 renderFilters();
 route();
-tick();
-setInterval(tick, 1500);
+poll();
