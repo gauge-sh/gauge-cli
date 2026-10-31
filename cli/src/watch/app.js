@@ -90,7 +90,7 @@ function renderModes() {
   var box = document.getElementById("modes");
   box.textContent = "";
   var seg = h("div", { class: "seg" });
-  [["sessions", "Sessions"], ["evals", "Evals"]].forEach(function (m) {
+  [["evals", "Evals"], ["sessions", "Sessions"]].forEach(function (m) {
     seg.appendChild(h("button", { class: state.mode === m[0] ? "on" : "", onclick: function () {
       if (state.mode === m[0]) return;
       location.hash = m[0] === "evals" ? (state.evalId ? "#/eval/" + state.evalId : "#/evals") : (state.selected ? "#/session/" + state.selected : "#/");
