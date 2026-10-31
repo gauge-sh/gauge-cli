@@ -69,8 +69,8 @@ identify inputs, pilot representative tasks, analyze evidence, fix, rerun, compa
 - Confirm before launches. Use \`--yes\` for work already approved.
 - Retry writes with their supported idempotency flag; blind retries can launch
   duplicate paid sessions.
-- The user does not see gauge output. Show them the files you wrote, each case's
-  task, criteria, and targets before launch, and results with counts and limits.
+- The user does not see gauge output. Show them the files you wrote, each case's task, criteria,
+  and targets before launch, and results with counts and limits. Before a launch, run \`gauge watch\` and give them its URL.
 - Run \`gauge update\` to install the latest published CLI.
 - Exit codes: 0 ok, 1 error, 2 usage, 3 billing-blocked, 4 needs your input.
 - When the CLI gets in your way (friction, a missing command or flag, a bug),
