@@ -4,6 +4,11 @@
 
 ### Added
 
+- `gauge watch` prints a URL for a live, read-only view of past runs and running
+  sessions. Locally it starts a background server on 127.0.0.1 (from port 4040,
+  next free port), reuses it on later calls, and stops it after 30 idle minutes
+  or with `gauge watch stop`. Hosted, it prints the org's live-runs dashboard;
+  `--org` overrides the active org.
 - `gauge optimizations launch` restores each rerun from a checkpoint of an
   earlier rerun by default. `--restore-before <rerunId>:<seq>` restores from the
   deepest checkpoint at or before that seq, `--checkpoint <id>` from one

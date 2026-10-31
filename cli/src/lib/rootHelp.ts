@@ -30,6 +30,7 @@ const GROUPS: [string, Record<string, string>][] = [
       eval: "Manage saved evals",
       preference: "Manage saved preference prompts",
       run: "Start runs and read them",
+      watch: "Live view of past and running sessions",
       query: "Query local runs and findings or hosted analytics",
       cleanup: "Clean interrupted local sessions",
       models: "List models, harnesses, and providers",
