@@ -4,15 +4,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { openLocalStore } from "./localStore";
-import {
-  getWatchEval,
-  getWatchSession,
-  listWatchEvals,
-  listWatchSessions,
-  readWatchDiff,
-  readWatchTrace,
-} from "./watchData";
+import { getWatchSession, listWatchSessions, readWatchDiff, readWatchTrace } from "./watchData";
 import { createWatchServer, listenOnFreePort } from "./watchServer";
 
 async function attempt(root: string, id: string, n: number, spec: Record<string, unknown>) {
@@ -85,49 +77,6 @@ test("watch data lists the latest attempt, flags live sessions, and reads traces
   assert.equal(orphan.live, false);
 });
 
-test("watch evals report pass rates per revision from graded sessions", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "watch-unit-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
-  const store = openLocalStore(root);
-  const criteria = [
-    { id: "c1", name: "Builds", rubric: "It builds" },
-    { id: "c2", name: "Tests", rubric: "Tests pass" },
-  ];
-  const { id } = store.createMeasurement("eval", { name: "Setup", promptText: "Set it up", criteria });
-  store.updateMeasurement(id, { promptText: "Set it up again" });
-  const run = (runId: string, revision: number, grades?: Record<string, string>) => {
-    store.upsertSession({
-      id: runId, batchId: "b", measurementId: id, measurementKind: "eval", measurementRevision: revision,
-      case: null, agent: "CLAUDE_CODE", model: "opus", attempt: 1, outcome: "completed", endedBy: null,
-      turns: 1, createdAt: `2026-10-0${revision}T00:00:00.000Z`, endedAt: null,
-    });
-    if (!grades) return;
-    store.db
-      .prepare("INSERT INTO session_analyses VALUES (?,?,1,1,1,'v','d','{}','2026-10-03T00:00:00.000Z')")
-      .run(`a_${runId}`, runId);
-    for (const [criterion, outcome] of Object.entries(grades))
-      store.db.prepare("INSERT INTO criterion_results VALUES (?,?,?,'x','[]')").run(`a_${runId}`, criterion, outcome);
-    store.db.prepare("UPDATE sessions SET current_analysis_id = ? WHERE id = ?").run(`a_${runId}`, runId);
-  };
-  run("r_old", 1, { c1: "FAIL", c2: "FAIL" });
-  run("r_pass", 2, { c1: "PASS", c2: "UNASSESSABLE" });
-  run("r_fail", 2, { c1: "PASS", c2: "FAIL" });
-  run("r_ungraded", 2);
-  store.close();
-
-  const [summary] = listWatchEvals(root);
-  assert.deepEqual(
-    { name: summary.name, revision: summary.revision, criteria: summary.criteria, sessions: summary.sessions, analyzed: summary.analyzed, passed: summary.passed },
-    { name: "Setup", revision: 2, criteria: 2, sessions: 3, analyzed: 2, passed: 1 },
-  );
-  const detail = getWatchEval(root, id)!;
-  assert.deepEqual(detail.revisions.map((r) => [r.revision, r.promptText]), [[2, "Set it up again"], [1, "Set it up"]]);
-  assert.equal(detail.runs.length, 4);
-  assert.equal(detail.runs.find((r) => r.id === "r_fail")?.results?.c2.outcome, "FAIL");
-  assert.equal(detail.runs.find((r) => r.id === "r_ungraded")?.results, null);
-  assert.equal(getWatchEval(root, "ev_missing"), undefined);
-});
-
 test("port probing skips busy ports; the server refuses foreign hosts and serves the API", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "watch-unit-"));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -143,8 +92,6 @@ test("port probing skips busy ports; the server refuses foreign hosts and serves
   assert.deepEqual(await (await fetch(`${base}/api/health`)).json(), { gauge: "watch", version: "test", gaugeDir: root });
   assert.deepEqual(await (await fetch(`${base}/api/sessions`)).json(), { sessions: [] });
   assert.equal((await fetch(`${base}/api/sessions/r_missing`)).status, 404);
-  assert.deepEqual(await (await fetch(`${base}/api/evals`)).json(), { evals: [] });
-  assert.equal((await fetch(`${base}/api/evals/ev_missing`)).status, 404);
   assert.match(await (await fetch(base)).text(), /<title>Gauge watch<\/title>/);
   const script = await fetch(`${base}/app.js`);
   assert.equal(script.headers.get("content-type"), "text/javascript; charset=utf-8");

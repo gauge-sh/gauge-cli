@@ -1,8 +1,7 @@
 "use strict";
 var FILTERS = [["all", "All"], ["live", "Live"], ["completed", "Completed"], ["failed", "Failed"]];
 var state = { sessions: [], filter: "all", query: "", selected: null, detail: null, tab: "trace",
-  events: [], inputs: [], lastSeq: -1, diff: null, diffOpen: {}, traceToken: 0,
-  mode: "sessions", evals: [], evalId: null, evalDetail: null, evalRevision: null, evalJson: "" };
+  events: [], inputs: [], lastSeq: -1, diff: null, diffOpen: {}, traceToken: 0 };
 
 function h(tag, attrs) {
   var el = document.createElement(tag);
@@ -86,44 +85,7 @@ function visible() {
   });
 }
 
-function renderModes() {
-  var box = document.getElementById("modes");
-  box.textContent = "";
-  var seg = h("div", { class: "seg" });
-  [["evals", "Evals"], ["sessions", "Sessions"]].forEach(function (m) {
-    seg.appendChild(h("button", { class: state.mode === m[0] ? "on" : "", onclick: function () {
-      if (state.mode === m[0]) return;
-      location.hash = m[0] === "evals" ? (state.evalId ? "#/eval/" + state.evalId : "#/evals") : (state.selected ? "#/session/" + state.selected : "#/");
-    } }, m[1]));
-  });
-  box.appendChild(seg);
-  document.getElementById("filters").style.display = state.mode === "sessions" ? "" : "none";
-}
-
-function pct(passed, total) { return total ? Math.round(100 * passed / total) + "%" : "–"; }
-
-function renderEvalList() {
-  var list = document.getElementById("list");
-  var scroll = list.scrollTop;
-  list.textContent = "";
-  if (!state.evals.length) {
-    list.appendChild(h("div", { class: "empty", style: "padding:24px" }, "No evals yet. Create one with gauge eval create."));
-    return;
-  }
-  state.evals.forEach(function (e) {
-    var graded = e.analyzed ? pct(e.passed, e.analyzed) + " pass (" + e.passed + "/" + e.analyzed + ")" : "not graded";
-    list.appendChild(h("div", { class: "row" + (e.id === state.evalId ? " sel" : ""), title: e.name, onclick: function () { location.hash = "#/eval/" + e.id; } },
-      h("span", { class: "dot " + (e.analyzed ? (e.passed === e.analyzed ? "completed" : e.passed ? "canceled" : "failed") : "") }),
-      h("span", { class: "case" }, e.name),
-      h("span", { class: "age" }, e.lastRunAt ? ago(e.lastRunAt) + " ago" : ""),
-      h("span", { class: "meta" }, "r" + e.revision + " · " + e.criteria + (e.criteria === 1 ? " criterion" : " criteria")),
-      h("span", { class: "meta" }, e.sessions + (e.sessions === 1 ? " session" : " sessions") + " · " + graded)));
-  });
-  list.scrollTop = scroll;
-}
-
 function renderList() {
-  if (state.mode === "evals") return renderEvalList();
   var list = document.getElementById("list");
   var scroll = list.scrollTop;
   list.textContent = "";
@@ -180,11 +142,7 @@ function renderHead(view) {
     ["Run", s.id],
   ];
   var grid = h("dl", { class: "meta-grid" });
-  fields.forEach(function (f) {
-    if (!f[1]) return;
-    var value = f[0] === "Measurement" && s.measurement.kind === "eval" ? h("a", { href: "#/eval/" + s.measurement.id }, f[1]) : f[1];
-    grid.appendChild(h("div", null, h("dt", null, f[0]), h("dd", { class: f[2] || "" }, value)));
-  });
+  fields.forEach(function (f) { if (f[1]) grid.appendChild(h("div", null, h("dt", null, f[0]), h("dd", { class: f[2] || "" }, f[1]))); });
   view.appendChild(h("div", { class: "head" },
     h("h2", null, h("span", { class: "dot " + stateClass(s) }), h("span", null, h("span", { class: "dir" }, name[0]), name[1])),
     s.prompt ? h("div", { class: "prompt mono", title: s.prompt }, "› " + s.prompt) : null,
@@ -430,140 +388,8 @@ function renderDiff(body) {
   });
 }
 
-function criterionName(c) { return typeof c === "string" ? c : c.name || c.id || ""; }
-function criterionId(c, n) { return typeof c === "string" ? String(n) : c.id || String(n); }
-
-function renderEvalView(view) {
-  var d = state.evalDetail;
-  if (!d) {
-    view.appendChild(h("div", { class: "empty" }, state.evalId ? "Loading…" : state.evals.length ? "Select an eval." : "No evals yet. Create one with gauge eval create."));
-    return;
-  }
-  var rev = d.revisions.find(function (r) { return r.revision === state.evalRevision; }) || d.revisions[0];
-  var live = {};
-  state.sessions.forEach(function (s) { live[s.id] = s; });
-  var runs = d.runs.filter(function (r) { return (r.revision == null ? d.revision : r.revision) === rev.revision; }).map(function (r) {
-    var s = live[r.id];
-    return Object.assign({}, r, { state: s ? s.state : r.outcome, live: s ? s.live : false });
-  });
-  var graded = runs.filter(function (r) { return r.results; });
-  var passed = graded.filter(function (r) {
-    var o = Object.keys(r.results).map(function (k) { return r.results[k].outcome; });
-    return o.indexOf("PASS") >= 0 && o.indexOf("FAIL") < 0;
-  });
-  var running = runs.filter(function (r) { return r.live; }).length;
-  var fields = [
-    ["Revision", "r" + rev.revision + (rev.revision === d.revision ? "" : " of " + d.revision)],
-    ["Criteria", String(rev.criteria.length)],
-    ["Sessions", String(runs.length) + (running ? " · " + running + " live" : "")],
-    ["Graded", String(graded.length)],
-    ["Pass rate", graded.length ? pct(passed.length, graded.length) + " (" + passed.length + "/" + graded.length + ")" : null],
-    ["Last run", d.lastRunAt ? ago(d.lastRunAt) + " ago" : null],
-    ["Tags", d.tags.length ? d.tags.join(", ") : null],
-    ["Eval", d.id],
-  ];
-  var grid = h("dl", { class: "meta-grid" });
-  fields.forEach(function (f) { if (f[1]) grid.appendChild(h("div", null, h("dt", null, f[0]), h("dd", null, f[1]))); });
-  var head = h("div", { class: "head" },
-    h("h2", null, d.name),
-    h("div", { class: "prompt mono", title: rev.promptText }, "› " + rev.promptText),
-    grid);
-  if (d.revisions.length > 1) {
-    var seg = h("div", { class: "seg revs" });
-    d.revisions.forEach(function (r) {
-      seg.appendChild(h("button", { class: r.revision === rev.revision ? "on" : "", onclick: function () { state.evalRevision = r.revision; renderView(); } }, "r" + r.revision));
-    });
-    head.appendChild(seg);
-  }
-  view.appendChild(head);
-  var body = h("div", { class: "body" });
-  view.appendChild(body);
-
-  var groups = [], byKey = {};
-  runs.forEach(function (r) {
-    var key = agentName(r.agent) + " · " + r.model;
-    if (!byKey[key]) { byKey[key] = { key: key, runs: [] }; groups.push(byKey[key]); }
-    byKey[key].runs.push(r);
-  });
-  body.appendChild(h("div", { class: "kv" }, "Results"));
-  if (!graded.length) body.appendChild(h("div", { class: "note" }, runs.length ? "No graded sessions for this revision yet." : "No sessions for this revision yet. Launch one with gauge run --eval " + d.id + "."));
-  else {
-    var table = h("table", { class: "matrix" });
-    var hr = h("tr", null, h("th", null, ""));
-    groups.forEach(function (g) {
-      var n = g.runs.filter(function (r) { return r.results; }).length;
-      hr.appendChild(h("th", null, h("div", null, g.key), h("div", { class: "sub" }, n + " graded")));
-    });
-    table.appendChild(h("thead", null, hr));
-    var tbody = h("tbody");
-    function cell(pass, total) {
-      if (!total) return h("td", { class: "na" }, "–");
-      var rate = pass / total;
-      return h("td", { class: rate >= 0.8 ? "good" : rate >= 0.5 ? "mid" : "bad", title: pass + " of " + total + " passed" }, pct(pass, total), h("span", { class: "sub" }, " " + pass + "/" + total));
-    }
-    rev.criteria.forEach(function (c, n) {
-      var id = criterionId(c, n);
-      var tr = h("tr", null, h("th", { title: c.rubric || "" }, criterionName(c)));
-      groups.forEach(function (g) {
-        var pass = 0, total = 0;
-        g.runs.forEach(function (r) {
-          var x = r.results && r.results[id];
-          if (!x || x.outcome === "UNASSESSABLE") return;
-          total++;
-          if (x.outcome === "PASS") pass++;
-        });
-        tr.appendChild(cell(pass, total));
-      });
-      tbody.appendChild(tr);
-    });
-    var all = h("tr", { class: "all" }, h("th", null, "All criteria"));
-    groups.forEach(function (g) {
-      var gg = g.runs.filter(function (r) { return r.results; });
-      all.appendChild(cell(gg.filter(function (r) { return passed.indexOf(r) >= 0; }).length, gg.length));
-    });
-    tbody.appendChild(all);
-    table.appendChild(tbody);
-    body.appendChild(table);
-  }
-
-  if (runs.length) {
-    body.appendChild(h("div", { class: "kv" }, "Sessions"));
-    var list = h("div", { class: "eval-runs" });
-    runs.forEach(function (r) {
-      var chips = h("span", { class: "chips" });
-      rev.criteria.forEach(function (c, n) {
-        var x = r.results && r.results[criterionId(c, n)];
-        var cls = !x ? "none" : x.outcome === "PASS" ? "pass" : x.outcome === "FAIL" ? "fail" : "na";
-        chips.appendChild(h("span", { class: "chip " + cls, title: criterionName(c) + ": " + (x ? x.outcome + " — " + x.label : "not graded") }));
-      });
-      list.appendChild(h("a", { class: "eval-run", href: "#/session/" + r.id },
-        h("span", { class: "dot " + (r.live ? "live" : r.state) }),
-        h("span", null, agentName(r.agent) + " · " + r.model),
-        chips,
-        h("span", { class: "muted" }, [r.turns ? turns(r.turns) : null, duration(r.durationMs), ago(r.createdAt) + " ago"].filter(Boolean).join(" · "))));
-    });
-    body.appendChild(list);
-  }
-
-  body.appendChild(h("div", { class: "kv" }, "Criteria"));
-  var ol = h("ol", { class: "criteria" });
-  rev.criteria.forEach(function (c, n) {
-    ol.appendChild(h("li", null, h("span", { class: "n" }, String(n + 1)), h("span", { class: "name" }, criterionName(c)), c.rubric ? h("span", { class: "rubric" }, c.rubric) : null));
-  });
-  body.appendChild(ol);
-}
-
 function renderView() {
   var view = document.getElementById("view");
-  if (state.mode === "evals") {
-    var prev = view.querySelector(".body");
-    var top = prev ? prev.scrollTop : 0;
-    view.textContent = "";
-    renderEvalView(view);
-    var next = view.querySelector(".body");
-    if (next) next.scrollTop = top;
-    return;
-  }
   var old = view.querySelector(".body");
   var atBottom = !old || old.scrollHeight - old.scrollTop - old.clientHeight < 40;
   var scroll = old ? old.scrollTop : 0;
@@ -623,46 +449,10 @@ async function select(id) {
   if (body && state.detail.live) body.scrollTop = body.scrollHeight;
 }
 
-async function loadEval() {
-  var id = state.evalId;
-  if (!id) return;
-  try {
-    var raw = await get("/api/evals/" + id, "text");
-    if (id !== state.evalId || raw === state.evalJson) return;
-    var first = !state.evalDetail;
-    state.evalJson = raw;
-    state.evalDetail = JSON.parse(raw);
-    if (first) state.evalRevision = state.evalDetail.revision;
-  } catch (e) {
-    if (id !== state.evalId) return;
-    state.evalDetail = null; state.evalJson = "";
-    document.getElementById("view").textContent = "";
-    document.getElementById("view").appendChild(h("div", { class: "empty" }, "Eval " + id + " was not found."));
-    return;
-  }
-  renderView();
-}
-
-async function loadEvals() {
-  state.evals = (await get("/api/evals")).evals;
-  if (state.mode === "evals") renderList();
-}
-
 function route() {
-  var e = /^#\/evals?(?:\/([A-Za-z0-9_-]+))?$/.exec(location.hash);
-  state.mode = e ? "evals" : "sessions";
-  renderModes();
-  if (e) {
-    var id = e[1] || null;
-    if (id !== state.evalId) { state.evalId = id; state.evalDetail = null; state.evalJson = ""; }
-    renderList(); renderView();
-    loadEvals();
-    loadEval();
-    return;
-  }
   var m = /^#\/session\/([A-Za-z0-9_-]+)(?:\/(trace|task|diff))?$/.exec(location.hash);
   if (m && m[2]) state.tab = m[2];
-  if (m && m[1] === state.selected) { if (state.tab === "diff") loadDiff(); renderList(); renderView(); return; }
+  if (m && m[1] === state.selected) { if (state.tab === "diff") loadDiff(); renderView(); return; }
   select(m ? m[1] : null);
 }
 
@@ -672,13 +462,7 @@ async function tick() {
     state.sessions = (await get("/api/sessions")).sessions;
     var live = state.sessions.filter(function (s) { return s.live; }).length;
     conn.textContent = state.sessions.length + (state.sessions.length === 1 ? " session" : " sessions") + (live ? " · " + live + " live" : "") + " · updated " + new Date().toLocaleTimeString();
-    renderFilters();
-    if (state.mode === "evals") {
-      await loadEvals();
-      await loadEval();
-      return;
-    }
-    renderList();
+    renderFilters(); renderList();
     if (state.detail) {
       var row = state.sessions.find(function (s) { return s.id === state.selected; });
       var wasLive = state.detail.live;
