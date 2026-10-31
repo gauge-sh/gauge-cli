@@ -967,13 +967,25 @@ unless every session completed.
 Batch cancellation is persisted before workers are contacted, including during
 startup. A pending cancellation returns nonzero; inspect status before retrying.
 
-After an interruption, `gauge cleanup --local` retries cleanup for recorded
-interrupted sessions or sessions with incomplete cleanup in this repository.
+Session status and `gauge watch` probe the host controller with a one-second
+deadline. If it cannot be reached, they report `unavailable` and the last known
+state, without changing the saved outcome. Watch keeps checking and displays
+terminal results when they arrive. Batch supervisors have no status endpoint;
+nonterminal batch status is `unavailable` with `lastKnownState` and recorded
+progress. `run wait` continues waiting for a recorded terminal batch outcome.
+PIDs are not used to infer interruption because coding-agent commands may run in
+different process namespaces even when they share the same Gauge workspace.
+
+`gauge cleanup --local` retries incomplete cleanup for recorded terminal sessions
+in this repository.
 It preserves evidence and recovered work, and makes recovered results visible
 in `gauge run list`. It leaves live sessions, other repositories, unrelated
 containers, and cached images alone. Recovery checks Gauge's container label
 and workspace mount before removing a remaining container. Uncertain worker
 ownership is reported rather than signaling a potentially reused PID.
+If a controller dies abruptly without recording a terminal outcome, status stays
+unavailable and automatic orphan cleanup is unavailable. Preserve the evidence
+and runtime files for manual recovery; `run wait` may need to be interrupted.
 
 Local workers have a 30-minute turn deadline and a 60-second supervisor
 response deadline, so losing a supervisor cannot leave an idle worker forever.
