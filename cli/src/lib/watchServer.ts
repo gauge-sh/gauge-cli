@@ -3,7 +3,9 @@ import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
 import {
+  getWatchEval,
   getWatchSession,
+  listWatchEvals,
   listWatchSessions,
   readWatchDiff,
   readWatchTrace,
@@ -86,6 +88,12 @@ export function createWatchServer(
         return json(res, 200, { gauge: "watch", version, gaugeDir });
       if (url.pathname === "/api/sessions")
         return json(res, 200, { sessions: await listWatchSessions(gaugeDir) });
+      if (url.pathname === "/api/evals") return json(res, 200, { evals: listWatchEvals(gaugeDir) });
+      const evalMatch = /^\/api\/evals\/([A-Za-z0-9_-]+)$/.exec(url.pathname);
+      if (evalMatch) {
+        const value = getWatchEval(gaugeDir, evalMatch[1]);
+        return value ? json(res, 200, value) : json(res, 404, { error: "not_found" });
+      }
       const match = /^\/api\/sessions\/([A-Za-z0-9_-]+)(\/trace|\/diff)?$/.exec(url.pathname);
       if (match) {
         const [, id, part] = match;

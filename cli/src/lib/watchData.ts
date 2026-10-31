@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { localSessions } from "./localLifecycle";
-import { openLocalStore } from "./localStore";
+import { type LocalStore, openLocalStore } from "./localStore";
 
 const TERMINAL = new Set(["completed", "failed", "canceled", "interrupted"]);
 
@@ -87,18 +87,24 @@ async function latestAttempts(gaugeDir: string) {
   return latest;
 }
 
-function storeRows(gaugeDir: string) {
-  if (!existsSync(join(gaugeDir, "gauge.sqlite"))) return new Map();
+function withStore<T>(gaugeDir: string, fallback: T, read: (store: LocalStore) => T): T {
+  if (!existsSync(join(gaugeDir, "gauge.sqlite"))) return fallback;
   try {
     const store = openLocalStore(gaugeDir);
     try {
-      return new Map(store.listSessions().map((row) => [row.id, row]));
+      return read(store);
     } finally {
       store.close();
     }
   } catch {
-    return new Map();
+    return fallback;
   }
+}
+
+function storeRows(gaugeDir: string): Map<string, Record<string, any>> {
+  return withStore(gaugeDir, new Map(), (store) =>
+    new Map(store.listSessions().map((row) => [row.id, row])),
+  );
 }
 
 async function summarize(
@@ -205,4 +211,129 @@ export async function readWatchDiff(gaugeDir: string, id: string): Promise<strin
   } catch {
     return "";
   }
+}
+
+export type WatchCriterionResult = { outcome: "PASS" | "FAIL" | "UNASSESSABLE"; label: string };
+
+export type WatchEval = {
+  id: string;
+  name: string;
+  revision: number;
+  criteria: number;
+  tags: string[];
+  updatedAt: string;
+  lastRunAt: string | null;
+  sessions: number;
+  analyzed: number;
+  passed: number;
+};
+
+export type WatchEvalDetail = Omit<WatchEval, "criteria"> & {
+  promptText: string;
+  createdAt: string;
+  revisions: { revision: number; promptText: string; criteria: unknown[] }[];
+  runs: {
+    id: string;
+    agent: string;
+    model: string;
+    revision: number | null;
+    outcome: string;
+    createdAt: string;
+    durationMs: number | null;
+    turns: number | null;
+    results: Record<string, WatchCriterionResult> | null;
+  }[];
+};
+
+function criterionResults(store: LocalStore, measurementId?: string) {
+  const rows = store.db
+    .prepare(
+      `SELECT s.id AS run, c.criterion_id AS criterion, c.outcome, c.label FROM sessions s JOIN criterion_results c ON c.analysis_id = s.current_analysis_id WHERE s.measurement_kind = 'eval'${measurementId ? " AND s.measurement_id = ?" : ""}`,
+    )
+    .all(...(measurementId ? [measurementId] : [])) as Record<string, string>[];
+  const results = new Map<string, Record<string, WatchCriterionResult>>();
+  for (const row of rows) {
+    const run = results.get(row.run) ?? {};
+    run[row.criterion] = { outcome: row.outcome as WatchCriterionResult["outcome"], label: row.label };
+    results.set(row.run, run);
+  }
+  return results;
+}
+
+function passes(results: Record<string, WatchCriterionResult> | undefined): boolean {
+  const outcomes = Object.values(results ?? {}).map((result) => result.outcome);
+  return outcomes.includes("PASS") && !outcomes.includes("FAIL");
+}
+
+export function listWatchEvals(gaugeDir: string): WatchEval[] {
+  return withStore(gaugeDir, [], (store) => {
+    const sessions = store.listSessions({ measurementKind: "eval" });
+    const results = criterionResults(store);
+    return store
+      .listMeasurements("eval")
+      .map((measurement) => {
+        const all = sessions.filter((s) => s.measurementId === measurement.id);
+        const current = all.filter((s) => s.measurementRevision === measurement.revision);
+        const graded = current.filter((s) => results.has(s.id));
+        return {
+          id: measurement.id,
+          name: measurement.name,
+          revision: measurement.revision,
+          criteria: Array.isArray(measurement.criteria) ? measurement.criteria.length : 0,
+          tags: measurement.tags,
+          updatedAt: measurement.updatedAt,
+          lastRunAt: all.reduce<string | null>((latest, s) => (latest && latest > s.createdAt ? latest : s.createdAt), null),
+          sessions: current.length,
+          analyzed: graded.length,
+          passed: graded.filter((s) => passes(results.get(s.id))).length,
+        };
+      })
+      .sort((a, b) => (b.lastRunAt ?? b.updatedAt).localeCompare(a.lastRunAt ?? a.updatedAt));
+  });
+}
+
+export function getWatchEval(gaugeDir: string, id: string): WatchEvalDetail | undefined {
+  return withStore(gaugeDir, undefined, (store) => {
+    const measurement = store.getMeasurement(id, "eval");
+    if (!measurement) return undefined;
+    const sessions = store.listSessions({ measurementId: id, measurementKind: "eval" });
+    const results = criterionResults(store, id);
+    const revisions = [
+      ...new Set([measurement.revision, ...sessions.map((s) => s.measurementRevision ?? measurement.revision)]),
+    ]
+      .sort((a, b) => b - a)
+      .flatMap((revision) => {
+        const definition = store.getMeasurementRevision(id, revision);
+        return definition
+          ? [{ revision, promptText: definition.promptText, criteria: Array.isArray(definition.criteria) ? definition.criteria : [] }]
+          : [];
+      });
+    const current = sessions.filter((s) => s.measurementRevision === measurement.revision);
+    const graded = current.filter((s) => results.has(s.id));
+    return {
+      id,
+      name: measurement.name,
+      promptText: measurement.promptText,
+      revision: measurement.revision,
+      tags: measurement.tags,
+      createdAt: measurement.createdAt,
+      updatedAt: measurement.updatedAt,
+      lastRunAt: sessions.reduce<string | null>((latest, s) => (latest && latest > s.createdAt ? latest : s.createdAt), null),
+      sessions: current.length,
+      analyzed: graded.length,
+      passed: graded.filter((s) => passes(results.get(s.id))).length,
+      revisions,
+      runs: sessions.map((s) => ({
+        id: s.id,
+        agent: s.agent,
+        model: s.model,
+        revision: s.measurementRevision ?? null,
+        outcome: s.outcome,
+        createdAt: s.createdAt,
+        durationMs: s.durationMs ?? null,
+        turns: s.turns,
+        results: results.get(s.id) ?? null,
+      })),
+    };
+  });
 }
