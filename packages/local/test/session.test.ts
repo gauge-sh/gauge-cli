@@ -80,6 +80,11 @@ it("uses the controller reply even when its PID is not visible to the reader", a
 it("bounds status probes even when an unresponsive controller dribbles data", async () => {
   await withOwner((s) => {
     const timer = setInterval(() => s.write(" "), 10);
+    s.once("error", (error: NodeJS.ErrnoException) => {
+      clearInterval(timer);
+      // The probe deliberately disconnects while this server is still writing.
+      expect(["EPIPE", "ECONNRESET"]).toContain(error.code);
+    });
     s.once("close", () => clearInterval(timer));
   }, async (directory) => {
     const started = Date.now();
