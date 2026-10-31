@@ -106,7 +106,7 @@ export function resolveLocalProfile(agent: string, model: string, options: Local
     p = validateProfile({ agent, provider, auth });
   }
   validateCompatibility(p, agent, model);
-  const nativeDirectory = p.auth === "access_token" ? (p.agent === "CLAUDE_CODE" ? env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude") : env.CODEX_HOME || join(homedir(), ".codex")) : undefined;
+  const nativeDirectory = p.auth === "access_token" ? (p.agent === "CLAUDE_CODE" ? env.CLAUDE_CONFIG_DIR || undefined :env.CODEX_HOME || join(homedir(), ".codex")) : undefined;
   return { ...p, name, source: p.env ? `env:${p.env}` : p.agent === "CLAUDE_CODE" ? "native:claude" : "native:codex", ...(nativeDirectory ? { nativeDirectory } : {}) };
 }
 function validateCompatibility(p: LocalProfile, agent: string, model: string): void {
