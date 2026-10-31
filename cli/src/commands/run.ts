@@ -88,6 +88,7 @@ import {
   runLocal,
 } from "../lib/localExecutor";
 import { printEvalVerification, verifyEvals } from "../lib/verifyEvals";
+import { RUN_PRESENTATION_REMINDER } from "../lib/runPresentation";
 
 function runPath(id: string): string {
   return `/api/v1/runs/${encodeURIComponent(id)}`;
@@ -697,10 +698,12 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
           "usage",
           "--input applies to case specs, not battery specs",
         );
-      await applySpec(cmd, parseSpec(json), {
+      const result = await applySpec(cmd, parseSpec(json), {
         dryRun: opts.dryRun,
         requireExperiment: opts.requireExperiment,
       });
+      if (!opts.dryRun && "runIds" in result && result.runIds.length > 0)
+        console.error(RUN_PRESENTATION_REMINDER);
       return;
     }
     if (opts.requireExperiment !== undefined)
@@ -733,11 +736,14 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
   if (opts.eval !== undefined || opts.preference !== undefined)
     requireHosted(cmd);
   if (opts.eval !== undefined) {
-    await runEvalSet(cmd, opts.eval, opts);
+    const result = await runEvalSet(cmd, opts.eval, opts);
+    if (result.runIds.length > 0 || result.runRequestId)
+      console.error(RUN_PRESENTATION_REMINDER);
     return;
   }
   if (opts.preference !== undefined) {
-    await runPreferencePrompt(cmd, opts.preference, opts);
+    const result = await runPreferencePrompt(cmd, opts.preference, opts);
+    if (result.runIds.length > 0) console.error(RUN_PRESENTATION_REMINDER);
     return;
   }
 
@@ -771,6 +777,7 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
     );
     console.log(`Wait: gauge --org ${org} run wait ${result.runRequestId}`);
   }
+  if (result.requestedRuns > 0) console.error(RUN_PRESENTATION_REMINDER);
 }
 
 async function runLocalCases(
@@ -848,6 +855,7 @@ async function runLocalCases(
         console.log(
           `Batch ${detached.batchId} detached.\nStatus: ${detached.status}\nWait: ${detached.wait}\nStop: ${detached.stop}`,
         );
+      console.error(RUN_PRESENTATION_REMINDER);
     } finally {
       await local.cleanup();
     }
@@ -870,10 +878,12 @@ async function runLocalCases(
         profile: opts.profile,
         runtimeImage: opts.runtimeImage,
         gatewayImage: opts.gatewayImage,
-        onStart: (batchId) =>
+        onStart: (batchId) => {
           console.error(
             `Batch ${batchId}\nStatus: gauge run status --batch ${batchId} --local\nWait: gauge run wait --batch ${batchId} --local\nStop: gauge run cancel --batch ${batchId} --local`,
-          ),
+          );
+          console.error(RUN_PRESENTATION_REMINDER);
+        },
       },
     );
   } finally {

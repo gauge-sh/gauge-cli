@@ -1,6 +1,6 @@
 import { LOGO_ART } from "../lib/logo";
 
-const LOCAL_RUN_PRESENTATION = `Help users understand how Gauge OSS works. Users cannot see CLI output. Use this order, starting with the logo:
+const LOCAL_SETUP_PRESENTATION = `For the first local setup explanation, help users understand how Gauge OSS works before seeking any needed launch approval. Users cannot see CLI output. Show this explanation once during setup, starting with the logo:
 Open with the FULL Gauge ASCII art below, including the dog, copied verbatim in a fenced text block.
 Preserve the Braille characters and spacing in one code block with no blank lines between artwork rows; do not redraw it.
 Add one sentence naming the planned case count, agent/model, and local Docker.
@@ -15,7 +15,7 @@ End with a short launch question, or the next step if launch is already approved
 Include only what will run, what success means, and what happens next. Explain checks
 only on problems; omit rejected inputs, selection narration, and recaps unless requested.
 Use the diagram to explain Gauge OSS and the table for this run's tasks/criteria; avoid repeating either in prose.
-Show planned work as planned; honor existing approval without adding another approval step.`;
+Show planned work as planned; honor existing approval without adding another approval step. For each approved launch, use the compact live update in \`gauge instructions run\` instead of repeating this diagram or full logo.`;
 
 export const INIT = `---
 name: gauge-init
@@ -77,5 +77,5 @@ Gauge recommends the gauge-agents skill for future sessions:
 
 export const INIT_LOCAL = INIT.replace(
   "## Next\n",
-  `## Show the user what will happen\n\n${LOCAL_RUN_PRESENTATION}\n\n\`\`\`text\n${LOGO_ART}\n\`\`\`\n\n## Next\n`,
+  `## Explain the first local setup\n\n${LOCAL_SETUP_PRESENTATION}\n\n\`\`\`text\n${LOGO_ART}\n\`\`\`\n\n## Next\n`,
 );

@@ -1,4 +1,12 @@
+import { RUN_LAYOUT_INSTRUCTIONS, RUN_LOGO_BLOCK } from "../lib/runPresentation";
 import { AUTHORING, MIGRATION_EXAMPLE } from "./authoring";
+
+const RUN_PRESENTATION = `## Give the user a live view
+
+Users cannot see CLI output. After any needed launch approval, run \`gauge watch\` with the same backend (\`--local\` or \`--hosted\`) and organization (\`--org\`, when selected) as the launch; it returns immediately. Show a compact live update, then launch. The first local setup explanation in \`gauge instructions init\` is separate; do not repeat its full logo or diagram at launch.
+Start with one short sentence with the planned sessions, targets, and where they run. ${RUN_LAYOUT_INSTRUCTIONS} Use the returned watch URL exactly, including \`?liveruns=true\` for hosted. Keep the dog and link together with no run details between them. Distinguish planned, started, and completed work accurately. Show this once per launch, including reruns, rather than on every poll; previews and verification do not start runs. If you omitted the card, include it in your next update while sessions are still running, without asking the user whether to read more instructions.
+${RUN_LOGO_BLOCK}
+`;
 
 const SNAPSHOTS = `Preview JSON separates the source \`path\` from \`gaugeArchive\` hash/bytes in \`inputSnapshots\`, and lists the archived \`files\` (first 100) with \`fileCount\`; check them before launching. \`unattachedInputs\` names gauge.json inputs this launch leaves out. The Gauge delivery archive contains the selected files; for npm it contains the .tgz, so its hash/size differ from the raw .tgz. Launch takes a fresh snapshot; preview does not reserve bytes or prove an eval passed.`;
 
@@ -57,7 +65,8 @@ Replace \`criteria\` with \`preference: { kind: open-ended }\`, adding \`branded
 Existing per-case settings, inputs, and path filters apply. The app's preference analyst reports advisory choices; competitor selections never fail criteria. Preference-only checks finish neutral; mixed case sets retain experience gating. With \`--check\`, the wait command succeeds for MEASURED/PASSED and fails on operational errors. No base/head delta is inferred.
 
 ${MIGRATION_EXAMPLE}
-`;
+
+${RUN_PRESENTATION}`;
 
 export const RUN_LOCAL = `---
 name: gauge-run
@@ -68,6 +77,7 @@ description: Write local Gauge eval and Agent Preference cases for this repo's
 # Run (local)
 
 For a product hillclimb and docs exposure limits, read \`gauge instructions hillclimb\`.
+
 ## Choose a definition source
 
 Save an ongoing measurement with \`gauge eval\` or \`gauge preference\`, then
@@ -137,5 +147,7 @@ Put each case in gauge-cases/<input>/<case>.md, one folder per surface. An eval 
     gauge run                      # every case in gauge-cases/
     gauge run --apply cases.json   # cases as JSON, no Markdown; each with criteria or preference ("-" for stdin; see --example)
 
-This runs every case in local Docker and waits. It needs Docker, the public runtime (install with \`gauge local runtime pull\`; inspect with \`gauge local runtime inspect\`), and agent logins: \`codex login\` for Codex, Pi, and OpenCode; \`claude\` or \`ANTHROPIC_API_KEY\` for Claude Code. Then do its "Next" step. Before a launch, run \`gauge watch\` (it returns at once) and give the user its URL to follow sessions live. Ctrl+C cancels and cleans up; results and cached images remain. Use \`gauge run --detach --local\` for a background batch; it prints exact status/wait/stop commands. Inspect with \`gauge run status --batch <id> --local\`; block until it settles with \`gauge run wait --batch <id> --local\` (do not write a polling loop); stop with \`gauge run cancel --batch <id> --local\` (or \`gauge run cancel <run-id> --local\`). Clean up interrupted sessions with \`gauge cleanup --local\`; it preserves evidence and leaves active sessions alone. For stale or missing database session summaries, use \`gauge run repair --local\` to rebuild them from artifacts while preserving measurements and analyses. Keep .gauge/gauge.sqlite: it is durable data, not a disposable cache. Local credentials can use native logins or API keys. Configure references with \`gauge local profiles set work --agent CODEX_CLI --provider openai --auth api_key --env TEAM_OPENAI_KEY\`, then \`gauge local profiles use work\`. Pass the variable name, never a key value. Inspect with \`gauge local profiles inspect work -o json\`; update with \`set ... --replace\`, list with \`list\`, and remove references with \`remove <profile>\`. \`gauge run --local --profile work\` overrides defaults and must be compatible with every target. Dry-run reports each actual model’s credential readiness; local checks do not verify provider acceptance. Detached batches retain the selected references even if defaults change. For additional system tools,derive an image from the standard runtime and pass \`--runtime-image <image>\` to \`gauge run --local\` (also works with \`--dry-run\` and \`--detach\`). Build or pull that image first. Dry runs show its reference and immutable ID without starting a container; actual runs check required tools, selected harnesses, permissions and command forwarding before accepting the batch. Every queued session uses the frozen image ID even if its tag changes. Preserve runtime contract label \`sh.gauge.contract="1"\` and the base harnesses; an entrypoint must execute the supplied command.
+This runs every case in local Docker and waits. It needs Docker, the public runtime (install with \`gauge local runtime pull\`; inspect with \`gauge local runtime inspect\`), and agent logins: \`codex login\` for Codex, Pi, and OpenCode; \`claude\` or \`ANTHROPIC_API_KEY\` for Claude Code. Then do its "Next" step. Ctrl+C cancels and cleans up; results and cached images remain. Use \`gauge run --detach --local\` for a background batch; it prints exact status/wait/stop commands. Inspect with \`gauge run status --batch <id> --local\`; block until it settles with \`gauge run wait --batch <id> --local\` (do not write a polling loop); stop with \`gauge run cancel --batch <id> --local\` (or \`gauge run cancel <run-id> --local\`). Clean up interrupted sessions with \`gauge cleanup --local\`; it preserves evidence and leaves active sessions alone. For stale or missing database session summaries, use \`gauge run repair --local\` to rebuild them from artifacts while preserving measurements and analyses. Keep .gauge/gauge.sqlite: it is durable data, not a disposable cache. Local credentials can use native logins or API keys. Configure references with \`gauge local profiles set work --agent CODEX_CLI --provider openai --auth api_key --env TEAM_OPENAI_KEY\`, then \`gauge local profiles use work\`. Pass the variable name, never a key value. Inspect with \`gauge local profiles inspect work -o json\`; update with \`set ... --replace\`, list with \`list\`, and remove references with \`remove <profile>\`. \`gauge run --local --profile work\` overrides defaults and must be compatible with every target. Dry-run reports each actual model’s credential readiness; local checks do not verify provider acceptance. Detached batches retain the selected references even if defaults change. For additional system tools,derive an image from the standard runtime and pass \`--runtime-image <image>\` to \`gauge run --local\` (also works with \`--dry-run\` and \`--detach\`). Build or pull that image first. Dry runs show its reference and immutable ID without starting a container; actual runs check required tools, selected harnesses, permissions and command forwarding before accepting the batch. Every queued session uses the frozen image ID even if its tag changes. Preserve runtime contract label \`sh.gauge.contract="1"\` and the base harnesses; an entrypoint must execute the supplied command.
+
+${RUN_PRESENTATION}
 `;
