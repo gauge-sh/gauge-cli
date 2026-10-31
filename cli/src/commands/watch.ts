@@ -116,7 +116,7 @@ async function hostedUrl(command: Command): Promise<string> {
     );
   const { slug } = await findOrganization(selection.value);
   const base = resolveBaseUrl().replace(/\/+$/, "");
-  return `${base}/${encodeURIComponent(slug)}/chat/dashboard?liveruns=true`;
+  return `${base}/${encodeURIComponent(slug)}/dashboard?liveruns=true`;
 }
 
 export function register(program: Command): void {
