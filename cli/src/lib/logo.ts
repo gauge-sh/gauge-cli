@@ -12,6 +12,12 @@ export const LOGO = String.raw`
 export const SMALL_LOGO = `█▀▀ ▄▀█ █ █ █▀▀ █▀▀
 █▄█ █▀█ █▄█ █▄█ ██▄`;
 
+export const SMALL_DOG_LOGO = `   🭋🭏
+  🭊🭁█🬹🭑🬼
+🭈🭄███🬹🬻🭌🬹🬹🬹
+🭥🭒███████🭞🭚
+ 🭢🭕🭞🭜🬂🬂🬂🭘`;
+
 export const BARK = String.raw`
                                                      ⣀
  ⣠⣶⣿⡿⠿⣿⣿⣦⡀                                          ⢠⣿⣷⣄

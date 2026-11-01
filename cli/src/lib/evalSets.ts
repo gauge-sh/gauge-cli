@@ -246,7 +246,7 @@ export async function runEvalSet(
     agent: string[];
     samples?: string;
   },
-): Promise<void> {
+): Promise<evals.RunEvalSetResponse> {
   const org = await resolveOrg(cmd);
   const overrides = runOverridesFromOpts(opts);
   await confirmOrAbort(
@@ -269,4 +269,5 @@ export async function runEvalSet(
     if (result.runRequestId)
       console.log(`Wait: gauge --org ${org} run wait ${result.runRequestId}`);
   }
+  return result;
 }

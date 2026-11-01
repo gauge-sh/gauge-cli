@@ -1,7 +1,7 @@
 "use strict";
-var FILTERS = [["all", "All"], ["live", "Live"], ["completed", "Completed"], ["failed", "Failed"]];
+var STATUSES = [["all", "All"], ["running", "Running"], ["completed", "Completed"], ["failed", "Failed"]];
 var state = { sessions: [], filter: "all", query: "", selected: null, detail: null, tab: "trace",
-  events: [], inputs: [], lastSeq: -1, diff: null, diffOpen: {}, traceToken: 0 };
+  events: [], inputs: [], lastSeq: -1, diff: null, diffOpen: {}, traceToken: 0, promptOpen: false, sessionsJson: "" };
 
 function h(tag, attrs) {
   var el = document.createElement(tag);
@@ -19,13 +19,12 @@ function h(tag, attrs) {
   return el;
 }
 
-function ago(iso) {
+function stamp(iso) {
   if (!iso) return "";
-  var s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
-  if (s < 60) return Math.floor(s) + "s";
-  if (s < 3600) return Math.floor(s / 60) + "m";
-  if (s < 86400) return Math.floor(s / 3600) + "h";
-  return Math.floor(s / 86400) + "d";
+  var d = new Date(iso);
+  return d.toDateString() === new Date().toDateString()
+    ? d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+    : d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 function duration(ms) {
   if (ms == null) return "";
@@ -48,21 +47,60 @@ async function get(path, type) {
   return type === "text" ? res.text() : res.json();
 }
 
+function icon(path, size) {
+  return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' + path + '</svg>';
+}
+var FUNNEL = icon('<path d="M2 3h12l-4.5 5.5V13l-3 1.5v-6z"/>', 13);
+var CHEVRON = icon('<path d="M4 6l4 4 4-4"/>', 12);
+var SEARCH = icon('<circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/>', 14);
+
+function params() {
+  var p = new URLSearchParams();
+  if (state.filter !== "all") p.set("status", state.filter);
+  if (state.query) p.set("q", state.query);
+  var q = p.toString();
+  return q ? "?" + q : "";
+}
+function go(path) { location.hash = path + params(); }
+function syncUrl() { history.replaceState(null, "", "#" + (location.hash.slice(1).split("?")[0] || "/") + params()); }
+
+function matches(s, status) {
+  if (status === "running") return s.live;
+  if (status === "completed") return s.state === "completed";
+  if (status === "failed") return s.state === "failed" || s.state === "interrupted" || s.state === "canceled";
+  return true;
+}
+
 function renderFilters() {
   var box = document.getElementById("filters");
-  var seg = box.querySelector(".seg");
-  if (!seg) {
-    seg = h("div", { class: "seg" });
-    var input = h("input", { placeholder: "Filter by case, agent, model, or ID" });
-    input.addEventListener("input", function () { state.query = input.value.toLowerCase(); renderList(); });
-    box.appendChild(seg);
-    box.appendChild(input);
+  if (!box.firstChild) {
+    var input = h("input", { id: "q", placeholder: "Search sessions" });
+    input.addEventListener("input", function () { state.query = input.value; syncUrl(); renderList(); });
+    var menu = h("div", { id: "status-menu", class: "menu", hidden: "" });
+    var button = h("button", { id: "status", title: "Filter by status", onclick: function (e) { e.stopPropagation(); menu.hidden = !menu.hidden; } });
+    document.addEventListener("click", function (e) { if (!menu.contains(e.target)) menu.hidden = true; });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") menu.hidden = true; });
+    button.innerHTML = FUNNEL + '<span class="label"></span>' + CHEVRON;
+    var glass = h("span", { class: "glass" });
+    glass.innerHTML = SEARCH;
+    STATUSES.forEach(function (f) {
+      menu.appendChild(h("button", { "data-status": f[0], onclick: function () {
+        state.filter = f[0]; menu.hidden = true; syncUrl(); renderFilters(); renderList();
+      } }, h("span", { class: "check" }), f[1], h("span", { class: "count" })));
+    });
+    box.appendChild(h("div", { class: "search", onclick: function (e) { if (e.target === this) input.focus(); } }, glass, button, input, menu));
   }
-  seg.textContent = "";
-  var live = state.sessions.filter(function (s) { return s.live; }).length;
-  FILTERS.forEach(function (f) {
-    var label = f[1] + (f[0] === "live" && live ? " " + live : "");
-    seg.appendChild(h("button", { class: state.filter === f[0] ? "on" : "", onclick: function () { state.filter = f[0]; renderFilters(); renderList(); } }, label));
+  var q = document.getElementById("q");
+  if (q.value !== state.query) q.value = state.query;
+  var button = document.getElementById("status");
+  var active = STATUSES.find(function (f) { return f[0] === state.filter; });
+  button.className = "status-btn" + (state.filter !== "all" ? " on" : "");
+  button.querySelector(".label").textContent = state.filter === "all" ? "Status" : active[1];
+  document.querySelectorAll("#status-menu button").forEach(function (item) {
+    var status = item.dataset.status;
+    item.className = state.filter === status ? "on" : "";
+    item.querySelector(".check").textContent = state.filter === status ? "✓" : "";
+    item.querySelector(".count").textContent = String(state.sessions.filter(function (s) { return matches(s, status); }).length);
   });
 }
 
@@ -77,11 +115,9 @@ function splitCase(path) {
 
 function visible() {
   return state.sessions.filter(function (s) {
-    if (state.filter === "live" && !s.live) return false;
-    if (state.filter === "completed" && s.state !== "completed") return false;
-    if (state.filter === "failed" && !(s.state === "failed" || s.state === "interrupted" || s.state === "canceled")) return false;
+    if (!matches(s, state.filter)) return false;
     if (!state.query) return true;
-    return [s.case, s.agent, agentName(s.agent), s.model, s.id, s.batchId].join(" ").toLowerCase().indexOf(state.query) >= 0;
+    return [s.case, s.agent, agentName(s.agent), s.model, s.id, s.batchId].join(" ").toLowerCase().indexOf(state.query.toLowerCase()) >= 0;
   });
 }
 
@@ -94,23 +130,28 @@ function renderList() {
     list.appendChild(h("div", { class: "empty", style: "padding:24px" }, state.sessions.length ? "No sessions match." : "No sessions yet. Start one with gauge run."));
     return;
   }
-  var batch = null;
+  var batches = {}, order = [];
   rows.forEach(function (s) {
-    if (s.batchId !== batch) {
-      batch = s.batchId;
-      list.appendChild(h("div", { class: "batch" }, "Batch " + batch.slice(0, 8)));
-    }
-    var name = s.case ? splitCase(s.case) : ["", s.id];
-    var stats = [s.state === "completed" ? null : s.state, s.turns ? turns(s.turns) : null, s.live ? null : duration(s.durationMs)].filter(Boolean).join(" · ");
-    var who = [agentName(s.agent), s.model].filter(Boolean).join(" · ");
-    list.appendChild(h("div", { class: "row" + (s.id === state.selected ? " sel" : ""), title: s.case || s.id, onclick: function () { location.hash = "#/session/" + s.id; } },
-      h("span", { class: "dot " + stateClass(s) }),
-      h("span", { class: "case" }, name[1]),
-      h("span", { class: "age", title: s.createdAt ? "Started " + new Date(s.createdAt).toLocaleString() : "" }, s.createdAt ? ago(s.createdAt) + " ago" : ""),
-      h("span", { class: "meta" }, who || "\u00a0"),
-      h("span", { class: "meta" }, stats || "\u00a0")));
+    if (!batches[s.batchId]) { batches[s.batchId] = []; order.push(s.batchId); }
+    batches[s.batchId].push(s);
+  });
+  order.forEach(function (batch) {
+    list.appendChild(h("div", { class: "batch" }, "Batch " + batch.slice(0, 8)));
+    batches[batch].forEach(function (s) { list.appendChild(renderRow(s)); });
   });
   list.scrollTop = scroll;
+}
+
+function renderRow(s) {
+  var name = s.case ? splitCase(s.case) : ["", s.id];
+  var stats = [s.state === "completed" ? null : s.state, s.turns ? turns(s.turns) : null, s.live ? null : duration(s.durationMs)].filter(Boolean).join(" · ");
+  var who = [agentName(s.agent), s.model].filter(Boolean).join(" · ");
+  return h("div", { class: "row" + (s.id === state.selected ? " sel" : ""), title: s.case || s.id, onclick: function () { go("#/session/" + s.id); } },
+    h("span", { class: "dot " + stateClass(s) }),
+    h("span", { class: "case" }, name[1]),
+    h("span", { class: "age", title: s.createdAt ? "Started " + new Date(s.createdAt).toLocaleString() : "" }, stamp(s.createdAt)),
+    h("span", { class: "meta" }, who || "\u00a0"),
+    h("span", { class: "meta" }, stats || "\u00a0"));
 }
 
 function usageTotals() {
@@ -145,12 +186,14 @@ function renderHead(view) {
   fields.forEach(function (f) { if (f[1]) grid.appendChild(h("div", null, h("dt", null, f[0]), h("dd", { class: f[2] || "" }, f[1]))); });
   view.appendChild(h("div", { class: "head" },
     h("h2", null, h("span", { class: "dot " + stateClass(s) }), h("span", null, h("span", { class: "dir" }, name[0]), name[1])),
-    s.prompt ? h("div", { class: "prompt mono", title: s.prompt }, "› " + s.prompt) : null,
+    s.prompt ? h("div", { class: "prompt" + (state.promptOpen ? " open" : "") },
+      h("div", { class: "text" }, s.prompt),
+      h("button", { class: "more", onclick: function () { state.promptOpen = !state.promptOpen; renderView(); } }, state.promptOpen ? "Show less" : "Show more")) : null,
     grid,
     s.detail && !s.live && s.state !== "completed" ? h("div", { class: "detail" }, s.detail) : null));
   var tabs = h("div", { class: "tabs" });
   [["trace", "Trace"], ["task", "Task"], ["diff", "Diff"]].forEach(function (t) {
-    tabs.appendChild(h("button", { class: state.tab === t[0] ? "on" : "", onclick: function () { location.hash = "#/session/" + state.selected + "/" + t[0]; } }, t[1]));
+    tabs.appendChild(h("button", { class: state.tab === t[0] ? "on" : "", onclick: function () { go("#/session/" + state.selected + "/" + t[0]); } }, t[1]));
   });
   view.appendChild(tabs);
 }
@@ -204,15 +247,19 @@ function toolSummary(call) {
 }
 
 function timeline() {
-  var results = {};
-  state.events.forEach(function (e) { if (e.payload && e.payload.type === "tool_result") results[e.payload.tool_id] = e; });
+  var results = {}, calls = {};
+  state.events.forEach(function (e) {
+    if (!e.payload) return;
+    if (e.payload.type === "tool_result") results[e.payload.tool_id] = e;
+    else if (e.payload.type === "tool_call") calls[e.payload.tool_id] = true;
+  });
   var items = [];
   state.inputs.forEach(function (i, n) {
     if (n === 0 && state.detail && typeof i.text === "string" && i.text.trim() === (state.detail.prompt || "").trim()) return;
     items.push({ at: i.observedAt, order: -1, input: i }); });
   state.events.forEach(function (e) {
     var p = e.payload || {};
-    if (p.type === "tool_result" && p.tool_id && state.events.some(function (x) { return x.payload && x.payload.type === "tool_call" && x.payload.tool_id === p.tool_id; })) return;
+    if (p.type === "tool_result" && p.tool_id && calls[p.tool_id]) return;
     items.push({ at: e.observedAt, order: e.seq, event: e, result: p.type === "tool_call" ? results[p.tool_id] : null });
   });
   items.sort(function (a, b) { return a.at < b.at ? -1 : a.at > b.at ? 1 : a.order - b.order; });
@@ -401,6 +448,8 @@ function renderView() {
     return;
   }
   renderHead(view);
+  var prompt = view.querySelector(".prompt:not(.open) .text");
+  if (prompt && prompt.scrollHeight <= prompt.clientHeight + 1) view.querySelector(".prompt .more").remove();
   var body = h("div", { class: "body" });
   view.appendChild(body);
   if (state.tab === "trace") renderTrace(body, open);
@@ -420,25 +469,31 @@ async function pollTrace() {
   var id = state.selected, token = state.traceToken;
   if (!id) return;
   var t = await get("/api/sessions/" + id + "/trace?after=" + state.lastSeq);
-  if (id !== state.selected || token !== state.traceToken) return;
+  if (id !== state.selected || token !== state.traceToken) return false;
   var fresh = t.events.filter(function (e) { return e.seq > state.lastSeq; });
   if (fresh.length) {
     state.events = state.events.concat(fresh);
     state.lastSeq = fresh[fresh.length - 1].seq;
   }
+  var changed = fresh.length > 0 || t.inputs.length !== state.inputs.length;
   state.inputs = t.inputs;
+  return changed;
 }
 
 async function select(id) {
   state.selected = id;
-  state.detail = null; state.events = []; state.inputs = []; state.lastSeq = -1; state.diff = null; state.traceToken++;
+  state.detail = null; state.promptOpen = false; state.events = []; state.inputs = []; state.lastSeq = -1; state.diff = null; state.traceToken++;
   renderList(); renderView();
   if (!id) return;
   try {
-    state.detail = await get("/api/sessions/" + id);
+    var detail = await get("/api/sessions/" + id);
+    if (id !== state.selected) return;
+    state.detail = detail;
     await pollTrace();
+    if (id !== state.selected) return;
     if (state.tab === "diff") loadDiff();
   } catch (e) {
+    if (id !== state.selected) return;
     state.detail = null;
     document.getElementById("view").textContent = "";
     document.getElementById("view").appendChild(h("div", { class: "empty" }, "Session " + id + " was not found."));
@@ -450,7 +505,13 @@ async function select(id) {
 }
 
 function route() {
-  var m = /^#\/session\/([A-Za-z0-9_-]+)(?:\/(trace|task|diff))?$/.exec(location.hash);
+  var parts = location.hash.split("?");
+  var p = new URLSearchParams(parts[1] || "");
+  var status = p.get("status");
+  state.filter = STATUSES.some(function (f) { return f[0] === status; }) ? status : "all";
+  state.query = p.get("q") || "";
+  renderFilters(); renderList();
+  var m = /^#\/session\/([A-Za-z0-9_-]+)(?:\/(trace|task|diff))?$/.exec(parts[0]);
   if (m && m[2]) state.tab = m[2];
   if (m && m[1] === state.selected) { if (state.tab === "diff") loadDiff(); renderView(); return; }
   select(m ? m[1] : null);
@@ -459,28 +520,55 @@ function route() {
 async function tick() {
   var conn = document.getElementById("conn");
   try {
-    state.sessions = (await get("/api/sessions")).sessions;
-    var live = state.sessions.filter(function (s) { return s.live; }).length;
-    conn.textContent = state.sessions.length + (state.sessions.length === 1 ? " session" : " sessions") + (live ? " · " + live + " live" : "") + " · updated " + new Date().toLocaleTimeString();
-    renderFilters(); renderList();
+    var raw = await get("/api/sessions", "text");
+    if (raw !== state.sessionsJson) {
+      state.sessionsJson = raw;
+      state.sessions = JSON.parse(raw).sessions;
+      var live = state.sessions.filter(function (s) { return s.live; }).length;
+      conn.textContent = state.sessions.length + (state.sessions.length === 1 ? " session" : " sessions") + (live ? " · " + live + " live" : "");
+      renderFilters();
+      listStale = true;
+    }
     if (state.detail) {
       var row = state.sessions.find(function (s) { return s.id === state.selected; });
       var wasLive = state.detail.live;
+      var id = state.selected;
       if (row && (row.live || wasLive)) {
-        await pollTrace();
-        if (row.state !== state.detail.state || row.turns !== state.detail.turns || wasLive !== row.live)
-          state.detail = await get("/api/sessions/" + state.selected);
+        var changed = await pollTrace();
+        if (id !== state.selected) return;
+        if (row.state !== state.detail.state || row.turns !== state.detail.turns || wasLive !== row.live) {
+          var detail = await get("/api/sessions/" + id);
+          if (id !== state.selected) return;
+          state.detail = detail;
+          changed = true;
+        }
         if (wasLive && !row.live && state.tab === "diff") loadDiff();
-        renderView();
+        if (changed) stale = true;
       }
     }
+    flush();
   } catch (e) {
+    state.sessionsJson = "";
     conn.textContent = "Disconnected. Run gauge watch again to restart the server.";
   }
 }
 
+function flush() {
+  if (pressing) return;
+  if (listStale) { listStale = false; renderList(); }
+  if (stale) { stale = false; renderView(); }
+}
+
+async function poll() {
+  await tick();
+  setTimeout(poll, state.sessions.some(function (s) { return s.live; }) ? 3000 : 10000);
+}
+
+// Rebuilding the list between mousedown and mouseup swallows the click.
+var pressing = false, stale = false, listStale = false;
+document.addEventListener("mousedown", function () { pressing = true; }, true);
+document.addEventListener("mouseup", function () { setTimeout(function () { pressing = false; flush(); }); }, true);
 window.addEventListener("hashchange", route);
 renderFilters();
 route();
-tick();
-setInterval(tick, 1500);
+poll();

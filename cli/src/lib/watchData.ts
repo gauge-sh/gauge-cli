@@ -1,7 +1,7 @@
-import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
-import { localSessions } from "./localLifecycle";
+import { existsSync, statSync } from "node:fs";
+import { open, readdir, readFile, stat } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { localBatchStatus, localId } from "./localLifecycle";
 import { openLocalStore } from "./localStore";
 
 const TERMINAL = new Set(["completed", "failed", "canceled", "interrupted"]);
@@ -39,7 +39,7 @@ export type WatchTrace = {
   inputs: { turn: number; observedAt: string; text?: string; answer?: unknown }[];
 };
 
-async function readJson(path: string): Promise<Record<string, any> | undefined> {
+export async function readJson(path: string): Promise<Record<string, any> | undefined> {
   try {
     return JSON.parse(await readFile(path, "utf8"));
   } catch {
@@ -47,26 +47,43 @@ async function readJson(path: string): Promise<Record<string, any> | undefined> 
   }
 }
 
+type Lines = { bytes: number; lines: Record<string, any>[] };
+const lineCache = new Map<string, Lines>();
+
 async function readLines(path: string): Promise<Record<string, any>[]> {
-  let text: string;
+  let size: number;
   try {
-    text = await readFile(path, "utf8");
+    size = (await stat(path)).size;
   } catch {
+    lineCache.delete(path);
     return [];
   }
-  const lines: Record<string, any>[] = [];
-  for (const line of text.split("\n")) {
-    if (!line) continue;
+  let cached = lineCache.get(path);
+  if (!cached || size < cached.bytes) cached = { bytes: 0, lines: [] };
+  if (size > cached.bytes) {
+    const buffer = Buffer.alloc(size - cached.bytes);
+    const file = await open(path, "r");
     try {
-      lines.push(JSON.parse(line));
-    } catch {
-      // A writer may be mid-append; the next poll sees the complete line.
+      await file.read(buffer, 0, buffer.length, cached.bytes);
+    } finally {
+      await file.close();
     }
+    // A writer may be mid-append; the trailing partial line waits for the next poll.
+    const complete = buffer.lastIndexOf(10) + 1;
+    const lines = [...cached.lines];
+    for (const line of buffer.subarray(0, complete).toString("utf8").split("\n")) {
+      if (!line) continue;
+      try {
+        lines.push(JSON.parse(line));
+      } catch {}
+    }
+    cached = { bytes: cached.bytes + complete, lines };
   }
-  return lines;
+  lineCache.set(path, cached);
+  return cached.lines;
 }
 
-function alive(pid: unknown): boolean {
+export function alive(pid: unknown): boolean {
   if (!Number.isSafeInteger(pid) || (pid as number) <= 0) return false;
   try {
     process.kill(pid as number, 0);
@@ -76,23 +93,76 @@ function alive(pid: unknown): boolean {
   }
 }
 
-async function latestAttempts(gaugeDir: string) {
-  const latest = new Map<string, { batchId: string; directory: string; attempt: number }>();
-  for (const session of await localSessions(gaugeDir)) {
-    const attempt = Number(basename(dirname(session.directory)));
-    const previous = latest.get(session.id);
-    if (!previous || attempt > previous.attempt)
-      latest.set(session.id, { ...session, attempt });
+type Attempt = { batchId: string; directory: string; attempt: number };
+
+const specCache = new Map<string, { mtimeMs: number; spec: Record<string, any> | undefined }>();
+
+async function readSpec(attemptDir: string) {
+  const path = join(attemptDir, "spec.json");
+  let mtimeMs: number;
+  try {
+    mtimeMs = (await stat(path)).mtimeMs;
+  } catch {
+    return undefined;
   }
-  return latest;
+  const cached = specCache.get(path);
+  if (cached?.mtimeMs === mtimeMs) return cached.spec;
+  const spec = await readJson(path);
+  specCache.set(path, { mtimeMs, spec });
+  return spec;
 }
 
-function storeRows(gaugeDir: string) {
-  if (!existsSync(join(gaugeDir, "gauge.sqlite"))) return new Map();
+async function names(path: string) {
+  try {
+    return (await readdir(path, { withFileTypes: true }))
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name);
+  } catch {
+    return [];
+  }
+}
+
+async function latestAttempt(gaugeDir: string, id: string): Promise<Attempt | undefined> {
+  const attempts = join(gaugeDir, "runs", id, "attempts");
+  const numbers = (await names(attempts)).map(Number).filter(Number.isSafeInteger);
+  for (const n of numbers.sort((a, b) => b - a)) {
+    const spec = await readSpec(join(attempts, String(n)));
+    if (spec?.attempt?.runId !== id || spec.attempt.n !== n || typeof spec.attempt.batchId !== "string")
+      continue;
+    return { batchId: spec.attempt.batchId, directory: join(attempts, String(n), "session"), attempt: n };
+  }
+  return undefined;
+}
+
+async function latestAttempts(gaugeDir: string) {
+  const ids = await names(join(gaugeDir, "runs"));
+  const found = await Promise.all(ids.map((id) => latestAttempt(gaugeDir, id)));
+  return new Map(
+    ids.flatMap((id, i) => (found[i] ? [[id, found[i]] as const] : [])),
+  );
+}
+
+let rowCache: { key: string; rows: Map<string, Record<string, any>> } | undefined;
+
+function storeRows(gaugeDir: string): Map<string, Record<string, any>> {
+  const path = join(gaugeDir, "gauge.sqlite");
+  if (!existsSync(path)) return new Map();
+  const key = [path, `${path}-wal`]
+    .map((file) => {
+      try {
+        const { mtimeMs, size } = statSync(file);
+        return `${mtimeMs}:${size}`;
+      } catch {
+        return "";
+      }
+    })
+    .join("|");
+  if (rowCache?.key === key) return rowCache.rows;
   try {
     const store = openLocalStore(gaugeDir);
     try {
-      return new Map(store.listSessions().map((row) => [row.id, row]));
+      rowCache = { key, rows: new Map(store.listSessions().map((row) => [row.id, row])) };
+      return rowCache.rows;
     } finally {
       store.close();
     }
@@ -101,20 +171,31 @@ function storeRows(gaugeDir: string) {
   }
 }
 
+async function batchAlive(gaugeDir: string, batchId: string): Promise<boolean> {
+  try {
+    return (await localBatchStatus(gaugeDir, batchId)).state === "running";
+  } catch {
+    return false;
+  }
+}
+
 async function summarize(
+  gaugeDir: string,
   id: string,
-  { batchId, directory, attempt }: { batchId: string; directory: string; attempt: number },
+  { batchId, directory, attempt }: Attempt,
   row: Record<string, any> | undefined,
 ): Promise<{ session: WatchSession; spec: Record<string, any> }> {
   const attemptDir = dirname(directory);
   const [spec = {}, status, result] = await Promise.all([
-    readJson(join(attemptDir, "spec.json")),
+    readSpec(attemptDir),
     readJson(join(directory, "status.json")),
     readJson(join(attemptDir, "result.json")),
   ]);
   let state: string = result?.outcome ?? status?.state ?? "preparing";
-  if (!result && status && !TERMINAL.has(status.state) && !alive(status.driverPid))
-    state = "interrupted";
+  if (!result && !TERMINAL.has(state)) {
+    const running = status ? alive(status.driverPid) : await batchAlive(gaugeDir, batchId);
+    if (!running) state = "interrupted";
+  }
   const measurement = spec.measurement;
   return {
     spec,
@@ -149,7 +230,7 @@ export async function listWatchSessions(gaugeDir: string): Promise<WatchSession[
   const rows = storeRows(gaugeDir);
   const sessions = await Promise.all(
     [...(await latestAttempts(gaugeDir))].map(async ([id, attempt]) =>
-      (await summarize(id, attempt, rows.get(id))).session,
+      (await summarize(gaugeDir, id, attempt, rows.get(id))).session,
     ),
   );
   return sessions.sort((a, b) =>
@@ -157,8 +238,8 @@ export async function listWatchSessions(gaugeDir: string): Promise<WatchSession[
   );
 }
 
-async function findAttempt(gaugeDir: string, id: string) {
-  return (await latestAttempts(gaugeDir)).get(id);
+function findAttempt(gaugeDir: string, id: string) {
+  return latestAttempt(gaugeDir, localId(id));
 }
 
 export async function getWatchSession(
@@ -167,7 +248,7 @@ export async function getWatchSession(
 ): Promise<WatchSessionDetail | undefined> {
   const attempt = await findAttempt(gaugeDir, id);
   if (!attempt) return undefined;
-  const { session, spec } = await summarize(id, attempt, storeRows(gaugeDir).get(id));
+  const { session, spec } = await summarize(gaugeDir, id, attempt, storeRows(gaugeDir).get(id));
   return {
     ...session,
     prompt: spec.case?.prompt ?? null,

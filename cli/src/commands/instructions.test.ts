@@ -12,7 +12,7 @@ import type { GaugeState, Mode } from "../lib/gaugeState";
 import { formatCommandHelp } from "../lib/rootHelp";
 import { readGaugeState } from "../lib/gaugeState";
 import { register } from "./instructions";
-import { LOGO_ART } from "../lib/logo";
+import { LOGO_ART, SMALL_DOG_LOGO } from "../lib/logo";
 
 function state(mode: Mode): GaugeState {
   return {
@@ -26,8 +26,8 @@ function state(mode: Mode): GaugeState {
 }
 
 const BODY_LINE_BUDGET = 50;
-const RUN_LINE_BUDGET = 80;
-const OVERVIEW_LINE_BUDGET = 100;
+const RUN_LINE_BUDGET = 90;
+const OVERVIEW_LINE_BUDGET = 110;
 
 describe("gauge instructions", () => {
   it("keeps every topic inside its line budget", () => {
@@ -36,9 +36,11 @@ describe("gauge instructions", () => {
       const budget =
         topic === "root"
           ? OVERVIEW_LINE_BUDGET
-          : topic === "run" || topic === "eval"
+          : topic === "run"
             ? RUN_LINE_BUDGET
-            : BODY_LINE_BUDGET;
+            : topic === "eval"
+              ? 80
+              : BODY_LINE_BUDGET;
       assert.ok(
         lines <= budget,
         `${topic} is ${lines} lines, over the ${budget}-line budget`,
@@ -50,7 +52,8 @@ describe("gauge instructions", () => {
     for (const [topic, skill] of Object.entries(TOPICS)) {
       if (!skill.local) continue;
       const lines = documentBody(skill.local).trim().split("\n").length;
-      assert.ok(lines <= RUN_LINE_BUDGET, `${topic} local is ${lines} lines`);
+      const budget = topic === "run" ? RUN_LINE_BUDGET : 80;
+      assert.ok(lines <= budget, `${topic} local is ${lines} lines`);
     }
   });
 
@@ -114,6 +117,30 @@ describe("gauge instructions", () => {
         instructions(topic, state("hosted")),
         /ASCII art|visual preview|█▀▀/,
       );
+  });
+
+  it("includes the exact launch artwork in the first 80 lines of the main instructions", () => {
+    for (const mode of ["local", "hosted"] as const) {
+      const visible = instructions("root", state(mode)).split("\n").slice(0, 80).join("\n");
+      assert.ok(visible.includes(SMALL_DOG_LOGO), `${mode}: artwork is directly available`);
+      assert.match(visible, /Do not redraw, abbreviate, or substitute/);
+      assert.match(visible, /"Watch running sessions" link immediately to its right/);
+      assert.doesNotMatch(visible, /Full layout:/);
+    }
+  });
+
+  it("separates the first setup explanation from approved launch updates", () => {
+    const setup = instructions("init", state("local"));
+    assert.match(setup, /Show this explanation once during setup/);
+    assert.match(setup, /For each approved launch, use the compact live update/);
+    for (const mode of ["local", "hosted"] as const) {
+      const run = instructions("run", state(mode));
+      assert.match(run, /After any needed launch approval, run `gauge watch`/);
+      assert.match(run, /Show a compact live update, then launch/);
+      assert.match(run, /do not repeat its full logo or diagram at launch/);
+      assert.match(run, /once per actual launch, including reruns/);
+      assert.match(instructions("root", state(mode)), /After any needed approval/);
+    }
   });
 
   it("emits installable frontmatter naming the skill", () => {
