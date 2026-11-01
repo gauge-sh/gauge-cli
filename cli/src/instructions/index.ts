@@ -3,6 +3,7 @@ import { type GaugeState, header, instructionMode } from "../lib/gaugeState";
 import { EVAL } from "./eval";
 import { INIT, INIT_LOCAL } from "./init";
 import { ISSUES } from "./issues";
+import { LIFECYCLE } from "./lifecycle";
 import { PREFERENCE } from "./preference";
 import { RUN, RUN_LOCAL } from "./run";
 import { SESSION_ANALYSIS, SESSION_ANALYSIS_LOCAL } from "./sessionAnalysis";
@@ -96,7 +97,7 @@ Hold each case's prompt, fixture, and rubric fixed across targets. Pilot before
 scaling, confirm paid launches, and report per-target evidence, sample counts,
 failures, and missing evidence.
 
-Full guidance and migration example: \`gauge instructions run\`.
+Full guidance and migration example: \`gauge instructions run\`. Setup/cleanup scripts and their runtime API: \`gauge instructions lifecycle\` (hosted only).
 
 ### Session analysis
 
@@ -235,6 +236,7 @@ export const TOPICS: Record<string, Topic> = {
   init: { name: "gauge-init", hosted: INIT, local: INIT_LOCAL, command: "init" },
   hillclimb: { name: "gauge-hillclimb", hosted: HILLCLIMB, shared: true },
   run: { name: "gauge-run", hosted: RUN, local: RUN_LOCAL, command: "run" },
+  lifecycle: { name: "gauge-lifecycle", hosted: LIFECYCLE },
   eval: { name: "gauge-eval", hosted: EVAL, shared: true, command: "eval" },
   preference: {
     name: "gauge-preference",

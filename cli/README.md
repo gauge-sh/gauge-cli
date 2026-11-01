@@ -704,6 +704,9 @@ run-settings flags on `create` and the org's default roster applies.
 
 ## Hosted setup and teardown scripts
 
+Run `gauge instructions lifecycle` for the complete script API reference and
+the author → preview → launch workflow. This guidance ships with the CLI.
+
 Upload JavaScript or TypeScript source on an eval or preference prompt:
 
 ```sh
