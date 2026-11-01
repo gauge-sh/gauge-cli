@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.27.0 — 2026-10-31
+
 ### Added
 
 - `gauge watch` prints a URL for a live, read-only view of past runs and running
@@ -16,6 +18,24 @@
   the checkpoint, rerun, and seq each rerun restored from.
 - `gauge optimizations checkpoints <id>` lists checkpoints with their seq and
   whether their prefix saw a changed surface.
+- `gauge run "<prompt>"` starts a one-off preference run without saving an eval.
+
+### Changed
+
+- Plain `gauge init` writes private `.gauge/` state. Use `--cases` to also
+  create `gauge.json`, case files, and project agent instructions.
+- Local status and the viewer ask the host controller for session status.
+  Unreachable sessions report `unavailable` with their last known state;
+  batch status retains recorded progress without inferring liveness from PIDs.
+- Cleanup retries require a recorded terminal outcome. A controller lost before
+  recording an outcome requires manual recovery of its runtime and evidence.
+
+### Fixed
+
+- Local Claude Code runs read the login from the keychain item Claude Code uses.
+- The viewer no longer labels running sessions interrupted when a coding
+  agent launches the viewer and runner in separate process namespaces. It
+  continues checking unavailable sessions and displays later terminal results.
 
 ## 0.26.0 — 2026-10-28
 

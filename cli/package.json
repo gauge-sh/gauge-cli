@@ -1,6 +1,6 @@
 {
   "name": "@withgauge/cli",
-  "version": "0.26.0",
+  "version": "0.27.0",
   "description": "Gauge CLI: hillclimbing to make something agents want",
   "private": false,
   "author": "Gauge <support@withgauge.com> (https://withgauge.com)",
