@@ -11,10 +11,21 @@ import { gaugeState } from "../lib/gaugeState";
 import { localDirectory } from "../lib/localMeasurements";
 import { findOrganization } from "../lib/orgDirectory";
 import { printJson } from "../lib/output";
-import { alive, readJson } from "../lib/watchData";
+import { readJson } from "../lib/watchData";
 import { CLI_VERSION } from "../version";
 
 type WatchState = { pid: number; port: number; url: string; version: string };
+
+// This check is confined to managing the viewer process, never session status.
+function alive(pid: unknown): boolean {
+  if (!Number.isSafeInteger(pid) || (pid as number) <= 0) return false;
+  try {
+    process.kill(pid as number, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
 
 const readWatchState = (gaugeDir: string) =>
   readJson(join(gaugeDir, "watch.json")) as Promise<WatchState | undefined>;

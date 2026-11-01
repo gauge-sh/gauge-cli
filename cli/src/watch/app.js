@@ -1,5 +1,5 @@
 "use strict";
-var STATUSES = [["all", "All"], ["running", "Running"], ["completed", "Completed"], ["failed", "Failed"]];
+var STATUSES = [["all", "All"], ["running", "Running"], ["completed", "Completed"], ["failed", "Failed"], ["unavailable", "Unavailable"]];
 var state = { sessions: [], filter: "all", query: "", selected: null, detail: null, tab: "trace",
   events: [], inputs: [], lastSeq: -1, diff: null, diffOpen: {}, traceToken: 0, promptOpen: false, sessionsJson: "" };
 
@@ -67,6 +67,7 @@ function syncUrl() { history.replaceState(null, "", "#" + (location.hash.slice(1
 function matches(s, status) {
   if (status === "running") return s.live;
   if (status === "completed") return s.state === "completed";
+  if (status === "unavailable") return s.state === "unavailable";
   if (status === "failed") return s.state === "failed" || s.state === "interrupted" || s.state === "canceled";
   return true;
 }
@@ -174,6 +175,7 @@ function renderHead(view) {
   var u = usageTotals();
   var fields = [
     ["State", s.state, stateClass(s)],
+    ["Last known state", s.lastKnownState],
     ["Agent", agentName(s.agent)], ["Model", s.model], ["Turns", String(s.turns)],
     ["Duration", s.durationMs != null ? duration(s.durationMs) : null],
     ["Tokens", u.seen ? compact(u.input) + " in / " + compact(u.output) + " out" : s.inputTokens != null ? compact(s.inputTokens) + " in / " + compact(s.outputTokens || 0) + " out" : null],
@@ -304,7 +306,7 @@ function renderItem(item) {
         h("span", { class: "dot " + dot }),
         h("span", { class: "name" }, p.name || p.tool_kind || "tool"),
         h("span", { class: "arg" }, toolSummary(p))),
-      h("div", { class: "out" }, "⎿ " + (r ? firstLine(r.output) : state.detail.live ? "running…" : "(no result)")),
+      h("div", { class: "out" }, "⎿ " + (r ? firstLine(r.output) : state.detail.live ? "running…" : state.detail.state === "unavailable" ? "(status unavailable)" : "(no result)")),
       h("div", { class: "full" },
         h("div", { class: "kv" }, "Input"), h("pre", null, clip(p.input, 20000)),
         r ? h("div", { class: "kv" }, "Output" + (r.outputBytes ? " · " + r.outputBytes.toLocaleString() + " bytes" : "")) : null,
@@ -337,7 +339,7 @@ function renderTrace(body, open) {
       body.appendChild(el);
     }
   });
-  if (!items.length) body.appendChild(h("div", { class: "pending" }, state.detail.live ? "Waiting for the agent's first event…" : "This session recorded no trace events."));
+  if (!items.length) body.appendChild(h("div", { class: "pending" }, state.detail.live ? "Waiting for the agent's first event…" : state.detail.state === "unavailable" ? "No trace events available yet. Session status is unavailable." : "This session recorded no trace events."));
   else if (state.detail.live && !(body.lastChild && body.lastChild.querySelector(".dot.live"))) body.appendChild(h("div", { class: "pending" }, h("span", { class: "dot live" }), state.detail.state + "…"));
 }
 
@@ -396,7 +398,7 @@ function parseDiff(textValue) {
 
 function renderDiff(body) {
   if (state.diff == null) return body.appendChild(h("div", { class: "pending" }, "Loading…"));
-  if (!state.diff) return body.appendChild(h("div", { class: "pending" }, state.detail.live ? "The diff is written when the session ends." : "No diff."));
+  if (!state.diff) return body.appendChild(h("div", { class: "pending" }, state.detail.live ? "The diff is written when the session ends." : state.detail.state === "unavailable" ? "No diff available yet. Session status is unavailable." : "No diff."));
   var files = parseDiff(state.diff);
   if (!files.length) return body.appendChild(h("pre", null, state.diff));
   var adds = 0, dels = 0;
@@ -533,16 +535,16 @@ async function tick() {
       var row = state.sessions.find(function (s) { return s.id === state.selected; });
       var wasLive = state.detail.live;
       var id = state.selected;
-      if (row && (row.live || wasLive)) {
+      if (row && (row.live || wasLive || row.state === "unavailable" || state.detail.state === "unavailable")) {
         var changed = await pollTrace();
         if (id !== state.selected) return;
-        if (row.state !== state.detail.state || row.turns !== state.detail.turns || wasLive !== row.live) {
+        if (row.state !== state.detail.state || row.lastKnownState !== state.detail.lastKnownState || row.turns !== state.detail.turns || wasLive !== row.live) {
           var detail = await get("/api/sessions/" + id);
           if (id !== state.selected) return;
           state.detail = detail;
           changed = true;
         }
-        if (wasLive && !row.live && state.tab === "diff") loadDiff();
+        if (row.state !== "unavailable" && !row.live && state.tab === "diff") loadDiff();
         if (changed) stale = true;
       }
     }

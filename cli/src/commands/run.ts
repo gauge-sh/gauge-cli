@@ -1020,7 +1020,7 @@ async function waitForLocalBatch(
         throw new CliError("not_found", "Local batch not found");
       throw error;
     }
-    const settled = batch.state !== "queued" && batch.state !== "running";
+    const settled = ["completed", "canceled", "failed", "interrupted"].includes(batch.state);
     if (!json && !settled && batch.finishedSessions !== lastFinished) {
       console.error(
         `Batch ${batchId}: ${batch.finishedSessions ?? 0}/${batch.expectedSessions} finished`,
@@ -1052,11 +1052,11 @@ function printLocalStatus(
 ): void {
   if (batch)
     console.log(
-      `Batch ${batch.batchId}: ${batch.state}; ${batch.finishedSessions ?? 0}/${batch.expectedSessions} finished`,
+      `Batch ${batch.batchId}: ${batch.state}${batch.lastKnownState ? ` (last known: ${batch.lastKnownState})` : ""}; ${batch.finishedSessions ?? 0}/${batch.expectedSessions} finished`,
     );
   for (const run of runs) {
     console.log(
-      `${run.id}: ${run.state}${run.cleanupPending ? " (cleanup pending)" : ""}${run.detail ? ` (${run.detail})` : ""}`,
+      `${run.id}: ${run.state}${"lastKnownState" in run && run.lastKnownState ? ` (last known: ${run.lastKnownState})` : ""}${run.cleanupPending ? " (cleanup pending)" : ""}${run.detail ? ` (${run.detail})` : ""}`,
     );
     if (run.stderrLog)
       console.log(`  agent stderr: ${relative(process.cwd(), run.stderrLog)}`);

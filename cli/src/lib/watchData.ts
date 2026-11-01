@@ -1,7 +1,8 @@
 import { existsSync, statSync } from "node:fs";
 import { open, readdir, readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { localBatchStatus, localId } from "./localLifecycle";
+import { getSessionStatus, SessionUnavailableError } from "@withgauge/local-execution";
+import { localId } from "./localLifecycle";
 import { openLocalStore } from "./localStore";
 
 const TERMINAL = new Set(["completed", "failed", "canceled", "interrupted"]);
@@ -16,6 +17,7 @@ export type WatchSession = {
   sample: number | null;
   measurement: { id: string; kind: string; revision: number } | null;
   state: string;
+  lastKnownState: string | null;
   live: boolean;
   turns: number;
   detail: string | null;
@@ -81,16 +83,6 @@ async function readLines(path: string): Promise<Record<string, any>[]> {
   }
   lineCache.set(path, cached);
   return cached.lines;
-}
-
-export function alive(pid: unknown): boolean {
-  if (!Number.isSafeInteger(pid) || (pid as number) <= 0) return false;
-  try {
-    process.kill(pid as number, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
 }
 
 type Attempt = { batchId: string; directory: string; attempt: number };
@@ -171,30 +163,35 @@ function storeRows(gaugeDir: string): Map<string, Record<string, any>> {
   }
 }
 
-async function batchAlive(gaugeDir: string, batchId: string): Promise<boolean> {
-  try {
-    return (await localBatchStatus(gaugeDir, batchId)).state === "running";
-  } catch {
-    return false;
-  }
-}
-
 async function summarize(
-  gaugeDir: string,
   id: string,
   { batchId, directory, attempt }: Attempt,
   row: Record<string, any> | undefined,
 ): Promise<{ session: WatchSession; spec: Record<string, any> }> {
   const attemptDir = dirname(directory);
-  const [spec = {}, status, result] = await Promise.all([
+  let [spec = {}, status, result] = await Promise.all([
     readSpec(attemptDir),
     readJson(join(directory, "status.json")),
     readJson(join(attemptDir, "result.json")),
   ]);
   let state: string = result?.outcome ?? status?.state ?? "preparing";
+  let lastKnownState: string | null = null;
+  let unavailableDetail: string | undefined;
   if (!result && !TERMINAL.has(state)) {
-    const running = status ? alive(status.driverPid) : await batchAlive(gaugeDir, batchId);
-    if (!running) state = "interrupted";
+    try {
+      status = await getSessionStatus(directory, { timeoutMs: 1_000 });
+      state = status.state;
+    } catch (error) {
+      if (error instanceof SessionUnavailableError) status = error.lastKnownStatus ?? status;
+      // A failed preparation or a completed run may have published its result during the probe.
+      result = await readJson(join(attemptDir, "result.json"));
+      if (result) state = result.outcome;
+      else {
+        lastKnownState = status?.state ?? "preparing";
+        state = "unavailable";
+        unavailableDetail = "Controller status is unavailable; the session may still be running. Status will be checked again.";
+      }
+    }
   }
   const measurement = spec.measurement;
   return {
@@ -212,9 +209,10 @@ async function summarize(
           ? { id: measurement.id, kind: measurement.kind, revision: measurement.revision }
           : null,
       state,
-      live: !result && !TERMINAL.has(state),
+      lastKnownState,
+      live: !result && state !== "unavailable" && !TERMINAL.has(state),
       turns: result?.turns ?? status?.turn ?? 0,
-      detail: result?.detail ?? status?.detail ?? null,
+      detail: unavailableDetail ?? result?.detail ?? status?.detail ?? null,
       createdAt: spec.createdAt ?? row?.createdAt ?? null,
       updatedAt: status?.updatedAt ?? null,
       endedAt: result?.endedAt ?? null,
@@ -230,7 +228,7 @@ export async function listWatchSessions(gaugeDir: string): Promise<WatchSession[
   const rows = storeRows(gaugeDir);
   const sessions = await Promise.all(
     [...(await latestAttempts(gaugeDir))].map(async ([id, attempt]) =>
-      (await summarize(gaugeDir, id, attempt, rows.get(id))).session,
+      (await summarize(id, attempt, rows.get(id))).session,
     ),
   );
   return sessions.sort((a, b) =>
@@ -248,7 +246,7 @@ export async function getWatchSession(
 ): Promise<WatchSessionDetail | undefined> {
   const attempt = await findAttempt(gaugeDir, id);
   if (!attempt) return undefined;
-  const { session, spec } = await summarize(gaugeDir, id, attempt, storeRows(gaugeDir).get(id));
+  const { session, spec } = await summarize(id, attempt, storeRows(gaugeDir).get(id));
   return {
     ...session,
     prompt: spec.case?.prompt ?? null,

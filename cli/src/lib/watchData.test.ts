@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { appendFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
+import { createServer as createSocketServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -38,8 +39,15 @@ test("watch data lists the latest attempt, flags live sessions, and reads traces
   });
   await writeFile(
     join(retry, "session/status.json"),
-    JSON.stringify({ state: "running", turn: 1, driverPid: process.pid, updatedAt: "2026-10-02T00:00:02.000Z" }),
+    JSON.stringify({ state: "preparing", turn: 0, driverPid: 2 ** 30, updatedAt: "2026-10-02T00:00:01.000Z" }),
   );
+  const socketPath = join(root, "control.sock");
+  await writeFile(join(retry, "session/session.json"), JSON.stringify({ version: 2, socketPath }));
+  const controller = createSocketServer((socket) => socket.once("data", () => socket.end(JSON.stringify({
+    state: "running", turn: 1, driverPid: 2 ** 30, updatedAt: "2026-10-02T00:00:02.000Z",
+  }) + "\n")));
+  await new Promise<void>((resolve, reject) => { controller.once("error", reject); controller.listen(socketPath, resolve); });
+  t.after(() => { if (controller.listening) controller.close(); });
   await writeFile(
     join(retry, "session/events.ndjson"),
     [0, 1]
@@ -73,9 +81,10 @@ test("watch data lists the latest attempt, flags live sessions, and reads traces
     join(retry, "session/status.json"),
     JSON.stringify({ state: "running", turn: 1, driverPid: 2 ** 30, updatedAt: "2026-10-02T00:00:02.000Z" }),
   );
-  await writeFile(join(retry, "session/session.json"), "{}");
+  await new Promise<void>((resolve) => controller.close(() => resolve()));
   const [orphan] = await listWatchSessions(root);
-  assert.equal(orphan.state, "interrupted");
+  assert.equal(orphan.state, "unavailable");
+  assert.equal(orphan.lastKnownState, "running");
   assert.equal(orphan.live, false);
 
   await attempt(root, "r_queued", 1, { createdAt: "2026-10-03T00:00:00.000Z" });
@@ -84,13 +93,18 @@ test("watch data lists the latest attempt, flags live sessions, and reads traces
   await writeFile(join(batch, "status.json"), JSON.stringify({ state: "running", supervisorPid: process.pid }));
   assert.deepEqual(
     (await listWatchSessions(root)).filter((s) => s.id === "r_queued").map((s) => [s.state, s.live]),
-    [["preparing", true]],
+    [["unavailable", false]],
   );
   await writeFile(join(batch, "status.json"), JSON.stringify({ state: "running", supervisorPid: 2 ** 30 }));
   assert.deepEqual(
     (await listWatchSessions(root)).filter((s) => s.id === "r_queued").map((s) => [s.state, s.live]),
-    [["interrupted", false]],
+    [["unavailable", false]],
   );
+  // A later terminal record is observed despite the earlier failed probe.
+  await writeFile(join(retry, "session/status.json"), JSON.stringify({ state: "interrupted", turn: 1 }));
+  assert.equal((await getWatchSession(root, "r_live"))?.state, "interrupted");
+  await writeFile(join(retry, "result.json"), JSON.stringify({ outcome: "completed", turns: 2 }));
+  assert.equal((await getWatchSession(root, "r_live"))?.state, "completed");
 });
 
 test("port probing skips busy ports; the server refuses foreign hosts and serves the API", async (t) => {

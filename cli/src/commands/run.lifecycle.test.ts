@@ -82,6 +82,8 @@ async function fixture(t: test.TestContext, prompt: string, samples = 6) {
       await invoke("run", "cancel", "--batch", batch).catch(() => {});
       // Cancellation stops sessions before the supervisor finishes persisting
       // results. Let the batch settle before removing its workspace.
+      const status = await invoke("run", "status", "--batch", batch);
+      if (status.runs.some((run: any) => run.state === "unavailable")) continue;
       await invoke("run", "wait", "--batch", batch);
     }
     await invoke("cleanup").catch(() => {});
@@ -227,7 +229,7 @@ test(
 );
 
 test(
-  "recovery cleans an interrupted batch without replaying work",
+  "unreachable batch and session owners do not trigger cleanup or replay",
   { skip: !enabled, timeout: 60_000 },
   async (t) => {
     const f = await fixture(t, "HANG", 1);
@@ -237,36 +239,25 @@ test(
       (s) => s.runs.length === 1 && s.runs[0].state === "running",
     );
     const id = current.runs[0].id;
-    const saved = JSON.parse(
-      await readFile(join(f.sessionDir(id), "status.json"), "utf8"),
-    );
-    process.kill(current.batch.supervisorPid, "SIGKILL");
-    process.kill(saved.driverPid, "SIGKILL");
-    await until(
-      () => f.invoke("run", "status", "--batch", detached.batchId),
-      (s) =>
-        s.batch.state === "interrupted" && s.runs[0].state === "interrupted",
-    );
-    const cleaned = await f.invoke("cleanup");
-    assert.equal(cleaned.sessions[0].status, "cleaned");
-    await f.clean(id);
-    await f.invoke("cleanup");
-    assert.equal((await f.status()).runs.length, 1);
-    assert.ok(
-      JSON.stringify(
-        await f.invoke("run", "list", "--batch", detached.batchId),
-      ).includes("interrupted"),
-    );
-    const queried = await f.invoke(
-      "query",
-      "--metrics",
-      "run_count",
-      "--dimensions",
-      "outcome",
-      "--where",
-      `batch=${detached.batchId}`,
-    );
-    assert.deepEqual(queried.rows, [{ outcome: "interrupted", run_count: 1 }]);
+    const saved = JSON.parse(await readFile(join(f.sessionDir(id), "status.json"), "utf8"));
+    const launch = JSON.parse(await readFile(join(f.sessionDir(id), "session.json"), "utf8"));
+    try {
+      process.kill(current.batch.supervisorPid, "SIGKILL");
+      process.kill(saved.driverPid, "SIGKILL");
+      const status = await until(
+        () => f.invoke("run", "status", "--batch", detached.batchId),
+        (s) => s.batch.state === "unavailable" && s.runs[0].state === "unavailable",
+      );
+      assert.equal(status.runs[0].lastKnownState, "running");
+      await assert.rejects(f.invoke("cleanup"), /"status":\s*"error"/);
+      assert.equal((await f.status()).runs.length, 1);
+      assert.equal(existsSync(launch.credentialDir), true);
+      assert.equal(existsSync(join(f.sessionDir(id), "../result.json")), false);
+    } finally {
+      // Remove only the fixture whose owners this test deliberately killed.
+      execFileSync("docker", ["rm", "-f", launch.containerName]);
+      await rm(launch.credentialDir, { recursive: true, force: true });
+    }
   },
 );
 
