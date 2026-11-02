@@ -190,7 +190,7 @@ description: Hill climb agent surfaces. Edit the pages, skills, and CLI rules ag
 
 An optimization is a tree of files plus the sessions it came from. You edit the
 tree; Gauge reruns the source sessions with it injected. Nothing deploys. Use -o json.
-Choose what to improve: \`gauge instructions issues\`.
+Choose an issue, and fix or recheck it once the user ships: \`gauge instructions issues\`.
 
 ## The loop
 
