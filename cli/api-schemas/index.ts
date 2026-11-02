@@ -27,6 +27,7 @@ export type * as executionTargets from "./executionTargets";
 export * as feedback from "./feedback";
 export type * as invites from "./invites";
 export * as keys from "./keys";
+export * as lifecycle from "./lifecycle";
 export type * as mcp from "./mcp";
 export type * as optimizations from "./optimizations";
 export type * as orgs from "./orgs";

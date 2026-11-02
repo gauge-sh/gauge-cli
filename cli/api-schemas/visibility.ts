@@ -67,6 +67,7 @@ export const createVisibilityPromptBodySchema = z
     skillRefs: visibilityPromptSettingsInputShape.skillRefs,
     mcpRefs: visibilityPromptSettingsInputShape.mcpRefs,
     connectionIds: visibilityPromptSettingsInputShape.connectionIds,
+    lifecycle: visibilityPromptSettingsInputShape.lifecycle,
     cadence: visibilityPromptSettingsInputShape.cadence,
     sampleCount: visibilityPromptSettingsInputShape.sampleCount,
     scenarios: z.array(visibilityScenarioInputSchema).optional().default([]),
