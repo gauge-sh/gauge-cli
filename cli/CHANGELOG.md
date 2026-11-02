@@ -4,6 +4,15 @@
 
 ### Added
 
+- `gauge issues fix <id>` marks an issue fixed (it reopens when a later run
+  shows it again), `gauge issues mute <id>` mutes it for good, and
+  `gauge issues reopen <id>` moves it back to open. `gauge issues recheck <id>`
+  (alias `verify`) previews the past runs that showed an issue, the latest per
+  prompt, agent, and model; with `--confirm` it reruns them (the top 3 by
+  default, `--run` for others, at most 10); `gauge issues get` shows which
+  reruns still show the issue. `gauge issues list` shows open issues and takes
+  `--status open|fixed|muted|all`; `list` and `get` show each issue's status.
+
 - `gauge watch` prints a URL for a live, read-only view of past runs and running
   sessions. Locally it starts a background server on 127.0.0.1 (from port 4040,
   next free port), reuses it on later calls, and stops it after 30 idle minutes

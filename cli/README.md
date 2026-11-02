@@ -721,11 +721,27 @@ scenario subset leaves the schedule unchanged.
 ## Issues (hosted)
 
 An issue groups the same finding across many sessions. `gauge issues list` shows
-every issue with the most sessions first, with its type and product. Friction
-shows how badly it hurt agents (blocked, recovered, extra work). Objections come
-from preference sessions and show where agents went instead. Filter with
-`--type friction|objection`. `gauge issues get <id>` lists the issue's
-findings with their runs. `gauge run insight <run>` shows each finding's issue.
+open issues with the most sessions first, with their type, product, and status.
+Friction shows how badly it hurt agents (blocked, recovered, extra work).
+Objections come from preference sessions and show where agents went instead.
+Filter with `--type friction|objection` and `--status open|fixed|muted|all`.
+`gauge issues get <id>` lists the issue's findings with their runs.
+`gauge run insight <run>` shows each finding's issue.
+
+Each issue is open, fixed, or muted. A fixed issue reopens when a later run
+shows it again; a muted one never does.
+
+```sh
+gauge issues fix is_1                  # done; reopens if agents hit it again
+gauge issues mute is_1                 # not relevant; never reopens
+gauge issues reopen is_1               # back to open (also unmutes)
+gauge issues recheck is_1              # preview the past runs it would repeat
+gauge issues recheck is_1 --confirm    # rerun them (spends credits); --run <runId>... picks others
+```
+
+`recheck` (alias `verify`) never prompts: without `--confirm` it only prints
+the preview. `gauge issues get` then shows which reruns still show the issue;
+a recheck never closes it, so mark it fixed with `gauge issues fix`.
 
 ## Optimizations (hosted)
 
