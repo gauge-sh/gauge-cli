@@ -38,6 +38,19 @@ describe("statusLine", () => {
       statusLine({ ...OPEN, cameBackAt: "2026-11-01T00:00:00Z" }),
       "open, came back after a fix",
     );
+    assert.equal(
+      statusLine({
+        ...OPEN,
+        cameBackAt: "2026-11-01T00:00:00Z",
+        check: {
+          status: "VERIFIED",
+          sessions: 3,
+          seen: 0,
+          createdAt: "2026-11-02T00:00:00Z",
+        },
+      }),
+      "open, looks fixed: 0 of 3 runs on the last recheck",
+    );
   });
 });
 

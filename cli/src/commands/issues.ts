@@ -1,5 +1,5 @@
 import { type Command, Option } from "commander";
-import { createClient } from "../lib/client";
+import { CliError, createClient } from "../lib/client";
 import { hostedOnly, resolveOrg, resolveOutput } from "../lib/context";
 import { printItems, printJson } from "../lib/output";
 
@@ -70,8 +70,8 @@ type PastRun = {
 const TYPES = { friction: "problems", objection: "reasons" } as const;
 type IssueType = keyof typeof TYPES;
 const STATUSES = ["open", "fixed", "muted", "all"] as const;
+type ListOpts = { type?: IssueType; status: (typeof STATUSES)[number] };
 
-/** One line on where an issue stands. */
 export function statusLine(issue: IssueState): string {
   const { check } = issue;
   if (check?.status === "RUNNING")
@@ -80,13 +80,15 @@ export function statusLine(issue: IssueState): string {
     return `fixed${issue.statusBy ? ` by ${issue.statusBy}` : ""}`;
   if (issue.status === "MUTED")
     return `muted${issue.statusBy ? ` by ${issue.statusBy}` : ""}`;
-  if (issue.cameBackAt) return "open, came back after a fix";
   const fresh =
-    check && (issue.statusAt == null || check.createdAt > issue.statusAt);
+    check &&
+    (issue.statusAt == null || check.createdAt > issue.statusAt) &&
+    (issue.cameBackAt == null || check.createdAt > issue.cameBackAt);
   if (fresh && check.status === "VERIFIED")
-    return `open, looks fixed: 0 of ${check.sessions} runs on the last recheck`;
+    return `open, looks fixed: 0 of ${check.sessions ?? 0} runs on the last recheck`;
   if (fresh && check.status === "STILL_SEEN")
-    return `open, still seen in ${check.seen} of ${check.sessions} runs on the last recheck`;
+    return `open, still seen in ${check.seen ?? 0} of ${check.sessions ?? 0} runs on the last recheck`;
+  if (issue.cameBackAt) return "open, came back after a fix";
   return "open";
 }
 
@@ -134,11 +136,7 @@ export function register(program: Command): void {
         .choices(STATUSES)
         .default("open"),
     )
-    .action(
-      async (
-        opts: { type?: IssueType; status: (typeof STATUSES)[number] },
-        cmd: Command,
-      ) => {
+    .action(async (opts: ListOpts, cmd: Command) => {
       const org = await resolveOrg(cmd);
       const types = opts.type
         ? [opts.type]
@@ -178,8 +176,7 @@ export function register(program: Command): void {
         console.log(
           `${ungrouped} more finding${ungrouped === 1 ? " is" : "s are"} not in an issue yet`,
         );
-      },
-    );
+    });
 
   group
     .command("get <id>")
@@ -252,19 +249,31 @@ export function register(program: Command): void {
       ) => {
         const path = `${issuesPath(await resolveOrg(cmd))}/${encodeURIComponent(id)}/recheck`;
         const json = resolveOutput(cmd) === "json";
+        if (opts.run && opts.run.length > 10)
+          throw new CliError("usage", "--run takes at most 10 runs");
         if (!opts.confirm) {
           const { runs } = await createClient().get<{ runs: PastRun[] }>(path);
+          const known = new Set(runs.map((r) => r.sourceRunId));
+          const unknown = opts.run?.filter((r) => !known.has(r)) ?? [];
+          if (unknown.length)
+            throw new CliError(
+              "usage",
+              `Not a past run for ${id}: ${unknown.join(", ")}`,
+            );
           const picked = new Set(
             opts.run ??
               runs.filter((r) => r.recommended).map((r) => r.sourceRunId),
           );
+          const confirm = picked.size
+            ? `gauge issues recheck ${id} --run ${[...picked].join(" ")} --confirm`
+            : null;
           if (json)
             return printJson({
               runs: runs.map((r) => ({
                 ...r,
                 picked: picked.has(r.sourceRunId),
               })),
-              confirm: `gauge issues recheck ${id}${opts.run ? ` --run ${opts.run.join(" ")}` : ""} --confirm`,
+              confirm,
             });
           console.log(
             `Recheck would rerun ${picked.size} of ${runs.length} past runs (the latest per prompt, agent, and model):`,
@@ -279,7 +288,7 @@ export function register(program: Command): void {
             })),
             "table",
           );
-          console.log(`Run it:  gauge issues recheck ${id}${opts.run ? ` --run ${opts.run.join(" ")}` : ""} --confirm`);
+          if (confirm) console.log(`Run it:  ${confirm}`);
           console.log(`Choose:  gauge issues recheck ${id} --run <runId>... --confirm`);
           return;
         }
@@ -288,6 +297,12 @@ export function register(program: Command): void {
           runIds: string[];
         }>(path, opts.run ? { runIds: opts.run } : {});
         if (json) return printJson(res);
+        if (!res.runIds.length) {
+          console.log(
+            `No runs to recheck. Choose some: gauge issues recheck ${id} --run <runId>... --confirm`,
+          );
+          return;
+        }
         console.log(
           `Started ${res.runIds.length} run${res.runIds.length === 1 ? "" : "s"}. When they are analyzed, see the result with: gauge issues get ${id}`,
         );
