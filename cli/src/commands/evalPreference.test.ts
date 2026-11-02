@@ -57,9 +57,19 @@ function program(): Command {
 }
 
 async function gauge(args: string[], mode = "--hosted"): Promise<void> {
-  await program().parseAsync(["--org", "8c7f0e1a-1111-4222-8333-944455556666", "-o", "json", mode, ...args], {
-    from: "user",
-  });
+  await program().parseAsync(
+    [
+      "--org",
+      "8c7f0e1a-1111-4222-8333-944455556666",
+      "-o",
+      "json",
+      mode,
+      ...args,
+    ],
+    {
+      from: "user",
+    },
+  );
 }
 
 async function usageError(args: string[], mode?: string): Promise<string> {
@@ -119,9 +129,17 @@ describe("gauge eval and gauge preference", () => {
       ["preference", "list", "--since", "2026-10-01"],
     ])
       await assert.rejects(
-        program().parseAsync(["--org", "8c7f0e1a-1111-4222-8333-944455556666", "--hosted", ...args], {
-          from: "user",
-        }),
+        program().parseAsync(
+          [
+            "--org",
+            "8c7f0e1a-1111-4222-8333-944455556666",
+            "--hosted",
+            ...args,
+          ],
+          {
+            from: "user",
+          },
+        ),
         (error) =>
           error instanceof CommanderError &&
           error.code === "commander.unknownOption",
@@ -134,7 +152,14 @@ describe("gauge eval and gauge preference", () => {
       await gauge([command, "edit", "x", "--tag", "beta"]);
       await gauge([command, "edit", "x", "--clear-tags"]);
       assert.equal(
-        await usageError([command, "edit", "x", "--tag", "beta", "--clear-tags"]),
+        await usageError([
+          command,
+          "edit",
+          "x",
+          "--tag",
+          "beta",
+          "--clear-tags",
+        ]),
         "--tag and --clear-tags conflict",
       );
     }
@@ -294,7 +319,7 @@ describe("gauge run", () => {
     );
     assert.match(
       await usageError(["run", "Which CLI?", "--samples", "2"], "--local"),
-      /a prompt run takes only --agent/,
+      /--samples and --input do not apply to prompt runs/,
     );
     assert.match(
       await usageError(["run", "Which CLI?", "--eval", "e1"], "--local"),
@@ -370,7 +395,13 @@ describe("creator attribution", () => {
     });
     const ids = (): string[] =>
       JSON.parse(
-        String((console.log as unknown as { mock: { calls: { arguments: unknown[] }[] } }).mock.calls.at(-1)?.arguments[0]),
+        String(
+          (
+            console.log as unknown as {
+              mock: { calls: { arguments: unknown[] }[] };
+            }
+          ).mock.calls.at(-1)?.arguments[0],
+        ),
       ).map((i: { id: string }) => i.id);
 
     await gauge(["eval", "list"]);
@@ -380,5 +411,136 @@ describe("creator attribution", () => {
     await gauge(["preference", "list", "--created-by", "me"]);
     assert.deepEqual(ids(), ["mine"]);
     assert.ok(requests.some((r) => r.url === "/api/v1/me"));
+  });
+});
+
+describe("hosted lifecycle uploads", () => {
+  function script(t: TestContext): string {
+    const directory = mkdtempSync(join(tmpdir(), "gauge-upload-"));
+    t.after(() => rmSync(directory, { recursive: true, force: true }));
+    const path = join(directory, "setup.ts");
+    writeFileSync(
+      path,
+      'import { params } from "@withgauge/session";\nconsole.log(params);\n',
+    );
+    return path;
+  }
+
+  it("uploads source through eval and preference create without sending local paths", async (t) => {
+    const requests = useApi(t, { id: "created" });
+    const path = script(t);
+    await gauge([
+      "eval",
+      "create",
+      "--name",
+      "fixture",
+      "--text",
+      "Do it",
+      "--agent",
+      "codex",
+      "--criterion",
+      "Works: yes",
+      "--setup-file",
+      path,
+      "--setup-timeout",
+      "45",
+    ]);
+    await gauge([
+      "preference",
+      "create",
+      "--name",
+      "fixture",
+      "--kind",
+      "open-ended",
+      "--text",
+      "Choose it",
+      "--teardown-file",
+      path,
+      "--lifecycle-params",
+      '{"feature":"checkout"}',
+    ]);
+    assert.equal(requests.length, 2);
+    const first = requests[0].body as {
+      lifecycle: { setup: { source: string; timeoutSeconds: number } };
+    };
+    assert.equal(first.lifecycle.setup.timeoutSeconds, 45);
+    assert.match(first.lifecycle.setup.source, /@withgauge\/session/);
+    assert.ok(!JSON.stringify(requests.map((r) => r.body)).includes(path));
+    const second = requests[1].body as {
+      lifecycle: { teardown: { timeoutSeconds: number }; params: unknown };
+    };
+    assert.equal(second.lifecycle.teardown.timeoutSeconds, 120);
+    assert.deepEqual(second.lifecycle.params, { feature: "checkout" });
+  });
+
+  it("reads existing lifecycle before replacing one hook or clearing the other", async (t) => {
+    const lifecycle = {
+      version: 1,
+      setup: { source: "old setup", timeoutSeconds: 50 },
+      teardown: { source: "old teardown", timeoutSeconds: 80 },
+      params: { keep: true },
+    };
+    const requests = useApi(t, { id: "x", lifecycle });
+    const path = script(t);
+    await gauge([
+      "eval",
+      "edit",
+      "e1",
+      "--setup-file",
+      path,
+      "--name",
+      "renamed",
+    ]);
+    assert.deepEqual(
+      requests.map((r) => r.method),
+      ["GET", "PATCH"],
+    );
+    const body = requests[1].body as {
+      lifecycle: typeof lifecycle;
+      name: string;
+    };
+    assert.equal(body.name, "renamed");
+    assert.equal(body.lifecycle.setup.timeoutSeconds, 50);
+    assert.deepEqual(body.lifecycle.teardown, lifecycle.teardown);
+    assert.deepEqual(body.lifecycle.params, lifecycle.params);
+    await gauge(["preference", "edit", "p1", "--clear-setup"]);
+    assert.deepEqual(requests[3].body, {
+      lifecycle: {
+        version: 1,
+        teardown: lifecycle.teardown,
+        params: lifecycle.params,
+      },
+    });
+    await gauge(["preference", "edit", "p1", "--clear-lifecycle"]);
+    assert.equal(requests[4].method, "PATCH");
+    assert.deepEqual(requests[4].body, { lifecycle: null });
+  });
+
+  it("rejects local hook authoring and invalid files without writing", async (t) => {
+    const requests = useApi(t, { id: "x", lifecycle: null });
+    for (const command of ["eval", "preference"]) {
+      assert.match(
+        await usageError(
+          [command, "edit", "x", "--setup-file", "missing.ts"],
+          "--local",
+        ),
+        /require hosted execution/,
+      );
+    }
+    assert.equal(requests.length, 0);
+    assert.match(
+      await usageError([
+        "eval",
+        "edit",
+        "x",
+        "--setup-file",
+        "/nonexistent/gauge-upload.ts",
+      ]),
+      /could not read --setup-file/,
+    );
+    assert.deepEqual(
+      requests.map((r) => r.method),
+      ["GET"],
+    );
   });
 });

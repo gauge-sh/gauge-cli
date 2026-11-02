@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { lifecycleSchema } from "./lifecycle";
 import {
   agentConfigInputSchema,
   agentConfigSchema,
@@ -27,6 +28,7 @@ export const ownedConfigurationInputShape = {
   skillRefs: assetRefListSchema.optional().default([]),
   mcpRefs: assetRefListSchema.optional().default([]),
   connectionIds: z.array(z.string().min(1)).max(32).optional().default([]),
+  lifecycle: lifecycleSchema.nullish(),
   cadence: ownedCadenceSchema.optional().default("NONE"),
   nextRunAt: nextRunAtInputSchema.optional(),
   sampleCount: sampleCountSchema.optional().default(1),
@@ -53,6 +55,7 @@ export const ownedConfigurationPatchShape = {
   skillRefs: assetRefListSchema.optional(),
   mcpRefs: assetRefListSchema.optional(),
   connectionIds: z.array(z.string().min(1)).max(32).optional(),
+  lifecycle: lifecycleSchema.nullish(),
   cadence: ownedCadenceSchema.optional(),
   nextRunAt: nextRunAtInputSchema.optional(),
   sampleCount: sampleCountSchema.optional(),
@@ -66,6 +69,7 @@ export const ownedConfigurationSchema = z.object({
   skillRefs: z.array(z.string()),
   mcpRefs: z.array(z.string()),
   connectionIds: z.array(z.string()),
+  lifecycle: lifecycleSchema.nullish(),
   cadence: ownedCadenceSchema,
   sampleCount: sampleCountSchema,
   lastScheduledAt: z.string().nullable(),
@@ -97,6 +101,7 @@ export const visibilityPromptSettingsInputShape = {
   skillRefs: ownedConfigurationInputShape.skillRefs,
   mcpRefs: ownedConfigurationInputShape.mcpRefs,
   connectionIds: ownedConfigurationInputShape.connectionIds,
+  lifecycle: ownedConfigurationInputShape.lifecycle,
   cadence: ownedConfigurationInputShape.cadence,
   nextRunAt: ownedConfigurationInputShape.nextRunAt,
   sampleCount: ownedConfigurationInputShape.sampleCount,
@@ -107,6 +112,7 @@ export const visibilityPromptSettingsPatchShape = {
   skillRefs: ownedConfigurationPatchShape.skillRefs,
   mcpRefs: ownedConfigurationPatchShape.mcpRefs,
   connectionIds: ownedConfigurationPatchShape.connectionIds,
+  lifecycle: ownedConfigurationPatchShape.lifecycle,
   cadence: ownedConfigurationPatchShape.cadence,
   nextRunAt: ownedConfigurationPatchShape.nextRunAt,
   sampleCount: ownedConfigurationPatchShape.sampleCount,
@@ -117,6 +123,7 @@ export const visibilityPromptSettingsSchema = z.object({
   skillRefs: z.array(z.string()),
   mcpRefs: z.array(z.string()),
   connectionIds: z.array(z.string()),
+  lifecycle: lifecycleSchema.nullish(),
   cadence: ownedCadenceSchema,
   sampleCount: sampleCountSchema,
   lastScheduledAt: z.string().nullable(),
@@ -137,12 +144,14 @@ export const runEvalBodySchema = z
   .object({
     agents: runAgentsOverrideSchema.optional(),
     sampleCount: runSampleCountOverrideSchema.optional(),
+    lifecycle: lifecycleSchema.nullish(),
   })
   .strict();
 export const runVisibilityBodySchema = z
   .object({
     agents: runAgentsOverrideSchema.optional(),
     sampleCount: runSampleCountOverrideSchema.optional(),
+    lifecycle: lifecycleSchema.nullish(),
     visibilityScenarioIds: z.array(z.string().min(1)).min(1).optional(),
   })
   .strict();
