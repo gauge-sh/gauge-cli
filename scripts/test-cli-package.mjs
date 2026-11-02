@@ -39,7 +39,7 @@ try {
   );
   const installed = join(temporary, "node_modules/@withgauge/cli");
   for (const { path } of archive.files) {
-    assert.match(path, /^(?:package\.json|README\.md|LICENSE|dist\/[\w.-]+\.js)$/, `Unexpected CLI artifact: ${path}`);
+    assert.match(path, /^(?:package\.json|README\.md|LICENSE|dist\/[\w.-]+\.js|dist\/watch\/[\w.-]+\.(?:html|css|js|svg|png))$/, `Unexpected CLI artifact: ${path}`);
     const content = await readFile(join(installed, path), "utf8");
     assert.doesNotMatch(content,
       /github\.com\/gauge-sh\/(?!gauge-cli(?:[\/."\s]|$)|gauge-skills(?:[\/."\s]|$))[\w.-]+|@[\w-]+\/api-schemas|\b[A-Z]{2,}-\d{2,}\b|\/api\/(?:v1\/)?admin(?:\/|\b)|\/(?:home|Users)\/(?!node\/)[A-Za-z0-9_][\w.-]*\//,

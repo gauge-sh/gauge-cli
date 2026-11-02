@@ -9,6 +9,7 @@ import { RUN, RUN_LOCAL } from "./run";
 import { SESSION_ANALYSIS, SESSION_ANALYSIS_LOCAL } from "./sessionAnalysis";
 import { stepsMarkdown } from "./steps";
 import { HILLCLIMB } from "./hillclimb";
+import { RUN_LAYOUT_INSTRUCTIONS, RUN_LOGO_BLOCK } from "../lib/runPresentation";
 
 export type Topic = {
   name: string;
@@ -70,8 +71,11 @@ identify inputs, pilot representative tasks, analyze evidence, fix, rerun, compa
 - Confirm before launches. Use \`--yes\` for work already approved.
 - Retry writes with their supported idempotency flag; blind retries can launch
   duplicate paid sessions.
-- The user does not see gauge output. Show them the files you wrote, each case's
-  task, criteria, and targets before launch, and results with counts and limits.
+- The user does not see gauge output. Show them the files you wrote, each case's task, criteria,
+  and targets before launch, and results with counts and limits. After any needed approval, before each actual launch, show a compact live update with the session summary first. ${RUN_LAYOUT_INSTRUCTIONS} Get the URL from \`gauge watch\` with the same backend and org. If you omit it, include it in your next update while sessions are still running, without asking the user whether to read more instructions.
+
+${RUN_LOGO_BLOCK}
+
 - Run \`gauge update\` to install the latest published CLI.
 - Exit codes: 0 ok, 1 error, 2 usage, 3 billing-blocked, 4 needs your input.
 - When the CLI gets in your way (friction, a missing command or flag, a bug),
@@ -165,6 +169,10 @@ ${stepsMarkdown()}
     Docker containers separate from this chat (mention verify and preview only
     on failure);
   - after runs, per-case results, top friction, and \`gauge run trace|diff <id>\`.
+- After any needed approval, before each actual launch, show a compact live update with the session summary first. ${RUN_LAYOUT_INSTRUCTIONS} Get the URL from \`gauge watch\` with the same backend and org. The full logo and diagram in \`gauge instructions init\` are for the first setup explanation. If you omit the live update, include it in your next update while sessions are still running, without asking the user whether to read more instructions.
+
+${RUN_LOGO_BLOCK}
+
 - Report CLI friction, gaps, or bugs, with no account:
   \`gauge feedback -m "<what happened>" --kind friction|missing|bug\`.
 
@@ -183,7 +191,7 @@ description: Hill climb agent surfaces. Edit the pages, skills, and CLI rules ag
 
 An optimization is a tree of files plus the sessions it came from. You edit the
 tree; Gauge reruns the source sessions with it injected. Nothing deploys. Use -o json.
-Choose what to improve: \`gauge instructions issues\`.
+Choose an issue, and fix or recheck it once the user ships: \`gauge instructions issues\`.
 
 ## The loop
 

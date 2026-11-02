@@ -368,7 +368,7 @@ export async function runPreferencePrompt(
     agent: string[];
     samples?: string;
   },
-): Promise<void> {
+): Promise<visibility.RunVisibilityPromptResponse> {
   const org = await resolveOrg(cmd);
   const overrides = {
     ...runOverridesFromOpts(opts),
@@ -407,6 +407,7 @@ export async function runPreferencePrompt(
     for (const batch of result.batchIds)
       console.log(`Runs: gauge run list --batch ${batch}`);
   }
+  return result;
 }
 
 export async function listPreferencePromptRuns(

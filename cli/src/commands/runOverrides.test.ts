@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { SMALL_DOG_LOGO } from "../lib/logo";
 import { it, type TestContext } from "node:test";
 import { Command } from "commander";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -17,7 +19,7 @@ async function gauge(
   t: TestContext,
   args: string[],
   response: unknown | ((request: RecordedRequest) => unknown),
-): Promise<{ requests: RecordedRequest[]; output: string[]; error?: unknown }> {
+): Promise<{ requests: RecordedRequest[]; output: string[]; notices: string[]; error?: unknown }> {
   const oldToken = process.env.GAUGE_API_TOKEN;
   const oldUrl = process.env.GAUGE_API_URL;
   process.env.GAUGE_API_TOKEN = "gauge_test";
@@ -30,10 +32,11 @@ async function gauge(
   });
   const requests: RecordedRequest[] = [];
   const output: string[] = [];
+  const notices: string[] = [];
   t.mock.method(console, "log", (...args: unknown[]) =>
     output.push(args.join(" ")),
   );
-  t.mock.method(console, "error", () => {});
+  t.mock.method(console, "error", (chunk: unknown) => notices.push(String(chunk)));
   t.mock.method(
     globalThis,
     "fetch",
@@ -70,13 +73,13 @@ async function gauge(
       },
     );
   } catch (error) {
-    return { requests, output, error };
+    return { requests, output, notices, error };
   }
-  return { requests, output };
+  return { requests, output, notices };
 }
 
 it("sends one-launch overrides with --eval", async (t) => {
-  const { requests, error } = await gauge(
+  const { requests, output, notices, error } = await gauge(
     t,
     [
       "run",
@@ -88,7 +91,7 @@ it("sends one-launch overrides with --eval", async (t) => {
       "2",
       "--yes",
     ],
-    { batchIds: [], runIds: [] },
+    { batchIds: ["b1"], runIds: ["r1"] },
   );
   assert.equal(error, undefined);
   assert.equal(
@@ -104,6 +107,99 @@ it("sends one-launch overrides with --eval", async (t) => {
     1,
     "ordinary launches must not fetch saved hooks",
   );
+  assert.deepEqual(output.map((chunk) => JSON.parse(String(chunk))), [
+    { batchIds: ["b1"], runIds: ["r1"] },
+  ]);
+  assert.equal(notices.length, 1);
+  assert.ok(notices[0].includes(SMALL_DOG_LOGO));
+  assert.match(notices[0], /"Watch running sessions" link immediately to its right/);
+  assert.match(notices[0], /gauge watch/);
+});
+
+for (const flag of ["--eval", "--preference"] as const) {
+  it(`does not add launch reminders when ${flag} enqueues no sessions`, async (t) => {
+    const result = await gauge(t, ["run", flag, "saved1", "--yes"], {
+      batchIds: [],
+      runIds: [],
+    });
+    assert.equal(result.error, undefined);
+    assert.deepEqual(result.notices, []);
+  });
+}
+
+it("reminds for an accepted eval request before sessions are created", async (t) => {
+  const result = await gauge(t, ["run", "--eval", "e1", "--yes"], {
+    batchIds: [],
+    runIds: [],
+    runRequestId: "request1",
+  });
+  assert.equal(result.error, undefined);
+  assert.equal(result.notices.length, 1);
+  assert.ok(result.notices[0].includes(SMALL_DOG_LOGO));
+});
+
+it("reminds for a launched preference prompt", async (t) => {
+  const result = await gauge(t, ["run", "--preference", "p1", "--yes"], {
+    batchIds: ["b1"],
+    runIds: ["r1"],
+  });
+  assert.equal(result.error, undefined);
+  assert.equal(result.notices.length, 1);
+  assert.ok(result.notices[0].includes(SMALL_DOG_LOGO));
+});
+
+for (const scenario of [
+  { name: "configuration-only apply", expand: false, dryRun: false, runIds: [], reminder: false },
+  { name: "blocked expansion", expand: true, dryRun: false, runIds: [], reminder: false },
+  { name: "successful expansion", expand: true, dryRun: false, runIds: ["r1"], reminder: true },
+  { name: "partially blocked expansion", expand: true, dryRun: false, runIds: ["r1"], reminder: true },
+  { name: "battery preview", expand: true, dryRun: true, runIds: [], reminder: false },
+]) {
+  it(`handles the launch reminder for a ${scenario.name}`, async (t) => {
+    const directory = await mkdtemp(join(tmpdir(), "gauge-launch-reminder-"));
+    t.after(() => rm(directory, { recursive: true, force: true }));
+    const path = join(directory, "battery.json");
+    await writeFile(
+      path,
+      JSON.stringify({
+        version: 1,
+        expand: scenario.expand,
+        prompts: [{ key: "health", text: "Add a health endpoint" }],
+      }),
+    );
+    const result = await gauge(
+      t,
+      ["run", "--apply", path, ...(scenario.dryRun ? ["--dry-run"] : [])],
+      scenario.dryRun
+        ? { expand: true, summary: { runsToEnqueue: 1 } }
+        : {
+            batchIds: scenario.runIds.length ? ["b1"] : [],
+            runIds: scenario.runIds,
+            ...(scenario.name.includes("blocked")
+              ? { blocked: "insufficient_credits" }
+              : {}),
+          },
+    );
+    assert.equal(result.error, undefined);
+    assert.equal(result.requests.length, 1);
+    assert.equal(
+      result.notices.filter((notice) => notice.includes(SMALL_DOG_LOGO)).length,
+      scenario.reminder ? 1 : 0,
+    );
+  });
+}
+
+it("does not add launch reminders to examples", async (t) => {
+  const example = await gauge(t, ["run", "--example"], {});
+  assert.equal(example.error, undefined);
+  assert.ok(example.notices.every((notice) => !notice.includes(SMALL_DOG_LOGO)));
+});
+
+it("does not add launch reminders to failed launches", async (t) => {
+  const failed = await gauge(t, ["run", "--eval", "e1", "--agent", "unknown", "--yes"], {});
+  assert.ok(failed.error);
+  assert.equal(failed.requests.length, 0);
+  assert.deepEqual(failed.notices, []);
 });
 
 const savedLifecycle = {

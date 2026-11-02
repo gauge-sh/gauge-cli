@@ -26,7 +26,7 @@ export class SessionNotFoundError extends Error {
 }
 
 export class SessionUnavailableError extends Error {
-  constructor(message: string, cause?: unknown) {
+  constructor(message: string, cause?: unknown, public readonly lastKnownStatus?: SessionStatus) {
     super(message, { cause });
     this.name = "SessionUnavailableError";
   }
@@ -34,13 +34,6 @@ export class SessionUnavailableError extends Error {
 
 const socketUnavailable = (error: unknown) =>
   ["ENOENT", "ECONNREFUSED"].includes((error as NodeJS.ErrnoException)?.code ?? "");
-
-function driverExited(status: SessionStatus | null | undefined): boolean {
-  const pid = status?.driverPid;
-  if (typeof pid !== "number" || !Number.isSafeInteger(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); return false; }
-  catch (error) { return (error as NodeJS.ErrnoException).code === "ESRCH"; }
-}
 
 export function validateSpec(spec: SessionSpec): void {
   if (spec.gateway) {
@@ -150,12 +143,13 @@ export async function startSession(options: StartSessionOptions): Promise<Sessio
   }
 }
 
-export async function request<T>(socketPath: string, command: unknown): Promise<T> {
+export async function request<T>(socketPath: string, command: unknown, timeoutMs = 35_000): Promise<T> {
   return new Promise((resolve, reject) => {
     const socket = createConnection(socketPath);
     let bytes = "";
     socket.setEncoding("utf8");
-    socket.setTimeout(35_000, () => socket.destroy(new Error("session command timed out; delivery may have succeeded")));
+    const deadline = setTimeout(() => socket.destroy(new Error("session command timed out; delivery may have succeeded")), timeoutMs);
+    socket.on("close", () => clearTimeout(deadline));
     socket.on("error", reject);
     socket.on("connect", () => socket.write(JSON.stringify(command) + "\n"));
     socket.on("data", (chunk) => {
@@ -177,17 +171,15 @@ async function launchRecord(directory: string): Promise<LaunchRecord> {
   return record;
 }
 
-export async function getSessionStatus(directory: string): Promise<SessionStatus> {
+export async function getSessionStatus(directory: string, options: { timeoutMs?: number } = {}): Promise<SessionStatus> {
   const record = await launchRecord(directory);
   const saved = await readJson<SessionStatus>(join(directory, "status.json"));
   if (saved && terminal(saved.state)) return saved;
-  try { return await request(record.socketPath, { action: "status" }); }
+  try { return await request(record.socketPath, { action: "status" }, options.timeoutMs); }
   catch (error) {
     const latest = await readJson<SessionStatus>(join(directory, "status.json"));
     if (latest && terminal(latest.state)) return latest;
-    if (!socketUnavailable(error) || !driverExited(latest))
-      throw new SessionUnavailableError("Session status is unavailable; the driver may still be running. Check status again before taking action.", error);
-    return { ...latest, state: "interrupted", turn: latest?.turn ?? 0, updatedAt: new Date().toISOString(), detail: "Host session process is unavailable. Stop this session to clean up; prompts are never replayed automatically." };
+    throw new SessionUnavailableError("Session status is unavailable; the driver may still be running. Check status again before taking action.", error, latest ?? saved ?? undefined);
   }
 }
 
@@ -217,9 +209,9 @@ export async function stopSession(directory: string): Promise<void> {
   catch (error) {
     saved = await readJson<SessionStatus>(join(directory, "status.json"));
     if (saved && terminal(saved.state) && !saved.cleanupPending) return;
-    if (!socketUnavailable(error) || !driverExited(saved))
+    if (!socketUnavailable(error) || !saved || !terminal(saved.state))
       throw new SessionUnavailableError("Cancellation was not acknowledged; the driver may still be running. Check status before retrying.", error);
-    await cleanupOrphan(directory, record);
+    await retryTerminalCleanup(directory, record, saved);
     return;
   }
   if (!receipt.accepted) throw new Error(receipt.error ?? "session rejected cancellation");
@@ -230,13 +222,12 @@ export async function stopSession(directory: string): Promise<void> {
       if (saved.cleanupPending) throw new Error(saved.detail ?? "Cleanup incomplete; call stopSession again after the driver exits");
       return;
     }
-    if (driverExited(saved)) { await cleanupOrphan(directory, record); return; }
     await new Promise((r) => setTimeout(r, 100));
   }
   throw new SessionUnavailableError("Cancellation was accepted but cleanup is still pending. Check status; the driver retains ownership of cleanup.");
 }
 
-async function cleanupOrphan(directory: string, record: LaunchRecord): Promise<void> {
+async function retryTerminalCleanup(directory: string, record: LaunchRecord, saved: SessionStatus): Promise<void> {
   if (!/^gauge-session-[a-f0-9-]{36}$/.test(record.containerName) ||
       !isAbsolute(record.credentialDir) || !/^gauge-[A-Za-z0-9]+$/.test(basename(record.credentialDir)) ||
       record.socketPath !== join(record.credentialDir, "control.sock"))
@@ -255,18 +246,16 @@ async function cleanupOrphan(directory: string, record: LaunchRecord): Promise<v
     await engine.remove(record.containerName);
     await cleanupGateway(record, directory, engine);
     await rm(record.credentialDir, { recursive: true, force: true });
-    const saved = await readJson<SessionStatus>(join(directory, "status.json"));
     await writeJsonAtomic(join(directory, "status.json"), {
-      ...saved, state: saved && terminal(saved.state) ? saved.state : "interrupted",
-      turn: saved?.turn ?? 0, updatedAt: new Date().toISOString(), question: undefined, cleanupPending: false,
-      detail: saved && terminal(saved.state) && saved.state !== "interrupted" ? saved.detail : "Interrupted session cleaned up explicitly",
+      ...saved,
+      turn: saved.turn, updatedAt: new Date().toISOString(), question: undefined, cleanupPending: false,
+      detail: saved.detail,
       artifacts: workspace ? { ...saved?.artifacts, workspace } : saved?.artifacts,
     });
   } catch (error) {
-    const saved = await readJson<SessionStatus>(join(directory, "status.json"));
     await writeJsonAtomic(join(directory, "status.json"), {
-      ...saved, state: saved && terminal(saved.state) ? saved.state : "interrupted",
-      turn: saved?.turn ?? 0, updatedAt: new Date().toISOString(), cleanupPending: true,
+      ...saved,
+      turn: saved.turn, updatedAt: new Date().toISOString(), cleanupPending: true,
       detail: `Cleanup incomplete: ${String(error)}; retry stopSession after resolving the error`,
     });
     throw error;

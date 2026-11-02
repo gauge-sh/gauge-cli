@@ -1,7 +1,7 @@
 import { existsSync, statSync } from "node:fs";
 import { lstat, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { getSessionStatus, stopSession } from "@withgauge/local-execution";
+import { getSessionStatus, SessionUnavailableError, stopSession } from "@withgauge/local-execution";
 import { CliError } from "./client";
 import { openLocalStore } from "./localStore";
 
@@ -93,7 +93,7 @@ export async function localStatus(
   return Promise.all(
     sessions.map(async (session) => {
       try {
-        const status = await getSessionStatus(session.directory);
+        const status = await getSessionStatus(session.directory, { timeoutMs: 1_000 });
         return {
           id: session.id,
           batchId: session.batchId,
@@ -104,29 +104,30 @@ export async function localStatus(
           stderrLog: stderrLog(session.directory, status.state),
         };
       } catch (error) {
-        if (!existsSync(join(session.directory, "session.json"))) {
-          try {
-            const result = JSON.parse(
-              await readFile(
-                join(session.directory, "..", "result.json"),
-                "utf8",
-              ),
-            );
-            return {
-              id: session.id,
-              batchId: session.batchId,
-              state: result.outcome,
-              turns: result.turns,
-              detail: result.detail,
-              stderrLog: stderrLog(session.directory, result.outcome),
-            };
-          } catch {
-          }
+        try {
+          const result = JSON.parse(
+            await readFile(
+              join(session.directory, "..", "result.json"),
+              "utf8",
+            ),
+          );
+          return {
+            id: session.id,
+            batchId: session.batchId,
+            state: result.outcome,
+            turns: result.turns,
+            detail: result.detail,
+            stderrLog: stderrLog(session.directory, result.outcome),
+          };
+        } catch {
         }
+
         return {
           id: session.id,
           batchId: session.batchId,
           state: "unavailable",
+          lastKnownState: error instanceof SessionUnavailableError ? error.lastKnownStatus?.state : undefined,
+          turns: error instanceof SessionUnavailableError ? error.lastKnownStatus?.turn : undefined,
           detail: String(error),
           stderrLog: undefined,
         };
@@ -216,17 +217,12 @@ export async function localBatchStatus(gaugeDir: string, id: string) {
   const status = JSON.parse(
     await readFile(join(directory, "status.json"), "utf8"),
   );
-  if (
-    status.state === "running" &&
-    Number.isSafeInteger(status.supervisorPid) &&
-    status.supervisorPid > 0
-  ) {
-    try {
-      process.kill(status.supervisorPid, 0);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ESRCH")
-        status.state = "interrupted";
-    }
+  if (status.state === "running" || status.state === "queued") {
+    // Batches have no controller endpoint. A saved PID cannot establish liveness
+    // for a caller in another namespace; retain the recorded progress as history.
+    status.lastKnownState = status.state;
+    status.state = "unavailable";
+    status.detail = "Batch supervisor status is unavailable; showing last recorded progress.";
   }
   return { ...status, cancelRequested: cancellationRequested(directory) };
 }

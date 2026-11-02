@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { join } from "node:path";
@@ -25,10 +26,11 @@ export interface CredentialSources {
   homeDir: string;
   now: Date;
   readFile?: (path: string) => Promise<string | undefined>;
-  readKeychain?: () => Promise<string | undefined>;
+  readKeychain?: (service: string) => Promise<string | undefined>;
 }
 
 const RENEWAL_MARGIN_S = 300;
+const CLAUDE_RENEWS_WITHIN_S = 300;
 
 async function readOptional(path: string): Promise<string | undefined> {
   try {
@@ -39,15 +41,18 @@ async function readOptional(path: string): Promise<string | undefined> {
   }
 }
 
-async function readClaudeKeychain(): Promise<string | undefined> {
+// Mirrors Claude Code's naming: the raw config dir string is hashed, so ~/.claude set explicitly differs from unset.
+export function claudeKeychainService(env: CredentialSources["env"]): string {
+  const secure = env.CLAUDE_SECURESTORAGE_CONFIG_DIR;
+  const dir = secure !== undefined ? secure : env.CLAUDE_CONFIG_DIR;
+  if (!dir) return "Claude Code-credentials";
+  return `Claude Code-credentials-${createHash("sha256").update(dir.normalize("NFC")).digest("hex").slice(0, 8)}`;
+}
+
+async function readClaudeKeychain(service: string): Promise<string | undefined> {
   if (process.platform !== "darwin") return undefined;
   try {
-    const { stdout } = await promisify(execFile)("security", [
-      "find-generic-password",
-      "-s",
-      "Claude Code-credentials",
-      "-w",
-    ]);
+    const { stdout } = await promisify(execFile)("security", ["find-generic-password", "-s", service, "-w"]);
     return stdout;
   } catch {
     return undefined;
@@ -104,7 +109,8 @@ async function claudeLogin(
 ): Promise<{ access: string; expiresAt: Date }> {
   const configDir = src.env.CLAUDE_CONFIG_DIR || join(src.homeDir, ".claude");
   const raw =
-    (await (src.readKeychain ?? readClaudeKeychain)()) ?? (await read(join(configDir, ".credentials.json")));
+    (await (src.readKeychain ?? readClaudeKeychain)(claudeKeychainService(src.env))) ??
+    (await read(join(configDir, ".credentials.json")));
   let login: { accessToken?: unknown; expiresAt?: unknown } | undefined;
   try {
     login = raw ? (JSON.parse(raw) as { claudeAiOauth?: typeof login }).claudeAiOauth : undefined;
@@ -118,11 +124,16 @@ async function claudeLogin(
     );
   const expiresAt = new Date(login.expiresAt);
   const needed = spec.limits.turnTimeoutS + RENEWAL_MARGIN_S;
-  if (expiresAt.getTime() - src.now.getTime() < needed * 1000)
+  const remainingMs = expiresAt.getTime() - src.now.getTime();
+  if (remainingMs < needed * 1000) {
+    const renewableAt = new Date(expiresAt.getTime() - CLAUDE_RENEWS_WITHIN_S * 1000);
     throw new CredentialError(
       `The Claude Code login expires at ${expiresAt.toISOString()}, too soon for a ${spec.limits.turnTimeoutS}s turn.`,
-      "Run `claude -p ok` once on this machine to renew its login.",
+      remainingMs <= CLAUDE_RENEWS_WITHIN_S * 1000
+        ? "Run `claude -p ok` once on this machine to renew its login."
+        : `Claude Code renews its login only in the last ${CLAUDE_RENEWS_WITHIN_S / 60} minutes. After ${renewableAt.toISOString()}, run \`claude -p ok\` and retry. Or run \`claude setup-token\` and export the token as CLAUDE_CODE_OAUTH_TOKEN.`,
     );
+  }
   return { access: login.accessToken, expiresAt };
 }
 

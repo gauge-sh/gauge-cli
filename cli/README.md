@@ -393,7 +393,7 @@ alongside your product:
 ```json
 {
   "version": 2,
-  "org": "my-org",
+  "orgId": "00000000-0000-0000-0000-000000000000",
   "inputs": {
     "cli": {
       "type": "npm-package",
@@ -415,8 +415,9 @@ existing checkout settings, including GitHub's default merge checkout. Omit
 `source.artifact` when the workflow uploads one artifact, or select it by name.
 
 For automatic checks, connect the Gauge GitHub App with repository access and
-Actions read permission. Set `org` and enable the repository and target branches
-in **Settings → GitHub**. Waiting for inputs starts no sessions and spends no
+Actions read permission. Run `gauge orgs use <slug> --project` to record the
+organization as `orgId`, and enable the repository and target branches in
+**Settings → GitHub**. Waiting for inputs starts no sessions and spends no
 session credits.
 Fork pull requests are disabled by default. Check **Allow fork pull requests** to let
 workspace members authorize an evaluation from its GitHub check. Authorization
@@ -638,8 +639,8 @@ do not test discovery of the canonical docs. Static verification validates
 configuration; it does not prove backend support, delivery, or an eval pass.
 
 Editor schemas are published at
-`https://agents.withgauge.com/schemas/gauge/v2.8.0/gauge.json` and
-`https://agents.withgauge.com/schemas/gauge/v2.8.0/case.json`. Associate them in editor
+`https://agents.withgauge.com/schemas/gauge/v2.10.0/gauge.json` and
+`https://agents.withgauge.com/schemas/gauge/v2.10.0/case.json`. Associate them in editor
 settings; `gauge.json` does not accept a `$schema` field. These release URLs are
 immutable. Cases default to `gauge-cases/`, or use explicit `cases` paths.
 
@@ -803,11 +804,27 @@ scenario subset leaves the schedule unchanged.
 ## Issues (hosted)
 
 An issue groups the same finding across many sessions. `gauge issues list` shows
-every issue with the most sessions first, with its type and product. Friction
-shows how badly it hurt agents (blocked, recovered, extra work). Objections come
-from preference sessions and show where agents went instead. Filter with
-`--type friction|objection`. `gauge issues get <id>` lists the issue's
-findings with their runs. `gauge run insight <run>` shows each finding's issue.
+open issues with the most sessions first, with their type, product, and status.
+Friction shows how badly it hurt agents (blocked, recovered, extra work).
+Objections come from preference sessions and show where agents went instead.
+Filter with `--type friction|objection` and `--status open|fixed|muted|all`.
+`gauge issues get <id>` lists the issue's findings with their runs.
+`gauge run insight <run>` shows each finding's issue.
+
+Each issue is open, fixed, or muted. A fixed issue reopens when a later run
+shows it again; a muted one never does.
+
+```sh
+gauge issues fix is_1                  # done; reopens if agents hit it again
+gauge issues mute is_1                 # not relevant; never reopens
+gauge issues reopen is_1               # back to open (also unmutes)
+gauge issues recheck is_1              # preview the past runs it would repeat
+gauge issues recheck is_1 --confirm    # rerun them (spends credits); --run <runId>... picks others
+```
+
+`recheck` (alias `verify`) never prompts: without `--confirm` it only prints
+the preview. `gauge issues get` then shows which reruns still show the issue;
+a recheck never closes it, so mark it fixed with `gauge issues fix`.
 
 ## Optimizations (hosted)
 
@@ -1049,13 +1066,25 @@ unless every session completed.
 Batch cancellation is persisted before workers are contacted, including during
 startup. A pending cancellation returns nonzero; inspect status before retrying.
 
-After an interruption, `gauge cleanup --local` retries cleanup for recorded
-interrupted sessions or sessions with incomplete cleanup in this repository.
+Session status and `gauge watch` probe the host controller with a one-second
+deadline. If it cannot be reached, they report `unavailable` and the last known
+state, without changing the saved outcome. Watch keeps checking and displays
+terminal results when they arrive. Batch supervisors have no status endpoint;
+nonterminal batch status is `unavailable` with `lastKnownState` and recorded
+progress. `run wait` continues waiting for a recorded terminal batch outcome.
+PIDs are not used to infer interruption because coding-agent commands may run in
+different process namespaces even when they share the same Gauge workspace.
+
+`gauge cleanup --local` retries incomplete cleanup for recorded terminal sessions
+in this repository.
 It preserves evidence and recovered work, and makes recovered results visible
 in `gauge run list`. It leaves live sessions, other repositories, unrelated
 containers, and cached images alone. Recovery checks Gauge's container label
 and workspace mount before removing a remaining container. Uncertain worker
 ownership is reported rather than signaling a potentially reused PID.
+If a controller dies abruptly without recording a terminal outcome, status stays
+unavailable and automatic orphan cleanup is unavailable. Preserve the evidence
+and runtime files for manual recovery; `run wait` may need to be interrupted.
 
 Local workers have a 30-minute turn deadline and a 60-second supervisor
 response deadline, so losing a supervisor cannot leave an idle worker forever.

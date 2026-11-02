@@ -58,11 +58,11 @@ if (status.state === "waiting") {
 | Operation | Meaning |
 | --- | --- |
 | `startSession(options)` | Start a detached host driver; it owns container creation and cleanup. Return once the driver is reachable. |
-| `getSessionStatus(directory)` | Read preparing/running/waiting/blocked/terminal status. |
+| `getSessionStatus(directory, { timeoutMs }?)` | Read preparing/running/waiting/blocked/terminal status. The request deadline defaults to 35 seconds. |
 | `sendPrompt(directory, expectedTurn, text)` | Continue the same harness; reject stale or concurrent sends. |
 | `answerQuestion(directory, questionId, answer)` | Deliver a native harness response to a pending request. |
 | `finishSession(directory)` | Finish an idle session, capture its diff, and clean up. |
-| `stopSession(directory)` | Cancel active work or explicitly clean up an interrupted session. |
+| `stopSession(directory)` | Cancel active work or retry cleanup for a recorded terminal session. |
 | `readSessionEventsNdjson(directory)` | Read normalized NDJSON evidence. |
 
 `status.question.request` contains the complete native request envelope, including
@@ -108,17 +108,20 @@ extracts the archive, and stages it using the stock harness's directories/tools.
   Docker arguments/environment. Refresh tokens are stripped. Expiring logins
   must outlive each new turn; the driver stops before expiry and asks for host
   renewal. It does not conduct login flows or automatically renew credentials.
-- If the host driver exits and its socket is unavailable, status becomes `interrupted`. `stopSession` cleans
-  up after stopping the container and preserving its repository in
-  `recovered-workspace/`, reported as `status.artifacts.workspace`. Existing
-  evidence remains available; output emitted after the driver died is not recovered.
-  There is no automatic reconnect, prompt replay, or container restart.
-  Timeouts, invalid replies, and disconnects with an unconfirmed owner raise
-  `SessionUnavailableError`: the driver may still be running, and a command may
-  already have been delivered. Check status before acting. Cancellation timeout
-  leaves cleanup with the driver; it never starts competing cleanup. Orphan
-  cleanup requires the recorded driver PID to have exited. If its PID has been
-  reused, cleanup conservatively refuses to proceed.
+- Status comes from the host driver's control socket or its persisted terminal
+  record. Missing sockets, timeouts, invalid replies, and disconnects without a
+  terminal record raise `SessionUnavailableError`; `lastKnownStatus` contains the
+  saved status when available. PIDs are not liveness evidence: callers launched
+  by coding agents may share files while using separate process namespaces.
+  The driver may still be running, and a command may already have been delivered.
+  Check status before acting; there is no automatic prompt replay or restart.
+  Cancellation timeout leaves cleanup with the driver. If the driver dies
+  abruptly without recording a terminal outcome, automatic orphan cleanup is
+  unavailable; preserve its evidence and runtime files for manual recovery.
+  `stopSession` retries cleanup only for a persisted terminal session with
+  `cleanupPending: true`, after its socket is missing or refuses the connection.
+  Recovery validates container ownership and preserves the repository in
+  `recovered-workspace/`, reported as `status.artifacts.workspace`.
 - `finishSession` acknowledges the request; wait for terminal status to obtain
   results. Cancellation captures a best-effort partial diff; active writes may
   race that capture. Completed idle sessions have a stable final diff.

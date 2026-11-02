@@ -10,6 +10,7 @@ import {
   cleanupLocal,
   localSessions,
   localStatus,
+  localBatchStatus,
 } from "./localLifecycle";
 
 test("batch cancellation is durable before any worker exists; unsafe IDs are refused", async (t) => {
@@ -24,6 +25,23 @@ test("batch cancellation is durable before any worker exists; unsafe IDs are ref
   );
   await assert.rejects(cancelLocal(root, {}), /run ID or/);
   await assert.rejects(cancelLocal(root, { id: "missing" }), /not found/);
+});
+
+test("batch status preserves last recorded progress without inferring liveness from a PID", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "lifecycle-unit-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const directory = batchDirectory(root, "b_one");
+  await mkdir(directory, { recursive: true });
+  for (const supervisorPid of [process.pid, 2 ** 30, undefined]) {
+    const saved = { state: "running", supervisorPid, expectedSessions: 3, finishedSessions: 1 };
+    await writeFile(join(directory, "status.json"), JSON.stringify(saved));
+    const status = await localBatchStatus(root, "b_one");
+    assert.equal(status.state, "unavailable");
+    assert.equal(status.lastKnownState, "running");
+    assert.equal(status.finishedSessions, 1);
+  }
+  await writeFile(join(directory, "status.json"), JSON.stringify({ state: "completed" }));
+  assert.equal((await localBatchStatus(root, "b_one")).state, "completed");
 });
 
 test("discovery ignores linked runs and malformed records; failed preparation stays visible", async (t) => {

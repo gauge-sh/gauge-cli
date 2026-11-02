@@ -37,6 +37,7 @@ import * as tags from "./commands/tags";
 import * as telemetry from "./commands/telemetry";
 import * as update from "./commands/update";
 import * as usage from "./commands/usage";
+import * as watch from "./commands/watch";
 import {
   commandPath,
   type ErrorContext,
@@ -105,6 +106,7 @@ for (const group of [
   models,
   localProfiles,
   run,
+  watch,
   evalCommand,
   preference,
   personas,

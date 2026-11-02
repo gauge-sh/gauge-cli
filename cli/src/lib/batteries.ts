@@ -179,7 +179,7 @@ export async function applySpec(
   command: Command,
   spec: batteries.BatterySpec,
   opts: { dryRun?: boolean; requireExperiment?: string },
-): Promise<void> {
+): Promise<BatteryPlan | BatteryApplyResponse> {
   if (opts.requireExperiment !== undefined)
     assertRequiredExperiment(spec, opts.requireExperiment);
   const org = await resolveApplyOrg(command, spec);
@@ -191,4 +191,5 @@ export async function applySpec(
   if (resolveOutput(command) === "json") printJson(result);
   else if (opts.dryRun) printPlan(result as BatteryPlan);
   else printApplied(result as BatteryApplyResponse);
+  return result;
 }

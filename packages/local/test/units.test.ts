@@ -1,8 +1,9 @@
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { CredentialError, resolveSessionCredential } from "../src/credentials.js";
+import { claudeKeychainService, CredentialError, resolveSessionCredential } from "../src/credentials.js";
 import { spec } from "./fakes.js";
 
 const jwt = (exp: number) =>
@@ -51,10 +52,29 @@ describe("credentials", () => {
       expect(cred.files[0]!.contents).toBe("at");
     });
 
+    it("reads the Keychain item Claude Code uses for its config dir", async () => {
+      expect(claudeKeychainService({})).toBe("Claude Code-credentials");
+      expect(claudeKeychainService({ CLAUDE_CONFIG_DIR: "/Users/a/.claude-accounts/secondary" })).toBe(
+        `Claude Code-credentials-${createHash("sha256").update("/Users/a/.claude-accounts/secondary").digest("hex").slice(0, 8)}`,
+      );
+      expect(claudeKeychainService({ CLAUDE_CONFIG_DIR: "/x", CLAUDE_SECURESTORAGE_CONFIG_DIR: "" })).toBe("Claude Code-credentials");
+      const services: string[] = [];
+      await resolveSessionCredential(claude, {
+        env: { CLAUDE_CONFIG_DIR: "/x" },
+        homeDir: "/h",
+        now,
+        readKeychain: async (service) => (services.push(service), login(8 * 3600)),
+      });
+      expect(services).toEqual([claudeKeychainService({ CLAUDE_CONFIG_DIR: "/x" })]);
+    });
+
     it("rejects a login that expires before the turn ends, or no login", async () => {
       await expect(
         resolveSessionCredential(claude, { env: {}, homeDir: "/h", now, readKeychain: async () => login(600) }),
-      ).rejects.toMatchObject({ remedy: expect.stringContaining("claude -p ok") });
+      ).rejects.toMatchObject({ remedy: expect.stringMatching(/only in the last 5 minutes.*claude setup-token/) });
+      await expect(
+        resolveSessionCredential(claude, { env: {}, homeDir: "/h", now, readKeychain: async () => login(120) }),
+      ).rejects.toMatchObject({ remedy: "Run `claude -p ok` once on this machine to renew its login." });
       await expect(
         resolveSessionCredential(claude, { env: {}, homeDir: "/h", now, readKeychain: none, readFile: none }),
       ).rejects.toMatchObject({ message: expect.stringContaining("No Claude Code login") });

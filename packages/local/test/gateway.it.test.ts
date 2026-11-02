@@ -24,7 +24,7 @@ async function session(test: (directory: string, launch: LaunchRecord) => Promis
     await startSession({ directory, runtimeDirectory: tmpdir(), spec: spec({ image: "gauge-session-fixture:test", workspace: null, prompt: { text: "HANG" }, gateway, ...overrides }), credentials: { env: { CLAUDE_CODE_OAUTH_TOKEN: "fixture-only" }, homeDir: root } });
     await test(directory, JSON.parse(await readFile(join(directory, "session.json"), "utf8")));
   } finally {
-    await stopSession(directory);
+    await stopSession(directory).catch(() => {});
     await rm(root, { recursive: true, force: true });
   }
 }
@@ -98,14 +98,19 @@ describe.skipIf(process.env.GAUGE_DOCKER_FIXTURES !== "1")("transparent gateway 
       try { docker("rm", "-f", name); } finally { await rm(root, { recursive: true, force: true }); }
     }
   });
-  it("explicit orphan cleanup removes gateway and workload without replay", { timeout: 60_000 }, () => session(async (directory, launch) => {
+  it("does not remove gateway or workload when controller status is unavailable", { timeout: 60_000 }, () => session(async (directory, launch) => {
     const status = await wait(directory, "running");
-    process.kill(status.driverPid!, "SIGKILL");
-    await sleep(200);
-    expect((await getSessionStatus(directory)).state).toBe("interrupted");
-    await stopSession(directory);
-    await stopSession(directory);
-    absent(launch);
+    try {
+      process.kill(status.driverPid!, "SIGKILL");
+      await sleep(200);
+      await expect(getSessionStatus(directory)).rejects.toMatchObject({ name: "SessionUnavailableError" });
+      await expect(stopSession(directory)).rejects.toMatchObject({ name: "SessionUnavailableError" });
+      for (const name of [launch.containerName, launch.gatewayName!])
+        expect(docker("inspect", "--format", "{{.Name}}", name)).toBe(`/${name}`);
+    } finally {
+      for (const name of [launch.containerName, launch.trustContainerName!, launch.gatewayName!]) docker("rm", "-f", name);
+      await rm(launch.credentialDir, { recursive: true, force: true });
+    }
   }));
   it("cancellation during preparation leaves no companion containers", { timeout: 60_000 }, () => session(async (directory, launch) => {
     await stopSession(directory);

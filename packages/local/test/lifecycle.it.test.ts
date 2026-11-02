@@ -73,27 +73,21 @@ describe.skipIf(!enabled)("host owner lifecycle in real Docker, without inferenc
     await Promise.all([stopSession(dir), stopSession(dir)]);
     expect(await getSessionStatus(dir)).toMatchObject({ state: "canceled" }); absent(launch);
   }));
-  it("reports a lost host owner as interrupted and cleans up without restarting", { timeout: 30_000 }, () => fixture({}, async (dir, launch) => {
+  it("reports a lost host owner as unavailable without cleanup or replay", { timeout: 30_000 }, () => fixture({}, async (dir, launch) => {
     const status = await wait(dir, "waiting");
     const evidence = await readFile(join(dir, "events.ndjson"), "utf8");
-    const binary = Buffer.from([0, 255, 1, 128]);
-    await writeFile(join(launch.credentialDir, "workspace/workspace/untracked.bin"), binary);
-    process.kill(status.driverPid!, "SIGKILL"); await sleep(100);
-    expect(await getSessionStatus(dir)).toMatchObject({ state: "interrupted" });
-    await writeFile(join(dir, "recovered-workspace"), "collision");
-    await expect(stopSession(dir)).rejects.toThrow("Expected a directory");
-    expect(await readFile(join(launch.credentialDir, "workspace/workspace/hello.txt"), "utf8")).toBe("hi\n");
-    await rm(join(dir, "recovered-workspace"));
-    await stopSession(dir); absent(launch);
-    expect(await getSessionStatus(dir)).toMatchObject({ state: "interrupted", artifacts: { workspace: "recovered-workspace" } });
-    expect(await readFile(join(dir, "recovered-workspace/hello.txt"), "utf8")).toBe("hi\n");
-    expect(await readFile(join(dir, "recovered-workspace/untracked.bin"))).toEqual(binary);
-    expect((await lstat(join(dir, "recovered-workspace/.git"))).isDirectory()).toBe(true);
-    expect(await readFile(join(dir, "events.ndjson"), "utf8")).toBe(evidence);
-    await expect(lstat(launch.credentialDir)).rejects.toMatchObject({ code: "ENOENT" });
-    await expect(lstat(join(dir, "recovered-workspace/home"))).rejects.toMatchObject({ code: "ENOENT" });
-    await stopSession(dir);
-    expect(await getSessionStatus(dir)).toMatchObject({ state: "interrupted", artifacts: { workspace: "recovered-workspace" } });
+    try {
+      process.kill(status.driverPid!, "SIGKILL"); await sleep(100);
+      await expect(getSessionStatus(dir)).rejects.toMatchObject({ name: "SessionUnavailableError", lastKnownStatus: { state: "waiting" } });
+      await expect(stopSession(dir)).rejects.toMatchObject({ name: "SessionUnavailableError" });
+      expect(await readFile(join(dir, "events.ndjson"), "utf8")).toBe(evidence);
+      expect(await readFile(join(launch.credentialDir, "workspace/workspace/hello.txt"), "utf8")).toBe("hi\n");
+      expect(execFileSync("docker", ["inspect", "--format", "{{.Name}}", launch.containerName], { encoding: "utf8" }).trim()).toBe(`/${launch.containerName}`);
+    } finally {
+      // The test owns this killed fixture; production cannot infer owner death from a PID.
+      execFileSync("docker", ["rm", "-f", launch.containerName]);
+      await rm(launch.credentialDir, { recursive: true, force: true });
+    }
   }));
   it("preserves working files when final diff capture fails", { timeout: 30_000 }, () => fixture({}, async (dir, launch) => {
     await wait(dir, "waiting");
