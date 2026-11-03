@@ -1,3 +1,4 @@
+import type { CliRuleAuthorInput } from "@withgauge/api-schemas/cli-rules";
 import {
   isLocal,
   createLocalMeasurement,
@@ -275,11 +276,13 @@ export async function runEvalSet(
     yes?: boolean;
     agent: string[];
     samples?: string;
+    cliRules?: CliRuleAuthorInput;
   },
 ): Promise<evals.RunEvalSetResponse> {
   const org = await resolveOrg(cmd);
   const overrides = {
     ...runOverridesFromOpts(opts),
+    ...(opts.cliRules ? { cliRules: opts.cliRules } : {}),
     ...(hasLifecycleFlags(opts)
       ? lifecyclePatchFromOpts(
           opts,

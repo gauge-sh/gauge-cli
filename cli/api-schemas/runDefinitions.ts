@@ -1,3 +1,4 @@
+import { cliRuleAuthorInputSchema } from "./cli-rules";
 import { z } from "zod";
 import { lifecycleSchema } from "./lifecycle";
 import { preferenceDefinitionSchema } from "./preference";
@@ -141,6 +142,7 @@ export const runDefinitionSubmissionSchema = z
   .object({
     version: z.literal(2),
     lifecycle: lifecycleSchema.nullish(),
+    cliRules: cliRuleAuthorInputSchema.optional(),
     source: z
       .object({
         repoUrl: uncredentialedRepoUrlSchema.nullable(),
@@ -161,6 +163,15 @@ export const runDefinitionSubmissionSchema = z
   })
   .strict()
   .superRefine((definition, ctx) => {
+    if (
+      definition.source.verification === "GITHUB_VERIFIED" &&
+      definition.cliRules !== undefined
+    )
+      ctx.addIssue({
+        code: "custom",
+        path: ["cliRules"],
+        message: "GitHub definitions cannot contain launch-only CLI rules",
+      });
     if (
       definition.source.verification === "GITHUB_VERIFIED" &&
       definition.lifecycle !== undefined
@@ -241,6 +252,12 @@ export const runDefinitionPublicSubmissionSchema =
   );
 
 export const runDefinitionPlanResponseSchema = z.object({
+  cliRules: z
+    .object({
+      ruleCount: z.number().int().positive(),
+      bundleSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    })
+    .optional(),
   source: runDefinitionSubmissionSchema.shape.source,
   lifecycle: z
     .object({

@@ -1,3 +1,4 @@
+import { readCliRules } from "../lib/cliRules";
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { z } from "zod";
 import { analysisSubmissionSchema } from "@withgauge/api-schemas/sessionAnalysis";
@@ -447,6 +448,7 @@ async function streamRun(
 }
 
 type LaunchOpts = LifecycleOpts & {
+  cliRules?: string;
   prompt?: string;
   profile?: string;
   eval?: string;
@@ -474,6 +476,7 @@ async function loadWorkingTree(
   opts: LaunchOpts,
   upload: boolean,
   spec?: CaseSpec,
+  cliRules?: ReturnType<typeof readCliRules>,
 ): Promise<{
   definition: runDefinitions.RunDefinitionSubmission;
   org: string;
@@ -493,7 +496,11 @@ async function loadWorkingTree(
     if (upload) await confirmOrAbort("Run these cases now?", opts.yes);
     await uploadLocalInputs(createClient(), org, loaded.uploads);
     return {
-      definition: { ...loaded.definition, ...lifecycle },
+      definition: {
+        ...loaded.definition,
+        ...lifecycle,
+        ...(cliRules ? { cliRules } : {}),
+      },
       org,
       inputSnapshots: loaded.inputSnapshots,
       unattachedInputs: loaded.unattachedInputs,
@@ -513,8 +520,14 @@ function printPlan(
     `Definition: ${result.source.verification === "LOCAL" ? "current files" : result.source.commit}`,
   );
   console.log(`Expected sessions: ${result.expectedRuns}`);
+  if (result.cliRules)
+    console.log(
+      `CLI rules: ${result.cliRules.ruleCount} (this launch only; sha256:${result.cliRules.bundleSha256})`,
+    );
   if (result.lifecycle?.setupTimeoutSeconds !== undefined)
-    console.log(`Setup hook: ${result.lifecycle.setupTimeoutSeconds}s deadline`);
+    console.log(
+      `Setup hook: ${result.lifecycle.setupTimeoutSeconds}s deadline`,
+    );
   if (result.lifecycle?.teardownTimeoutSeconds !== undefined)
     console.log(
       `Teardown hook: ${result.lifecycle.teardownTimeoutSeconds}s deadline`,
@@ -606,6 +619,20 @@ function promptSpec(prompt: string, agents: string[]): CaseSpec {
 }
 
 async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
+  if (opts.cliRules !== undefined) {
+    if (gaugeState(cmd).mode !== "hosted")
+      throw new CliError(
+        "usage",
+        "--cli-rules requires hosted Gauge; pass --hosted.",
+      );
+    if (opts.schema || opts.example || opts.verify)
+      throw new CliError(
+        "usage",
+        "--cli-rules applies to a launch or --dry-run, not --schema, --example, or --verify.",
+      );
+  }
+  const cliRules =
+    opts.cliRules === undefined ? undefined : readCliRules(opts.cliRules);
   if (opts.profile && gaugeState(cmd).mode !== "local")
     throw new CliError(
       "usage",
@@ -625,7 +652,9 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
         "Lifecycle hooks require hosted Gauge; pass --hosted.",
       );
     if (
-      (source !== "a prompt" && source !== "--eval" && source !== "--preference") ||
+      (source !== "a prompt" &&
+        source !== "--eval" &&
+        source !== "--preference") ||
       opts.apply !== undefined ||
       opts.schema ||
       opts.example ||
@@ -718,6 +747,11 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
   if (opts.apply !== undefined) {
     const json = await readSpecJson(opts.apply);
     if (!isCaseSpec(json)) {
+      if (cliRules)
+        throw new CliError(
+          "usage",
+          "--cli-rules does not apply to battery specs; use a case spec, prompt, --eval, or --preference.",
+        );
       if (gaugeState(cmd).mode === "local")
         throw new CliError(
           "usage",
@@ -769,13 +803,16 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
   if (opts.eval !== undefined || opts.preference !== undefined)
     requireHosted(cmd);
   if (opts.eval !== undefined) {
-    const result = await runEvalSet(cmd, opts.eval, opts);
+    const result = await runEvalSet(cmd, opts.eval, { ...opts, cliRules });
     if (result.runIds.length > 0 || result.runRequestId)
       console.error(RUN_PRESENTATION_REMINDER);
     return;
   }
   if (opts.preference !== undefined) {
-    const result = await runPreferencePrompt(cmd, opts.preference, opts);
+    const result = await runPreferencePrompt(cmd, opts.preference, {
+      ...opts,
+      cliRules,
+    });
     if (result.runIds.length > 0) console.error(RUN_PRESENTATION_REMINDER);
     return;
   }
@@ -785,7 +822,7 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
     return;
   }
   const { definition, org, inputSnapshots, unattachedInputs } =
-    await loadWorkingTree(cmd, opts, !opts.dryRun, spec);
+    await loadWorkingTree(cmd, opts, !opts.dryRun, spec, cliRules);
   const orgPath = `/api/v1/orgs/${encodeURIComponent(org)}/run-definitions`;
   if (opts.dryRun) {
     const result =
@@ -1053,7 +1090,9 @@ async function waitForLocalBatch(
         throw new CliError("not_found", "Local batch not found");
       throw error;
     }
-    const settled = ["completed", "canceled", "failed", "interrupted"].includes(batch.state);
+    const settled = ["completed", "canceled", "failed", "interrupted"].includes(
+      batch.state,
+    );
     if (!json && !settled && batch.finishedSessions !== lastFinished) {
       console.error(
         `Batch ${batchId}: ${batch.finishedSessions ?? 0}/${batch.expectedSessions} finished`,
@@ -1103,6 +1142,11 @@ export function register(program: Command): void {
     )
     .argument("[prompt]")
     .usage('[options] ["<prompt>"]')
+    .option(
+      "--cli-rules <file>",
+      "JSON CLI rules for this hosted launch only (schema v3/v4)",
+      once("--cli-rules"),
+    )
     .option(
       "--eval <id>",
       "run a saved eval set (see `gauge eval`)",

@@ -148,6 +148,30 @@ export const cliRuleOperationSchema = z.discriminatedUnion("kind", [
   z
     .object({
       id,
+      kind: z.literal("stub"),
+      stdout: literal,
+      stderr: literal,
+      exitCode: z.number().int().min(0).max(255),
+    })
+    .strict(),
+  z
+    .object({
+      id,
+      kind: z.literal("exec"),
+      argv: z
+        .array(arg)
+        .min(1)
+        .max(CLI_RULE_LIMITS.arguments)
+        .refine(
+          (argv) =>
+            argv[0]?.startsWith("/") && !argv[0].split("/").includes(".."),
+          "Use an absolute executable path without traversal",
+        ),
+    })
+    .strict(),
+  z
+    .object({
+      id,
       kind: z.literal("replaceOutput"),
       stream,
       exit,
@@ -303,6 +327,14 @@ export const cliRuleSchema = z
           `Exact rules with argument edits must parse their argv (${parsed.reason}); declare each option's arity and supply its required value`,
         );
     }
+    if (
+      rule.operations.some((op) => op.kind === "stub" || op.kind === "exec") &&
+      rule.operations.length !== 1
+    )
+      fail(
+        ["operations"],
+        "A stub or exec must be the only operation in its rule",
+      );
     const ids = new Set<string>();
     const outputs = new Map<
       string,
@@ -365,7 +397,7 @@ export const cliRuleSchema = z
 export type CliRule = z.infer<typeof cliRuleSchema>;
 
 const body = {
-  schemaVersion: z.literal(3),
+  schemaVersion: z.union([z.literal(3), z.literal(4)]),
   target: cliRuleTargetSchema,
   rules: z.array(cliRuleSchema).min(1).max(CLI_RULE_LIMITS.rules),
   shippingIntent: z.enum([
@@ -390,7 +422,21 @@ function jsonTokenCount(value: unknown): number {
   return 1;
 }
 
-function validateBundle(value: { rules: CliRule[] }, ctx: z.RefinementCtx) {
+function validateBundle(
+  value: { schemaVersion: 3 | 4; rules: CliRule[] },
+  ctx: z.RefinementCtx,
+) {
+  if (
+    value.schemaVersion === 3 &&
+    value.rules.some((rule) =>
+      rule.operations.some((op) => op.kind === "stub" || op.kind === "exec"),
+    )
+  )
+    ctx.addIssue({
+      code: "custom",
+      path: ["schemaVersion"],
+      message: "Command replacements require schemaVersion 4",
+    });
   if (new Set(value.rules.map((rule) => rule.id)).size !== value.rules.length)
     ctx.addIssue({
       code: "custom",
@@ -462,7 +508,8 @@ export const CLI_RULE_GUIDANCE = [
   "For root help with globals: selector with exact empty positionals and optionsPresent ['--help'], plus rule optionArity {'--help':0,'--org':1}. This handles --org acme --help and --org=acme --help, but not optimizations --help or --version.",
   "Rules run in order against original arguments. First match wins, even if its edits do nothing, fail, or skip on exit. An exact --help rule before the broader help rule wins their overlap.",
   "Empty positional prefix with no option predicates explicitly matches every call of the selected CLI, without parsing options; usually put it last.",
-  "Combine output, arguments, environment, and at most one structured stdin replacement. The real CLI still runs and decides whether inputs are valid. Stdin replacement declines caller input and can break an upstream pipe.",
-  "Prompt recipes, generated-file edits, SDK/import interception, and package rebuilds are outside this intervention. Printed output changes do not change SDK error objects or application control flow.",
+  "For schemaVersion 4, use stub (literal stdout, stderr, exitCode) or exec (complete literal argv with an absolute executable path) as the only operation in a rule. These skip the original program. Replacement scripts must already exist in the session; exec inherits cwd, environment and stdin. Descendant commands are still intercepted. Matched replacement failures never fall back to the original.",
+  "For transformations, combine output, arguments, environment, and at most one structured stdin replacement. The real CLI still runs and decides whether inputs are valid. Stdin replacement declines caller input and can break an upstream pipe.",
+  "These rules do not stage files, rebuild packages, or intercept SDK imports. Output transformations only change printed bytes. An exec replacement can perform its own work using files already in the session.",
   "Review delivered before/after evidence and task results. Humans decide what to ship; delivery and score improvements are separate.",
 ] as const;

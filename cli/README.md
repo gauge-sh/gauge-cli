@@ -754,6 +754,13 @@ gauge eval edit <evalId> --hosted --clear-lifecycle   # remove both and params
 Clearing the last script also removes its parameter object. Each new run freezes
 the uploaded configuration; editing it does not change existing sessions.
 
+For CLI stubs and redirects, use `gauge run --hosted --cli-rules rules.json`
+with a prompt, saved eval/preference, or case files/spec. Rules apply only to
+that launch; they require no optimization or previous session. They leave
+saved settings and the fixture repository unchanged. Local runs and legacy
+battery specs are unsupported. Read `gauge instructions cli-rules --hosted`
+for a complete v4 stub example, discovery guidance, and matching limits.
+
 For a one-off prompt, attach scripts directly without creating a saved eval or
 preference prompt:
 
