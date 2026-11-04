@@ -1,3 +1,4 @@
+import { cliRuleAuthorInputSchema } from "@withgauge/api-schemas/cli-rules";
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { SMALL_DOG_LOGO } from "../lib/logo";
@@ -19,7 +20,12 @@ async function gauge(
   t: TestContext,
   args: string[],
   response: unknown | ((request: RecordedRequest) => unknown),
-): Promise<{ requests: RecordedRequest[]; output: string[]; notices: string[]; error?: unknown }> {
+): Promise<{
+  requests: RecordedRequest[];
+  output: string[];
+  notices: string[];
+  error?: unknown;
+}> {
   const oldToken = process.env.GAUGE_API_TOKEN;
   const oldUrl = process.env.GAUGE_API_URL;
   process.env.GAUGE_API_TOKEN = "gauge_test";
@@ -36,7 +42,9 @@ async function gauge(
   t.mock.method(console, "log", (...args: unknown[]) =>
     output.push(args.join(" ")),
   );
-  t.mock.method(console, "error", (chunk: unknown) => notices.push(String(chunk)));
+  t.mock.method(console, "error", (chunk: unknown) =>
+    notices.push(String(chunk)),
+  );
   t.mock.method(
     globalThis,
     "fetch",
@@ -107,12 +115,16 @@ it("sends one-launch overrides with --eval", async (t) => {
     1,
     "ordinary launches must not fetch saved hooks",
   );
-  assert.deepEqual(output.map((chunk) => JSON.parse(String(chunk))), [
-    { batchIds: ["b1"], runIds: ["r1"] },
-  ]);
+  assert.deepEqual(
+    output.map((chunk) => JSON.parse(String(chunk))),
+    [{ batchIds: ["b1"], runIds: ["r1"] }],
+  );
   assert.equal(notices.length, 1);
   assert.ok(notices[0].includes(SMALL_DOG_LOGO));
-  assert.match(notices[0], /"Watch running sessions" link immediately to its right/);
+  assert.match(
+    notices[0],
+    /"Watch running sessions" link immediately to its right/,
+  );
   assert.match(notices[0], /gauge watch/);
 });
 
@@ -149,11 +161,41 @@ it("reminds for a launched preference prompt", async (t) => {
 });
 
 for (const scenario of [
-  { name: "configuration-only apply", expand: false, dryRun: false, runIds: [], reminder: false },
-  { name: "blocked expansion", expand: true, dryRun: false, runIds: [], reminder: false },
-  { name: "successful expansion", expand: true, dryRun: false, runIds: ["r1"], reminder: true },
-  { name: "partially blocked expansion", expand: true, dryRun: false, runIds: ["r1"], reminder: true },
-  { name: "battery preview", expand: true, dryRun: true, runIds: [], reminder: false },
+  {
+    name: "configuration-only apply",
+    expand: false,
+    dryRun: false,
+    runIds: [],
+    reminder: false,
+  },
+  {
+    name: "blocked expansion",
+    expand: true,
+    dryRun: false,
+    runIds: [],
+    reminder: false,
+  },
+  {
+    name: "successful expansion",
+    expand: true,
+    dryRun: false,
+    runIds: ["r1"],
+    reminder: true,
+  },
+  {
+    name: "partially blocked expansion",
+    expand: true,
+    dryRun: false,
+    runIds: ["r1"],
+    reminder: true,
+  },
+  {
+    name: "battery preview",
+    expand: true,
+    dryRun: true,
+    runIds: [],
+    reminder: false,
+  },
 ]) {
   it(`handles the launch reminder for a ${scenario.name}`, async (t) => {
     const directory = await mkdtemp(join(tmpdir(), "gauge-launch-reminder-"));
@@ -192,11 +234,17 @@ for (const scenario of [
 it("does not add launch reminders to examples", async (t) => {
   const example = await gauge(t, ["run", "--example"], {});
   assert.equal(example.error, undefined);
-  assert.ok(example.notices.every((notice) => !notice.includes(SMALL_DOG_LOGO)));
+  assert.ok(
+    example.notices.every((notice) => !notice.includes(SMALL_DOG_LOGO)),
+  );
 });
 
 it("does not add launch reminders to failed launches", async (t) => {
-  const failed = await gauge(t, ["run", "--eval", "e1", "--agent", "unknown", "--yes"], {});
+  const failed = await gauge(
+    t,
+    ["run", "--eval", "e1", "--agent", "unknown", "--yes"],
+    {},
+  );
   assert.ok(failed.error);
   assert.equal(failed.requests.length, 0);
   assert.deepEqual(failed.notices, []);
@@ -661,4 +709,155 @@ it("rejects --batch for hosted wait", async (t) => {
   );
   assert.match(String(error), /--batch is local only/);
   assert.equal(requests.length, 0);
+});
+
+const cliRulesFixture = cliRuleAuthorInputSchema.parse({
+  schemaVersion: 4,
+  target: { kind: "npmBin", packageName: "@example/cli", program: "example" },
+  shippingIntent: "interaction",
+  rules: [
+    {
+      id: "token",
+      selector: { kind: "exact", argv: ["token", "create"] },
+      operations: [
+        {
+          id: "fake-token",
+          kind: "stub",
+          stdout: "test-token\n",
+          stderr: "",
+          exitCode: 0,
+        },
+      ],
+    },
+  ],
+});
+
+for (const flag of ["--eval", "--preference"]) {
+  it(`sends validated CLI rules for ${flag} without changing saved settings`, async (t) => {
+    const path = scriptFile(t, JSON.stringify(cliRulesFixture));
+    const result = await gauge(
+      t,
+      ["run", flag, "saved1", "--cli-rules", path, "--yes"],
+      { batchIds: [], runIds: [] },
+    );
+    assert.equal(result.error, undefined);
+    assert.equal(result.requests.length, 1);
+    assert.equal(result.requests[0].method, "POST");
+    assert.deepEqual(result.requests[0].body, { cliRules: cliRulesFixture });
+    const schema =
+      flag === "--eval" ? runEvalBodySchema : runVisibilityBodySchema;
+    assert.deepEqual(
+      schema.parse(result.requests[0].body).cliRules,
+      cliRulesFixture,
+    );
+  });
+}
+for (const source of ["prompt", "cases", "files"]) {
+  for (const dryRun of [true, false]) {
+    it(`${dryRun ? "previews" : "launches"} ${source} with per-launch CLI rules`, async (t) => {
+      promptDirectory(t);
+      const rules = scriptFile(t, JSON.stringify(cliRulesFixture));
+      const cases = scriptFile(
+        t,
+        JSON.stringify({
+          version: 2,
+          cases: [
+            {
+              key: "task",
+              prompt: "Create a token",
+              preference: { kind: "open-ended" },
+              config: { agents: [{ agent: "CODEX_CLI" }] },
+            },
+          ],
+        }),
+      );
+      const markdown = join(process.cwd(), "task.md");
+      writeFileSync(
+        markdown,
+        "---\npreference:\n  kind: open-ended\nconfig:\n  agents:\n    - agent: CODEX_CLI\n---\nCreate a token",
+      );
+      const args =
+        source === "prompt"
+          ? ["Create a token"]
+          : source === "cases"
+            ? ["--apply", cases]
+            : ["--files", markdown];
+      const result = await gauge(
+        t,
+        [
+          "run",
+          ...args,
+          "--cli-rules",
+          rules,
+          ...(dryRun ? ["--dry-run"] : ["--yes"]),
+        ],
+        {},
+      );
+      assert.equal(result.error, undefined);
+      assert.equal(result.requests.length, 1);
+      assert.match(
+        result.requests[0].url,
+        new RegExp(`/run-definitions/${dryRun ? "plan" : "run"}$`),
+      );
+      const body = runDefinitionSubmissionSchema.parse(result.requests[0].body);
+      assert.deepEqual(body.cliRules, cliRulesFixture);
+      assert.equal(body.cases.length, 1);
+      assert.equal("cliRules" in body.cases[0].config, false);
+    });
+  }
+}
+for (const args of [
+  ["--local", "--eval", "e1"],
+  ["--verify"],
+  ["--schema"],
+  ["--example"],
+]) {
+  it(`rejects unsupported CLI rules with ${args.join(" ")} before reading files or calling the API`, async (t) => {
+    const result = await gauge(
+      t,
+      ["run", ...args, "--cli-rules", "/does-not-exist"],
+      {},
+    );
+    assert.match(
+      String(result.error),
+      /--cli-rules (requires hosted|applies to a launch)/,
+    );
+    assert.equal(result.requests.length, 0);
+  });
+}
+for (const contents of [
+  "not json",
+  JSON.stringify({ ...cliRulesFixture, schemaVersion: 3 }),
+  JSON.stringify({ ...cliRulesFixture, unexpected: true }),
+]) {
+  it("rejects invalid CLI rules before API work", async (t) => {
+    const path = scriptFile(t, contents);
+    const result = await gauge(
+      t,
+      ["run", "--eval", "e1", "--cli-rules", path, "--yes"],
+      {},
+    );
+    assert.match(String(result.error), /Invalid --cli-rules/);
+    assert.equal(result.requests.length, 0);
+  });
+}
+it("rejects CLI rules on legacy battery specs before applying them", async (t) => {
+  const rules = scriptFile(t, JSON.stringify(cliRulesFixture));
+  const battery = scriptFile(t, JSON.stringify({ prompts: [] }));
+  const result = await gauge(
+    t,
+    ["run", "--apply", battery, "--cli-rules", rules, "--yes"],
+    {},
+  );
+  assert.match(String(result.error), /does not apply to battery specs/);
+  assert.equal(result.requests.length, 0);
+});
+it("refuses stdin for CLI rules to avoid consuming an --apply stream", async (t) => {
+  const result = await gauge(
+    t,
+    ["run", "--apply", "-", "--cli-rules", "-"],
+    {},
+  );
+  assert.match(String(result.error), /expects a JSON file path/);
+  assert.equal(result.requests.length, 0);
 });

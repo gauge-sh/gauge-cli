@@ -1,4 +1,5 @@
 import { CliError } from "../lib/client";
+import { CLI_RULES } from "./cliRules";
 import { type GaugeState, header, instructionMode } from "../lib/gaugeState";
 import { EVAL } from "./eval";
 import { INIT, INIT_LOCAL } from "./init";
@@ -32,6 +33,7 @@ const MODES = `## Local or hosted
 | Structured findings and queries | yes, supported fields | yes |
 | Personas, recurring schedules, PR checks | no | yes |
 | Optimizations (edit and rerun sessions) | no | yes |
+| Per-launch CLI rules (stubs and redirects) | no | yes |
 | Stored credentials, stats, org settings | no | yes |
 
 Local uses Docker and agent credentials. Hosted needs a Gauge account (\`gauge onboard\`) and uses credits.
@@ -216,9 +218,9 @@ cannot ship. Tree keys are page:<url>, skill:<name>, and cli:<package>.
     gauge optimizations notes <id> --from notes.md  # diagnosis, plan, each launch's result
 
 Copy find text from --query; check how much of the page each edit kept. Use
-file write --page only for a new page or a full rewrite. Skills need SKILL.md;
-CLI rules are {schemaVersion: 3, target, rules, shippingIntent}. Files not in
-the tree rerun as the source session had them.
+file write --page only for a new page or a full rewrite. Skills need SKILL.md.
+For CLI rules, read \`gauge instructions cli-rules --hosted\`.
+Files not in the tree rerun as the source session had them.
 
 ## Rerun and compare
 
@@ -245,6 +247,7 @@ export const TOPICS: Record<string, Topic> = {
   hillclimb: { name: "gauge-hillclimb", hosted: HILLCLIMB, shared: true },
   run: { name: "gauge-run", hosted: RUN, local: RUN_LOCAL, command: "run" },
   lifecycle: { name: "gauge-lifecycle", hosted: LIFECYCLE },
+  "cli-rules": { name: "gauge-cli-rules", hosted: CLI_RULES },
   eval: { name: "gauge-eval", hosted: EVAL, shared: true, command: "eval" },
   preference: {
     name: "gauge-preference",

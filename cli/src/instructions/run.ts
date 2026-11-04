@@ -31,6 +31,7 @@ ${AUTHORING}
 - For authenticated MCP access, use \`gauge mcp add --hosted --name <handle> --url <https-url> --oauth\`. Complete consent in your browser; \`--no-browser\` prints the URL for remote terminals. To reuse a saved connection use \`--connection <id>\` instead (\`gauge connections list --hosted\`). Put the resulting versioned reference in case \`config.mcpRefs\`. Gauge stores and refreshes session credentials; keep tokens out of prompts and Git. See \`gauge mcp add --help\` for manual OAuth client registration options.
 - To test local build output without the GitHub App, use \`gauge run --input name=path --yes -o json\`. Repeat \`--input\` for each input. This uses current evaluation files, including edits; other inputs keep their configured sources. The path replaces the input's configured files entirely and may be a glob (quote it): skills accept a directory or archive, npm packages a .tgz or a glob matching one, files a directory, file, or glob, and binaries a directory or glob with \`commands\` relative to it. Use \`gauge run wait <id> --check -o json\` for the verdict, criterion results, and session links; with \`--check\`, failed checks exit 1 and stdout is only the JSON.
 - Before committing setup changes, run \`gauge run --verify -o json\` for a local working-tree checklist. Only attempted static checks are scored yes, no, or unknown; unknown means a specific declaration could not be resolved. Informational findings (such as zero cases) are separate. JSON includes a version, static status (passed/failed/incomplete), summary counts, global/per-input checks with stable IDs, facts, info, and excluded capabilities in notChecked. Exit 1 means a definite problem; exit 0 can still contain unknowns. Live delivery, account settings, and sandbox execution are outside this command's scope. It requires no login or PR and launches no sessions.
+- To stub or redirect CLI commands for one hosted launch, pass \`--cli-rules rules.json\`. Example and workflow: \`gauge instructions cli-rules --hosted\`.
 
 ## Definition and input snapshots
 
@@ -39,12 +40,11 @@ The version 1 JSON file supports \`pages\` (exact HTTPS url/body, optional statu
 Select either pages/scopes or an origin mapping for each origin. Conflicts, search mocks, unknown fields, and body transformations are rejected; the combined fixture is limited to 1 MB.
 Local runs use a separate TLS gateway: \`gauge local runtime pull\` obtains both images, and \`--dry-run -o json\` reports routes and digests. Original hostnames must resolve. GitHub-resolved \`website\` inputs remain hosted-only.
 
-Interactive CLI runs read working-tree case definitions in both backends, including
-uncommitted edits and new files. Selected filesystem inputs are packaged for local
-execution or hosted upload. Explicit remote artifacts retain their declared sources.
-Content digests identify what ran; a nearby Git SHA does not mean edited bytes were
-committed. GitHub-triggered checks fetch the committed revision. None of this changes
-the separately configured consumer repository where the test agent works.
+Interactive CLI launches use working-tree cases, including uncommitted edits,
+and package selected filesystem inputs. Remote artifacts keep their declared sources.
+Content digests identify what ran; a Git SHA does not prove edited bytes were committed.
+GitHub-triggered checks use the committed revision. The consumer repository where
+the test agent works is configured separately.
 
 ${SNAPSHOTS}
 

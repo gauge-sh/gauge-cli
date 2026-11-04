@@ -1,3 +1,4 @@
+import type { CliRuleAuthorInput } from "@withgauge/api-schemas/cli-rules";
 import {
   isLocal,
   createLocalMeasurement,
@@ -367,11 +368,13 @@ export async function runPreferencePrompt(
     yes?: boolean;
     agent: string[];
     samples?: string;
+    cliRules?: CliRuleAuthorInput;
   },
 ): Promise<visibility.RunVisibilityPromptResponse> {
   const org = await resolveOrg(cmd);
   const overrides = {
     ...runOverridesFromOpts(opts),
+    ...(opts.cliRules ? { cliRules: opts.cliRules } : {}),
     ...(hasLifecycleFlags(opts)
       ? lifecyclePatchFromOpts(
           opts,

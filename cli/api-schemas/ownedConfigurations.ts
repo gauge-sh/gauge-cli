@@ -1,3 +1,4 @@
+import { cliRuleAuthorInputSchema } from "./cli-rules";
 import { z } from "zod";
 import { lifecycleSchema } from "./lifecycle";
 import {
@@ -142,6 +143,7 @@ export const runSampleCountOverrideSchema = sampleCountSchema;
 
 export const runEvalBodySchema = z
   .object({
+    cliRules: cliRuleAuthorInputSchema.optional(),
     agents: runAgentsOverrideSchema.optional(),
     sampleCount: runSampleCountOverrideSchema.optional(),
     lifecycle: lifecycleSchema.nullish(),
@@ -149,6 +151,7 @@ export const runEvalBodySchema = z
   .strict();
 export const runVisibilityBodySchema = z
   .object({
+    cliRules: cliRuleAuthorInputSchema.optional(),
     agents: runAgentsOverrideSchema.optional(),
     sampleCount: runSampleCountOverrideSchema.optional(),
     lifecycle: lifecycleSchema.nullish(),

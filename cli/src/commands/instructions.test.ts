@@ -199,6 +199,7 @@ describe("gauge instructions", () => {
       "hillclimb",
       "run",
       "lifecycle",
+      "cli-rules",
       "eval",
       "preference",
       "session-analysis",
