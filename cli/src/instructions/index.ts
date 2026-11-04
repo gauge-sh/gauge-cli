@@ -218,9 +218,9 @@ cannot ship. Tree keys are page:<url>, skill:<name>, and cli:<package>.
     gauge optimizations notes <id> --from notes.md  # diagnosis, plan, each launch's result
 
 Copy find text from --query; check how much of the page each edit kept. Use
-file write --page only for a new page or a full rewrite. Skills need SKILL.md;
-CLI rules are {schemaVersion: 3 or 4, target, rules, shippingIntent}; v4 adds stub/exec.
-Read \`gauge instructions cli-rules --hosted\` for replacements and direct launches without a prior session. Files not in the tree rerun as the source session had them.
+file write --page only for a new page or a full rewrite. Skills need SKILL.md.
+For CLI rules, read \`gauge instructions cli-rules --hosted\`.
+Files not in the tree rerun as the source session had them.
 
 ## Rerun and compare
 
