@@ -2,13 +2,15 @@
 
 ## Unreleased
 
+## 0.28.0 — 2026-11-04
+
 ### Added
 
-- `gauge run --hosted --cli-rules rules.json` applies CLI rules to one launch
-  of a prompt, saved eval/preference, or case files/spec. Schema v4 supports
-  stub responses and replacement commands; v3 rules remain supported. Rules
-  leave saved settings unchanged, and prompt/case previews report their count
-  and digest. The flag rejects local runs and legacy battery specs.
+- `gauge run --hosted --cli-rules rules.json` stubs or redirects CLI commands
+  for one prompt, saved eval/preference, or case launch without changing saved
+  settings or the fixture repository. Prompt/case previews report the rules'
+  count and digest. See `gauge instructions cli-rules --hosted` for an example
+  and guidance on testing command use and discovery.
 
 ## 0.27.0 — 2026-11-02
 
