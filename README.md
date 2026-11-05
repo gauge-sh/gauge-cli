@@ -25,22 +25,6 @@ API keys. **No Gauge account required.**
 [npm](https://www.npmjs.com/package/@withgauge/cli) ·
 [Changelog](cli/CHANGELOG.md)
 
-## Access Gauge Chat data
-
-Sign in and choose your organization to access Chat data:
-
-```sh
-gauge auth login
-gauge orgs use acme
-gauge chat categories list
-gauge chat query datasets
-```
-
-Chat commands cover topics, prompts, tags, brands, reports, answers, and
-citations. See [Gauge Chat commands](cli/README.md#gauge-chat) and
-[organization selection and upgrade guidance](cli/README.md#organizations).
-These commands use hosted Chat data and do not require Docker.
-
 ## What does Gauge find?
 
 Gauge runs and analyzes coding sessions to find the issues that coding agents run into.
