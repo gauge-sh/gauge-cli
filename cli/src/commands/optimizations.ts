@@ -25,6 +25,7 @@ type LaunchResult = {
     sourceRunId: string;
     runIds: string[];
     restoredFrom: { checkpointId: string; rerunId: string; seq: number } | null;
+    forkedAfter?: number | null;
     warnings: string[];
   }[];
 };
@@ -40,13 +41,16 @@ function itemPath(org: string, id: string): string {
   return `${basePath(org)}/${encodeURIComponent(id)}`;
 }
 
-function readText(path: string): string {
+export function readText(path: string): string {
   return readFileSync(path === "-" ? 0 : path, "utf8");
 }
 
-function readJson(path: string): unknown {
+export function readJson(
+  path: string,
+  read: (path: string) => string = readText,
+): unknown {
   try {
-    return JSON.parse(readText(path));
+    return JSON.parse(read(path));
   } catch {
     throw new CliError("usage", `${path} must contain valid JSON`);
   }
@@ -262,7 +266,18 @@ function printDetail(o: Detail): void {
   console.log(`title:    ${o.title}`);
   console.log(`status:   ${o.status}`);
   console.log(`subject:  ${subjectLine(o.subject)}`);
-  console.log(`sources:  ${o.sourceRunIds.join(", ") || "(none)"}`);
+  const recorded = o.recordedSourceRunIds
+    ? new Set(o.recordedSourceRunIds)
+    : null;
+  console.log(
+    `sources:  ${
+      o.sourceRunIds
+        .map((id) =>
+          recorded ? `${id} (${recorded.has(id) ? "recorded" : "no recording"})` : id,
+        )
+        .join(", ") || "(none)"
+    }`,
+  );
   const changes = new Map(o.changes.map((c) => [c.key, c.status]));
   const files = Object.entries(o.head.files);
   console.log(`files:    ${files.length ? "" : "(empty tree)"}`);
@@ -302,6 +317,10 @@ function printLaunch(launch: LaunchDetail): void {
     console.log(
       `\n${run.id} rerun of ${run.sourceRunId ?? "?"}: ${run.status}, ${run.agent} ${run.model}`,
     );
+    if (run.forkedAfter != null)
+      console.log(
+        `  forked after seq ${run.forkedAfter}; cost and time cover only the part after the fork`,
+      );
     if (run.restoredFrom)
       console.log(
         `  restored at seq ${run.restoredFrom.seq} (${run.restoredFrom.checkpointId}); cost and time cover only the part after the restore`,
@@ -328,10 +347,11 @@ type WriteResult = {
   paths?: string[];
   change?: PageChange;
 };
-type PageView = {
+export type PageView = {
   url: string;
   rawChars: number;
   text?: string;
+  raw?: string;
   query?: string;
   matches?: number;
   excerpts?: { offset: number; raw: string }[];
@@ -375,9 +395,10 @@ function printWrite(res: WriteResult): void {
   console.log(hunks);
 }
 
-function printPageView(view: PageView): void {
-  if (view.text !== undefined) {
-    console.log(view.text);
+export function printPageView(view: PageView): void {
+  const content = view.text ?? view.raw;
+  if (content !== undefined) {
+    console.log(content);
     return;
   }
   console.log(`${view.matches ?? 0} matches for ${JSON.stringify(view.query)}`);
@@ -387,6 +408,46 @@ function printPageView(view: PageView): void {
   }
   if (view.truncated) console.log("… more matches; search a longer phrase");
   if (view.hint) console.log(view.hint);
+}
+
+export function parsePositiveSeq(raw: string): number | null {
+  const seq = Number(raw);
+  return /^\d+$/.test(raw) && seq >= 1 && Number.isSafeInteger(seq)
+    ? seq
+    : null;
+}
+
+export function parseForkBefore(raw: string): { runId: string; seq: number } {
+  const at = raw.lastIndexOf(":");
+  const seq = parsePositiveSeq(raw.slice(at + 1));
+  if (at <= 0 || seq === null)
+    throw new CliError(
+      "usage",
+      `--fork-before takes <sourceRunId>:<seq>, e.g. run_1:34 (got ${raw})`,
+    );
+  return { runId: raw.slice(0, at), seq };
+}
+
+export function checkForkBefore(
+  forkBefore: { runId: string }[],
+  opts: { run?: string[]; fresh?: true | string[] },
+): void {
+  const seen = new Set<string>();
+  for (const { runId } of forkBefore) {
+    if (seen.has(runId))
+      throw new CliError("usage", `--fork-before names ${runId} twice`);
+    seen.add(runId);
+    if (opts.run?.length && !opts.run.includes(runId))
+      throw new CliError(
+        "usage",
+        `--fork-before names ${runId}, but --run leaves it out`,
+      );
+    if (opts.fresh === true || opts.fresh?.includes(runId))
+      throw new CliError(
+        "usage",
+        `--fork-before and --fresh both name ${runId}; pick one`,
+      );
+  }
 }
 
 export function parseRestoreBefore(raw: string): RestorePoint {
@@ -426,9 +487,11 @@ function printLaunchResult(id: string, res: LaunchResult): void {
   for (const batch of res.batches) {
     const from = batch.restoredFrom;
     console.log(
-      from
-        ? `${batch.sourceRunId}: restored at seq ${from.seq} of rerun ${from.rerunId} (${from.checkpointId})`
-        : `${batch.sourceRunId}: fresh`,
+      batch.forkedAfter != null
+        ? `${batch.sourceRunId}: forked after seq ${batch.forkedAfter}`
+        : from
+          ? `${batch.sourceRunId}: restored at seq ${from.seq} of rerun ${from.rerunId} (${from.checkpointId})`
+          : `${batch.sourceRunId}: fresh`,
     );
     for (const warning of batch.warnings) console.log(`  ! ${warning}`);
   }
@@ -689,10 +752,14 @@ export function register(program: Command): void {
   group
     .command("launch <id>")
     .description(
-      "Rerun the source sessions with the tree injected; each rerun restores from the deepest checkpoint before any changed surface, or starts fresh",
+      "Rerun the source sessions with the tree injected. A recorded run forks: it repeats the source's recorded steps up to its last tool call before the first changed surface, then continues live. Other runs restore from the deepest checkpoint before any changed surface, or start fresh",
     )
     .option("--run <runId...>", "rerun only these source runs")
     .option("--note <text>", "one line on what this launch tests")
+    .option(
+      "--fork-before <sourceRunId:seq...>",
+      "fork this recorded source run at its last tool call before this seq",
+    )
     .option(
       "--restore-before <rerunId:seq...>",
       "restore from the deepest checkpoint at or before this seq of an earlier rerun",
@@ -703,7 +770,7 @@ export function register(program: Command): void {
     )
     .option(
       "--fresh [sourceRunId...]",
-      "start from zero: these source runs, or every one",
+      "start from zero, with no fork and no restore: these source runs, or every one",
     )
     .option("--yes", "skip the confirmation")
     .action(
@@ -712,6 +779,7 @@ export function register(program: Command): void {
         opts: {
           run?: string[];
           note?: string;
+          forkBefore?: string[];
           restoreBefore?: string[];
           checkpoint?: string[];
           fresh?: true | string[];
@@ -719,16 +787,18 @@ export function register(program: Command): void {
         },
         cmd: Command,
       ) => {
+        const restoreAt: RestorePoint[] = [
+          ...(opts.checkpoint ?? []).map((checkpointId) => ({ checkpointId })),
+          ...(opts.restoreBefore ?? []).map(parseRestoreBefore),
+        ];
+        const forkBefore = (opts.forkBefore ?? []).map(parseForkBefore);
+        checkForkBefore(forkBefore, opts);
         const path = itemPath(await resolveOrg(cmd), id);
         await confirmOrAbort(
           `Rerun ${opts.run?.length ? plural(opts.run.length, "source session") : "every source session"} of ${id} with the tree?`,
           opts.yes,
         );
         const client = createClient();
-        const restoreAt: RestorePoint[] = [
-          ...(opts.checkpoint ?? []).map((checkpointId) => ({ checkpointId })),
-          ...(opts.restoreBefore ?? []).map(parseRestoreBefore),
-        ];
         const fresh =
           opts.fresh === true
             ? (opts.run ?? (await client.get<Detail>(path)).sourceRunIds)
@@ -744,6 +814,7 @@ export function register(program: Command): void {
               }
             : {}),
           ...(restoreAt.length ? { restoreAt } : {}),
+          ...(forkBefore.length ? { forkBefore } : {}),
         });
         if (resolveOutput(cmd) === "json") printJson(res);
         else printLaunchResult(id, res);

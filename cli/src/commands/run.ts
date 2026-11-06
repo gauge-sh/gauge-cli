@@ -49,6 +49,7 @@ import {
 } from "../lib/caseSpec";
 import { CliError, createClient } from "../lib/client";
 import { confirmOrAbort } from "../lib/confirm";
+import { registerRunFork } from "./runFork";
 import { triggeredByLabel } from "../lib/createdBy";
 import {
   hostedOnly,
@@ -163,6 +164,27 @@ function toLocalRow(run: LocalRun) {
   };
 }
 
+function forkLines(run: RunDetail): [string, string][] {
+  const from = run.forkedFrom;
+  const lines: [string, string][] = [];
+  if (run.recorded !== undefined)
+    lines.push([
+      "Recorded",
+      run.recorded ? `yes (gauge run fork ${run.id} --before <seq>)` : "no",
+    ]);
+  if (from) {
+    const at = from.beforeSeq == null ? "" : ` before seq ${from.beforeSeq}`;
+    lines.push(["Forked from", `${from.runId}${at}`]);
+    if (from.message) lines.push(["Fork change", "different persona message"]);
+    if (from.mock)
+      lines.push([
+        "Fork change",
+        `mock of ${from.mock.url}${from.mock.summary ? `: ${compact(from.mock.summary, 120)}` : ""}`,
+      ]);
+  }
+  return lines;
+}
+
 function detailLines(run: RunDetail): [string, string][] {
   return [
     ["Id", run.id],
@@ -218,6 +240,7 @@ function detailLines(run: RunDetail): [string, string][] {
     ["Failure reason", run.failureReason ?? "—"],
     ["Cancel requested", run.cancelRequested ? "yes" : "no"],
     ["Diff", run.hasDiff ? `yes (gauge run diff ${run.id})` : "no"],
+    ...forkLines(run),
     ...run.criterionResults.map((c): [string, string] => [
       `Criterion ${c.name}`,
       c.passed === null ? "not assessed" : c.passed ? "passed" : "failed",
@@ -253,7 +276,7 @@ const INSTALLED: Record<string, string> = {
 
 const check = (value: boolean) => (value ? "yes" : "");
 
-function printInsight(insight: RunInsightResponse): void {
+function printInsight(insight: RunInsightResponse, recorded = false): void {
   for (const pass of insight.passes) {
     console.log(passLine(PASS_LABELS[pass.kind] ?? pass.kind, pass));
   }
@@ -278,6 +301,10 @@ function printInsight(insight: RunInsightResponse): void {
     console.log(`    ${finding.detail}`);
     console.log(`    Evidence: ${JSON.stringify(finding.evidence)}`);
   }
+  if (recorded && analysis.observations.length)
+    console.log(
+      `\nTest one fix on this session: gauge run fork ${insight.runId} --page <url> --edits <file>, or --before <seq> --message <text>. Pages it read: gauge run web ${insight.runId}.`,
+    );
 
   console.log(`\nProducts (${analysis.products.length})`);
   if (analysis.products.length > 0)
@@ -1465,14 +1492,18 @@ export function register(program: Command): void {
           );
         return;
       }
-      const insight = await createClient().get<RunInsightResponse>(
-        `${runPath(id)}/insight`,
-      );
+      const client = createClient();
       if (resolveOutput(command) === "json") {
-        printJson(insight);
+        printJson(
+          await client.get<RunInsightResponse>(`${runPath(id)}/insight`),
+        );
         return;
       }
-      printInsight(insight);
+      const [insight, run] = await Promise.all([
+        client.get<RunInsightResponse>(`${runPath(id)}/insight`),
+        client.get<RunDetail>(runPath(id)).catch(() => null),
+      ]);
+      printInsight(insight, run?.recorded === true);
     });
 
   const analysis = run
@@ -1556,6 +1587,8 @@ export function register(program: Command): void {
       );
       console.log("Verdicts land on the run; `gauge run get <id>` to check.");
     });
+
+  registerRunFork(run);
 
   hostedOnly(run.command("watch <id>"))
     .description(

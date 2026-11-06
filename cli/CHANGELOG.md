@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Added
+
+- `gauge run fork <run-id> --before <seq>` starts a new run that repeats a
+  recorded hosted run's steps before that seq, then continues live. Add
+  `--message <text>` at a persona message to send a different message, or
+  mock one page the run read with `--page <url> --edits <file>` (or
+  `--from <file>` for the whole page). `gauge run page <run-id> <url>` prints
+  a page as the run read it. `gauge run get` shows whether a run is recorded
+  and where a fork came from.
+- `gauge optimizations launch --fork-before <sourceRunId>:<seq>` forks a
+  recorded source run at its last tool call before that seq. Launches fork
+  recorded source runs by default and print each fork point;
+  `gauge optimizations get` marks which source runs are recorded.
+- `gauge run insight` suggests a fork when a recorded run has findings, and
+  the run and session-analysis guidance offers forks as a quick test of one
+  change.
+
 ## 0.28.0 — 2026-11-04
 
 ### Added

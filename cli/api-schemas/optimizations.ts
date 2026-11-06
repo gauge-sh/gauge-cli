@@ -211,6 +211,18 @@ export const launchOptimizationBodySchema = z
       .min(1)
       .max(50)
       .optional(),
+    forkBefore: z
+      .array(
+        z
+          .object({
+            runId: z.string().min(1),
+            seq: z.number().int().positive(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(50)
+      .optional(),
   })
   .strict();
 
@@ -329,6 +341,7 @@ export const optimizationRunSchema = z.object({
     .object({ checkpointId: z.string(), seq: z.number().int().nonnegative() })
     .nullable()
     .optional(),
+  forkedAfter: z.number().int().nonnegative().nullable().optional(),
 });
 
 export const optimizationLaunchSchema = z.object({
@@ -395,6 +408,7 @@ export const optimizationDetailSchema = optimizationSummarySchema.extend({
   ),
   result: optimizationResultSchema.nullable(),
   sourceRunIds: z.array(z.string()),
+  recordedSourceRunIds: z.array(z.string()).optional(),
   launchList: z.array(optimizationLaunchSchema),
 });
 export type OptimizationDetail = z.infer<typeof optimizationDetailSchema>;

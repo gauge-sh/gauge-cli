@@ -169,6 +169,22 @@ export const runDetailSchema = runListItemSchema
       }),
     ),
     skills: z.array(runSkillSchema).optional(),
+    recorded: z.boolean().optional(),
+    forkedFrom: z
+      .object({
+        runId: z.string(),
+        beforeSeq: z.number().int().nullable(),
+        message: z.boolean().optional(),
+        mock: z
+          .object({
+            id: z.string(),
+            url: z.string(),
+            summary: z.string().nullable(),
+          })
+          .optional(),
+      })
+      .nullable()
+      .optional(),
   });
 export type RunDetail = z.infer<typeof runDetailSchema>;
 
