@@ -7,7 +7,9 @@ import { printJson } from "../lib/output";
 import {
   type PageView,
   parseEdits,
+  parsePositiveSeq,
   printPageView,
+  readJson,
   readText,
 } from "./optimizations";
 
@@ -24,17 +26,9 @@ function runPath(id: string): string {
   return `/api/v1/runs/${encodeURIComponent(id)}`;
 }
 
-function parseJson(text: string, path: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new CliError("usage", `${path} must contain valid JSON`);
-  }
-}
-
 function parseSeq(raw: string): number {
-  const seq = Number(raw);
-  if (!/^\d+$/.test(raw) || seq < 1)
+  const seq = parsePositiveSeq(raw);
+  if (seq === null)
     throw new CliError("usage", `--before takes a seq, e.g. 34 (got ${raw})`);
   return seq;
 }
@@ -44,7 +38,7 @@ export function forkBody(
   read: (path: string) => string = readText,
 ): forks.ForkRunBody {
   if (opts.page) {
-    if (opts.before || opts.message)
+    if (opts.before !== undefined || opts.message !== undefined)
       throw new CliError(
         "usage",
         "--page picks its own fork point; drop --before and --message",
@@ -57,7 +51,7 @@ export function forkBody(
       ? {
           kind: "mock_page",
           url: opts.page,
-          edits: parseEdits(parseJson(read(opts.edits), opts.edits)),
+          edits: parseEdits(readJson(opts.edits, read)),
         }
       : {
           kind: "mock_page",
@@ -71,9 +65,10 @@ export function forkBody(
   if (!opts.before)
     throw new CliError("usage", "pass --before <seq>, or --page <url> with --edits or --from");
   const beforeSeq = parseSeq(opts.before);
-  return opts.message
-    ? { kind: "new_message", beforeSeq, message: opts.message }
-    : { kind: "run_again", beforeSeq };
+  if (opts.message === undefined) return { kind: "run_again", beforeSeq };
+  if (!opts.message.trim())
+    throw new CliError("usage", "--message is empty");
+  return { kind: "new_message", beforeSeq, message: opts.message };
 }
 
 function printFork(res: forks.ForkRunResponse): void {
@@ -151,7 +146,7 @@ Find seqs with \`gauge run trace <runId> --seq <n>\` and the pages a run read wi
       ) => {
         if (opts.out && (opts.text || opts.query))
           throw new CliError("usage", "--out saves the exact source only");
-        const view = await createClient().get<PageView & { source: string }>(
+        const view = await createClient().get<PageView>(
           `${runPath(runId)}/page`,
           {
             url,
@@ -160,7 +155,14 @@ Find seqs with \`gauge run trace <runId> --seq <n>\` and the pages a run read wi
           },
         );
         if (opts.out) {
-          writeFileSync(opts.out, view.raw ?? "");
+          if (view.raw === undefined)
+            throw new CliError("internal", "The server returned no page source");
+          if (view.raw.length < view.rawChars)
+            throw new CliError(
+              "internal",
+              `The page has ${view.rawChars} chars, but the server returned only ${view.raw.length}`,
+            );
+          writeFileSync(opts.out, view.raw);
           console.error(`Saved ${opts.out}`);
         } else if (resolveOutput(command) === "json") printJson(view);
         else printPageView(view);

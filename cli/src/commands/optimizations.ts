@@ -45,9 +45,12 @@ export function readText(path: string): string {
   return readFileSync(path === "-" ? 0 : path, "utf8");
 }
 
-export function readJson(path: string): unknown {
+export function readJson(
+  path: string,
+  read: (path: string) => string = readText,
+): unknown {
   try {
-    return JSON.parse(readText(path));
+    return JSON.parse(read(path));
   } catch {
     throw new CliError("usage", `${path} must contain valid JSON`);
   }
@@ -316,7 +319,7 @@ function printLaunch(launch: LaunchDetail): void {
     );
     if (run.forkedAfter != null)
       console.log(
-        `  forked before seq ${run.forkedAfter + 1}; cost and time cover only the part after the fork`,
+        `  forked after seq ${run.forkedAfter}; cost and time cover only the part after the fork`,
       );
     if (run.restoredFrom)
       console.log(
@@ -407,16 +410,44 @@ export function printPageView(view: PageView): void {
   if (view.hint) console.log(view.hint);
 }
 
+export function parsePositiveSeq(raw: string): number | null {
+  const seq = Number(raw);
+  return /^\d+$/.test(raw) && seq >= 1 && Number.isSafeInteger(seq)
+    ? seq
+    : null;
+}
+
 export function parseForkBefore(raw: string): { runId: string; seq: number } {
   const at = raw.lastIndexOf(":");
-  const runId = raw.slice(0, at);
-  const seq = raw.slice(at + 1);
-  if (at <= 0 || !/^\d+$/.test(seq) || Number(seq) < 1)
+  const seq = parsePositiveSeq(raw.slice(at + 1));
+  if (at <= 0 || seq === null)
     throw new CliError(
       "usage",
       `--fork-before takes <sourceRunId>:<seq>, e.g. run_1:34 (got ${raw})`,
     );
-  return { runId, seq: Number(seq) };
+  return { runId: raw.slice(0, at), seq };
+}
+
+export function checkForkBefore(
+  forkBefore: { runId: string }[],
+  opts: { run?: string[]; fresh?: true | string[] },
+): void {
+  const seen = new Set<string>();
+  for (const { runId } of forkBefore) {
+    if (seen.has(runId))
+      throw new CliError("usage", `--fork-before names ${runId} twice`);
+    seen.add(runId);
+    if (opts.run?.length && !opts.run.includes(runId))
+      throw new CliError(
+        "usage",
+        `--fork-before names ${runId}, but --run leaves it out`,
+      );
+    if (opts.fresh === true || opts.fresh?.includes(runId))
+      throw new CliError(
+        "usage",
+        `--fork-before and --fresh both name ${runId}; pick one`,
+      );
+  }
 }
 
 export function parseRestoreBefore(raw: string): RestorePoint {
@@ -457,7 +488,7 @@ function printLaunchResult(id: string, res: LaunchResult): void {
     const from = batch.restoredFrom;
     console.log(
       batch.forkedAfter != null
-        ? `${batch.sourceRunId}: forked before seq ${batch.forkedAfter + 1}`
+        ? `${batch.sourceRunId}: forked after seq ${batch.forkedAfter}`
         : from
           ? `${batch.sourceRunId}: restored at seq ${from.seq} of rerun ${from.rerunId} (${from.checkpointId})`
           : `${batch.sourceRunId}: fresh`,
@@ -756,17 +787,18 @@ export function register(program: Command): void {
         },
         cmd: Command,
       ) => {
+        const restoreAt: RestorePoint[] = [
+          ...(opts.checkpoint ?? []).map((checkpointId) => ({ checkpointId })),
+          ...(opts.restoreBefore ?? []).map(parseRestoreBefore),
+        ];
+        const forkBefore = (opts.forkBefore ?? []).map(parseForkBefore);
+        checkForkBefore(forkBefore, opts);
         const path = itemPath(await resolveOrg(cmd), id);
         await confirmOrAbort(
           `Rerun ${opts.run?.length ? plural(opts.run.length, "source session") : "every source session"} of ${id} with the tree?`,
           opts.yes,
         );
         const client = createClient();
-        const restoreAt: RestorePoint[] = [
-          ...(opts.checkpoint ?? []).map((checkpointId) => ({ checkpointId })),
-          ...(opts.restoreBefore ?? []).map(parseRestoreBefore),
-        ];
-        const forkBefore = (opts.forkBefore ?? []).map(parseForkBefore);
         const fresh =
           opts.fresh === true
             ? (opts.run ?? (await client.get<Detail>(path)).sourceRunIds)

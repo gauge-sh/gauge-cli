@@ -15,7 +15,11 @@ describe("forkBody", () => {
       beforeSeq: 12,
       message: "Use staging",
     });
-    for (const bad of ["0", "-1", "1.5", "x"])
+    assert.throws(
+      () => forkBody({ before: "12", message: " " }),
+      /--message is empty/,
+    );
+    for (const bad of ["0", "-1", "1.5", "x", "99999999999999999999"])
       assert.throws(() => forkBody({ before: bad }), /--before takes/);
     assert.throws(() => forkBody({}), /pass --before/);
   });

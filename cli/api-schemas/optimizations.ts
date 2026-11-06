@@ -211,7 +211,6 @@ export const launchOptimizationBodySchema = z
       .min(1)
       .max(50)
       .optional(),
-    /** The run forks at its last tool call before this seq. */
     forkBefore: z
       .array(
         z
@@ -342,7 +341,6 @@ export const optimizationRunSchema = z.object({
     .object({ checkpointId: z.string(), seq: z.number().int().nonnegative() })
     .nullable()
     .optional(),
-  /** Trace seq of the source run's tool call the fork replayed through. */
   forkedAfter: z.number().int().nonnegative().nullable().optional(),
 });
 
@@ -410,7 +408,6 @@ export const optimizationDetailSchema = optimizationSummarySchema.extend({
   ),
   result: optimizationResultSchema.nullable(),
   sourceRunIds: z.array(z.string()),
-  /** Source runs with a recording, so a launch can fork them. */
   recordedSourceRunIds: z.array(z.string()).optional(),
   launchList: z.array(optimizationLaunchSchema),
 });

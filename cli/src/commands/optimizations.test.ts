@@ -7,6 +7,7 @@ import { Command } from "commander";
 import {
   fileEditFromOpts,
   fileSourceFromOpts,
+  checkForkBefore,
   latestLaunch,
   launchSettled,
   parseEdits,
@@ -139,6 +140,17 @@ describe("parseForkBefore", () => {
     assert.deepEqual(parseForkBefore("run:a:34"), { runId: "run:a", seq: 34 });
     for (const bad of ["r1", ":4", "r1:", "r1:0", "r1:-4", "r1:1.5"])
       assert.throws(() => parseForkBefore(bad), /--fork-before takes/);
+  });
+});
+
+describe("checkForkBefore", () => {
+  it("rejects runs named twice, left out of --run, or also fresh", () => {
+    const fork = [{ runId: "r1" }];
+    checkForkBefore(fork, { run: ["r1"], fresh: ["r2"] });
+    assert.throws(() => checkForkBefore([...fork, ...fork], {}), /twice/);
+    assert.throws(() => checkForkBefore(fork, { run: ["r2"] }), /leaves it out/);
+    assert.throws(() => checkForkBefore(fork, { fresh: true }), /pick one/);
+    assert.throws(() => checkForkBefore(fork, { fresh: ["r1"] }), /pick one/);
   });
 });
 

@@ -169,7 +169,6 @@ export const runDetailSchema = runListItemSchema
       }),
     ),
     skills: z.array(runSkillSchema).optional(),
-    /** The run has a recording, so `gauge run fork` can fork it. */
     recorded: z.boolean().optional(),
     forkedFrom: z
       .object({

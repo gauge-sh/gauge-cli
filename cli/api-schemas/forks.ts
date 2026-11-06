@@ -32,7 +32,6 @@ export type ForkRunBody = z.infer<typeof forkRunBodySchema>;
 export type ForkRunResponse = {
   runId: string;
   sourceRunId: string;
-  /** The first source event the fork can change. */
   forkedBefore: number;
   mockId?: string;
   change?: {
