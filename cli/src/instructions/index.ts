@@ -111,12 +111,11 @@ Investigate why agents select or reject a product and which changes could improv
 its prospects. Start with existing measurements; reconstruct the initial choice,
 task context, and content that reached the agent before selection. Distinguish
 discovery from preference after exposure, and observed evidence from inferred
-mechanisms. Across larger cohorts, use consistent classification, validate it
-against sampled traces, and compare task and model/harness groups with counts
-and denominators. Explain missing evidence and unresolved choices. Choose a
-useful presentation, link supporting and contradictory sessions, and turn the
-findings into hypotheses for controlled interventions. Deliberately supplying
-guidance measures a different condition from organic discovery.
+mechanisms. Across larger cohorts, validate classification against sampled
+traces and compare groups with counts and denominators. Link supporting and
+contradictory sessions, and turn findings into hypotheses. To test one fast,
+offer to fork a recorded session with \`gauge run fork\`: mock one page it read or
+send a new persona message, and pay only for the steps after the fork.
 
 Full guidance: \`gauge instructions session-analysis\`.
 
@@ -224,16 +223,16 @@ Files not in the tree rerun as the source session had them.
 
 ## Rerun and compare
 
-    gauge optimizations launch <id> --run <run> --yes   # ask first; restores auto
-    gauge optimizations launch <id> --restore-before <rerun>:<seq> --yes  # or --fresh
+    gauge optimizations launch <id> --run <run> --yes   # ask first; forks auto
+    gauge optimizations launch <id> --fork-before <run>:<seq> --yes  # or --fresh
     gauge optimizations watch <id>                  # waits for reruns and analysis
 
-Launch restores each rerun before its first read of a changed surface, or
-starts fresh, and prints the checkpoint and seq. Rerun only the sessions your
-edits address; check that launch lists every edit as changed. Findings come
-back resolved, returned (also the same barrier in other words), or introduced.
-Before you credit an edit, check with \`gauge run web <rerun>\` that the rerun
-read it. Judge findings first, report criteria and failed reruns, and iterate.
+Launch forks each recorded source run: it repeats the source's steps to its last tool call before
+the first read of a changed surface, then goes live. Others restore a checkpoint or start fresh.
+--fork-before names the step; --fresh gives a clean baseline. Rerun only sessions your edits
+address; check that launch lists every edit as changed. Findings come back resolved, returned (same
+barrier, new words), or introduced. Before you credit an edit, check with \`gauge run web <rerun>\`
+that the rerun read it. Judge findings first, report criteria and failed reruns, and iterate.
 
     gauge optimizations finish <id> --from result.json --yes
 

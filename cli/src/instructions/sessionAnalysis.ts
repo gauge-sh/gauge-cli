@@ -48,6 +48,8 @@ Compare winners and losers to distinguish discovery opportunities from preferenc
 
 Choose an intervention tied to the evidence: improve distribution, clarify an integration or tradeoff, fix product friction, or test a different task context. Keep organic discovery distinct from experiments that deliberately attach guidance or require research. Hold the relevant baseline fixed when testing a change; read \`gauge instructions optimization\` for supported trials and confirm before additional paid launches.
 
+Offer a fork as the quick test of one hypothesis on one recorded session. \`gauge run fork <run-id> --page <url> --edits <file>\` mocks a page the agent read; \`--before <seq> --message <text>\` sends a different persona message. The fork repeats the recorded steps, continues live from the fork point, and costs only that part. Find seqs with \`gauge run trace <run-id> --seq <n>\` and pages with \`gauge run web <run-id>\`. Use an optimization to test changes across several sessions.
+
 Open the final answer with a compact findings list: **Friction:** what slowed or stopped agents; **Objections:** why they avoided a product; **Opportunities:** changes worth testing. Include every supported category, even when an Opportunity addresses the same incident as a Friction finding; omit empty categories. Give evidence and a practical next step for each, with uncertainty that changes its interpretation alongside it. Put run counts, setup, command recaps, and general limitations afterward. Link representative and contradictory traces alongside cohort results, rather than substituting anecdotes for the aggregate.
 `;
 

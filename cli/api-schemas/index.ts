@@ -25,6 +25,7 @@ export type * as dashboards from "./dashboards";
 export type * as evals from "./evals";
 export type * as executionTargets from "./executionTargets";
 export * as feedback from "./feedback";
+export type * as forks from "./forks";
 export type * as invites from "./invites";
 export * as keys from "./keys";
 export * as lifecycle from "./lifecycle";
