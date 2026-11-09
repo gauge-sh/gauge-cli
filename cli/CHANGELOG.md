@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.29.0 — 2026-11-09
+
 ### Added
 
 - `gauge run fork <run-id> --before <seq>` starts a new run that repeats a
