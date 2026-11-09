@@ -3,7 +3,7 @@ on:
   push:
     tags: ["cli-v*"]
 permissions:
-  contents: read
+  contents: write
   id-token: write
 concurrency:
   group: publish-public-cli
@@ -40,3 +40,11 @@ jobs:
           npm config set registry https://registry.npmjs.org/
       - name: Publish only the qualified public tarball
         run: npm publish "$RUNNER_TEMP/cli-release/"*.tgz --access public --provenance
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#cli-v}"
+          awk -v v="$version" '$0 ~ "^## " v " " {f=1; next} /^## /{f=0} f' cli/CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          if [ ! -s "$RUNNER_TEMP/notes.md" ]; then echo "No CHANGELOG section for $version" >&2; exit 1; fi
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "CLI $version" --notes-file "$RUNNER_TEMP/notes.md"
