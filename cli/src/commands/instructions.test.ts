@@ -197,6 +197,7 @@ describe("gauge instructions", () => {
     assert.deepEqual(output, [
       "init",
       "hillclimb",
+      "canonical-repo-discovery",
       "run",
       "lifecycle",
       "cli-rules",

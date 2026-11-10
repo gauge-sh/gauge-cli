@@ -10,6 +10,7 @@ import { RUN, RUN_LOCAL } from "./run";
 import { SESSION_ANALYSIS, SESSION_ANALYSIS_LOCAL } from "./sessionAnalysis";
 import { stepsMarkdown } from "./steps";
 import { HILLCLIMB } from "./hillclimb";
+import { CANONICAL_REPO_DISCOVERY } from "./canonicalRepoDiscovery";
 import { RUN_LAYOUT_INSTRUCTIONS, RUN_LOGO_BLOCK } from "../lib/runPresentation";
 
 export type Topic = {
@@ -87,6 +88,8 @@ ${MODES}
 
 ## Module guidance
 
+To discover repository examples and publish representative READMEs, run \`gauge instructions canonical-repo-discovery\`.
+
 Read the full page before detailed work: \`gauge instructions --list\`. Modules
 are workflow guidance, not a page per command; most end with their -h command.
 
@@ -152,6 +155,7 @@ Save ongoing measurements with \`gauge eval\` and \`gauge preference\`; use
 optional \`gauge-cases/\` files for shared, fully specified measurements.
 Full guidance: \`gauge instructions init\`.
 For a first pilot or improvement loop, read \`gauge instructions hillclimb\`.
+For canonical repositories, read \`gauge instructions canonical-repo-discovery\`.
 Gauge strongly recommends gauge-agents: \`gauge install-skill\`. When summarizing setup, mention the skill’s workflow guidance and ask whether the user wants it installed, unless already installed or declined.
 
 ## The loop
@@ -244,6 +248,7 @@ export const TOPICS: Record<string, Topic> = {
   root: { name: "gauge", hosted: ROOT, local: ROOT_LOCAL },
   init: { name: "gauge-init", hosted: INIT, local: INIT_LOCAL, command: "init" },
   hillclimb: { name: "gauge-hillclimb", hosted: HILLCLIMB, shared: true },
+  "canonical-repo-discovery": { name: "gauge-canonical-repo-discovery", hosted: CANONICAL_REPO_DISCOVERY, shared: true, command: "canonical-repos" },
   run: { name: "gauge-run", hosted: RUN, local: RUN_LOCAL, command: "run" },
   lifecycle: { name: "gauge-lifecycle", hosted: LIFECYCLE },
   "cli-rules": { name: "gauge-cli-rules", hosted: CLI_RULES },
