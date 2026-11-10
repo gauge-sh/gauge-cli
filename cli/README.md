@@ -17,8 +17,8 @@ gauge init --cases        # optionally scaffold shared gauge-cases/
 ```
 
 For GitHub code search, provide a dedicated, disposable GitHub token with
-`gauge auth provide-gh-token`. Paste the token and press Enter, or pipe it through
-stdin. The command saves it separately from your Gauge login in
+`gauge auth provide-gh-token`. Paste the token and press Enter.
+The command saves it separately from your Gauge login in
 `~/.config/gauge/github-credentials` (or `$XDG_CONFIG_HOME/gauge/github-credentials`).
 Interactive input uses the terminal's normal echo. The token is stored as plaintext
 with restrictive file permissions where supported. `GAUGE_GITHUB_TOKEN` overrides
