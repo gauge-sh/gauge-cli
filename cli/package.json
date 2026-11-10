@@ -31,6 +31,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsx src/index.ts",
+    "dev:repo-summary": "tsx scripts/dev-repo-summary.ts",
     "prepublishOnly": "node scripts/validate-release.mjs",
     "release:validate": "node scripts/validate-release.mjs",
     "test": "tsx --test src/**/*.test.ts scripts/*.test.mjs",
