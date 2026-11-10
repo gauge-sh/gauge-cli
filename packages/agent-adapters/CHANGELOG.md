@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.2 — 2026-11-10
+
 - Stream Antigravity response fragments with native message identity and complete
   message text for analysis; preserve assembly across session snapshot restore
   and suppress duplicate final response text.
