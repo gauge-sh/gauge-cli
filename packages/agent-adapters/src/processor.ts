@@ -3,7 +3,7 @@ import {
   antigravityConversationId,
   antigravityResult,
   classifyAntigravityEvent,
-  normalizeAntigravityEvent,
+  reduceAntigravityResponse,
   reduceAntigravityUsage,
 } from "./antigravity.js";
 import {
@@ -378,7 +378,9 @@ export function reduceNativeRecord(
       };
       facts.push({ kind: "session_identity", nativeId: sessionId });
     }
-    const payloads = normalizeAntigravityEvent(event);
+    const { payloads, response } = reduceAntigravityResponse(event, state);
+    if (response)
+      state = { ...state, antigravity: { ...state.antigravity, response } };
     terminal = antigravityResult(parsed);
     if (terminal) {
       const usage = reduceAntigravityUsage(

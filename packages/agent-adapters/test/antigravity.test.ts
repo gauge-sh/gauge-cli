@@ -77,7 +77,14 @@ describe("Antigravity 1.3.5", () => {
     expect(outputs.find((p) => p.name === "view_file")?.output).toBe(
       "2 lines, 6 bytes",
     );
-    expect(payloads.filter((p) => p.type === "agent_message")).toHaveLength(1);
+    const messages = payloads.filter((p) => p.type === "agent_message");
+    expect(messages).toHaveLength(2);
+    expect(messages.map((p) => p.text).join("")).toBe(
+      JSON.parse(lines.at(-1)!).result.response,
+    );
+    expect(messages.at(-1)?.message_text).toBe(
+      JSON.parse(lines.at(-1)!).result.response,
+    );
     expect(payloads.filter((p) => p.type === "reasoning")).toEqual([]);
     expect(usages(records.at(-1)!)).toEqual([
       {
@@ -151,18 +158,23 @@ describe("Antigravity 1.3.5", () => {
   ])("leaves the %s verdict to the process exit", (name, response) => {
     const session = new NativeSession("antigravity");
     let last: ReturnType<NativeSession["observe"]> | undefined;
+    const text: string[] = [];
     for (const line of readFileSync(
       new URL(`fixtures/agy-1.3.5-api-error-${name}.jsonl`, import.meta.url),
       "utf8",
     )
       .split("\n")
-      .filter(Boolean))
+      .filter(Boolean)) {
       last = session.observe(line, at);
+      text.push(
+        ...last.payloads.flatMap((payload) =>
+          payload.type === "agent_message" ? [payload.text] : [],
+        ),
+      );
+    }
     expect(last?.terminal?.status).toBe("complete");
     expect(last?.terminal?.reason).toMatch(/^ERROR: /);
-    expect(
-      last?.payloads.find((p) => p.type === "agent_message")?.text ?? "",
-    ).toBe(response.trim());
+    expect(text.join("").trim()).toBe(response.trim());
   });
 
   it.each([

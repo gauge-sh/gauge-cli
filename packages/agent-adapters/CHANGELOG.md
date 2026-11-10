@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Stream Antigravity response fragments with native message identity and complete
+  message text for analysis; preserve assembly across session snapshot restore
+  and suppress duplicate final response text.
+- Recognize Antigravity 1.5.x `read_file`, `write_file`, and `edit_file` tools.
+
 ## 0.2.1 — 2026-10-21
 
 - Antigravity: a `result` with status `ERROR` now completes the turn and keeps

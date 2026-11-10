@@ -22,7 +22,6 @@ export interface AgentEvent {
     | "other";
 }
 
-
 export type ToolKind = "shell" | "file_edit" | "file_read" | "mcp" | "web";
 
 export interface UsageData {
@@ -36,6 +35,10 @@ export interface UsageData {
 export interface AgentMessagePayload {
   type: "agent_message";
   text: string;
+  /** Native message identity, shared by incremental text fragments. */
+  message_id?: string;
+  /** Full response when its last fragment arrives; useful for text analysis. */
+  message_text?: string;
 }
 
 export interface ReasoningPayload {

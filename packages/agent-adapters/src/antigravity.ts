@@ -4,8 +4,7 @@ import type {
   ToolKind,
   UsagePayload,
 } from "./types.js";
-import type { AntigravityUsage } from "./state.js";
-
+import type { AgentProjection, AntigravityUsage } from "./state.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -27,11 +26,14 @@ function count(value: unknown): number | undefined {
 
 export function antigravityToolKind(name: string): ToolKind {
   switch (name) {
+    case "read_file":
     case "view_file":
     case "list_dir":
     case "find_by_name":
     case "grep_search":
       return "file_read";
+    case "write_file":
+    case "edit_file":
     case "write_to_file":
     case "replace_file_content":
     case "multi_replace_file_content":
@@ -123,6 +125,93 @@ export function reduceAntigravityUsage(
   };
 }
 
+/** Keep streamed text across observer handoff so result.response does not echo it.
+ * Native text_delta is incremental, including the final DONE fragment. Repeated
+ * identical fragments are legitimate; input-record replay belongs to the cursor.
+ */
+export function reduceAntigravityResponse(
+  ev: AgentEvent,
+  state: AgentProjection,
+): {
+  response: NonNullable<AgentProjection["antigravity"]>["response"];
+  payloads: NormalizedPayload[];
+} {
+  let response = state.antigravity?.response;
+  if (response?.turn !== state.turn.number) response = undefined;
+  const payloads = normalizeAntigravityEvent(ev);
+  const step = stepOf(ev.parsed);
+  if (step?.step_type === "agent_response") {
+    const delta = text(step.text_delta);
+    const index = count(step.step_index);
+    if (
+      (delta ||
+        (step.state === "DONE" &&
+          response?.stepIndex === index &&
+          response?.text)) &&
+      (step.state === "ACTIVE" || step.state === "DONE")
+    ) {
+      response = {
+        turn: state.turn.number,
+        complete: step.state === "DONE",
+        stepIndex: index,
+        text:
+          (response?.stepIndex === index ? (response?.text ?? "") : "") +
+          (delta ?? ""),
+      };
+      if (step.state === "DONE") {
+        if (payloads.length === 0)
+          payloads.push({
+            type: "agent_message",
+            text: "",
+            ...(index === undefined ? {} : { message_id: `step-${index}` }),
+          });
+        for (const payload of payloads) {
+          if (payload.type === "agent_message")
+            payload.message_text = response.text;
+        }
+      }
+    }
+  }
+  const parsed = record(ev.parsed);
+  if (parsed?.event === "result") {
+    const finalText = text(record(parsed.result)?.response)?.trim();
+    if (finalText) {
+      const alreadyEmitted = response?.text.trim();
+      const duplicate =
+        finalText === alreadyEmitted || finalText === response?.resultText;
+      const finishMissingStep =
+        finalText === alreadyEmitted &&
+        !response?.complete &&
+        !response?.resultText &&
+        response?.stepIndex !== undefined;
+      response = {
+        ...response,
+        turn: state.turn.number,
+        text: response?.text ?? "",
+        resultText: finalText,
+      };
+      if (finishMissingStep)
+        return {
+          response,
+          payloads: [
+            {
+              type: "agent_message",
+              text: "",
+              message_id: `step-${response.stepIndex}`,
+              message_text: finalText,
+            },
+          ],
+        };
+      if (duplicate)
+        return {
+          response,
+          payloads: payloads.filter((p) => p.type !== "agent_message"),
+        };
+    }
+  }
+  return { response, payloads };
+}
+
 export function normalizeAntigravityEvent(ev: AgentEvent): NormalizedPayload[] {
   const value = record(ev.parsed);
   if (!value) return [];
@@ -136,6 +225,18 @@ export function normalizeAntigravityEvent(ev: AgentEvent): NormalizedPayload[] {
   }
 
   const step = stepOf(ev.parsed);
+  if (step?.step_type === "agent_response") {
+    const delta = text(step.text_delta);
+    const index = count(step.step_index);
+    if (!delta || (step.state !== "ACTIVE" && step.state !== "DONE")) return [];
+    return [
+      {
+        type: "agent_message",
+        text: delta,
+        ...(index === undefined ? {} : { message_id: `step-${index}` }),
+      },
+    ];
+  }
   if (step?.step_type !== "tool") return [];
   const info = record(step.tool_info);
   const name = text(step.tool_name) ?? text(info?.name) ?? "tool";

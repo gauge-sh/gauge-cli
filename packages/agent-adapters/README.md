@@ -36,12 +36,23 @@ launch, authentication, prompts, question answers, storage, and supervision.
 
 ### Antigravity
 
-Use `new NativeSession("antigravity")` for `agy` 1.3.5's `--output-format
+Use `new NativeSession("antigravity")` for `agy` 1.3.5 and 1.5.5 `--output-format
 stream-json` records. The adapter captures conversation identity, tool calls and
-results, the assembled final response, and explicit SUCCESS/error completion.
+results, incremental response text, and explicit SUCCESS/error completion.
 Unknown records remain available in `event.raw` and `event.parsed`. Records with
 an explicit different conversation ID produce no evidence or state changes;
 create a separate session for each conversation.
+
+Response fragments are `agent_message` payloads with a `message_id` scoped to
+the native step within the current conversation and turn. Concatenate `text`
+without inserting whitespace. The last fragment also carries `message_text`,
+the assembled response for whole-message analysis. It may have empty `text`.
+The session reducer suppresses matching `result.response` text already emitted
+by steps; result-only records still produce a message. Persist the projection
+across handoff to preserve this behavior. Low-level stateless decoding does not
+assemble fragments or deduplicate the final response. As in 0.2.1, native ERROR
+results retain their diagnostic reason and complete the protocol turn; the
+process supervisor must still check the exit code to determine execution failure.
 
 Antigravity result usage is **conversation-cumulative**, including after native
 process resume. The session emits positive increments against per-counter
