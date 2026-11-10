@@ -23,6 +23,13 @@ export interface AgentProjection {
   antigravity?: {
     modelSelector?: string;
     cumulativeUsage?: AntigravityUsage;
+    response?: {
+      turn: number;
+      stepIndex?: number;
+      text: string;
+      resultText?: string;
+      complete?: boolean;
+    };
   };
   turn: {
     number: number;
