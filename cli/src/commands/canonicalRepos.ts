@@ -1,4 +1,8 @@
-import { appendFile, mkdir, readFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile, rm, rename } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { openLocalStore } from "../lib/localStore";
+import { findWorkspace } from "../lib/gaugeState";
+import canonicalFileDefinition from "../../api-schemas/canonicalFile.schema.json";
 import { dirname, relative, resolve } from "node:path";
 import { repoExampleSchema, repoNamesSchema, type RepoExample } from "@withgauge/api-schemas/canonicalRepos";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -22,14 +26,18 @@ function invalid(message: string) {
   return new CliError("usage", message, { apiCode: "invalid_input" });
 }
 
-function unknownError() {
-  return new CliError("network", "Unknown GitHub error.", { apiCode: "unknown_error" });
+function githubError(message: string) {
+  return new CliError("network", message, { apiCode: "unknown_error" });
 }
 
-async function requestGithubWithRetry(url: URL, token: string, expectedStatuses: number[] = [], accept = "application/vnd.github+json") {
+async function requestGithubWithRetry(url: URL, token: string, expectedStatuses: number[] = [], accept = "application/vnd.github+json", write?: { method: "POST" | "PUT"; body: string }) {
   for (let retry = 0; ; retry++) {
+    const operation = `${write?.method ?? "GET"} ${url.pathname}`;
+    const redact = (message: string) => message.replaceAll(token, "[redacted]");
     const response = await fetch(url, {
+      ...write,
       headers: {
+        ...(write && { "Content-Type": "application/json" }),
         Accept: accept,
         Authorization: `Bearer ${token}`,
         "User-Agent": "gauge-cli",
@@ -37,14 +45,19 @@ async function requestGithubWithRetry(url: URL, token: string, expectedStatuses:
       },
       redirect: "error",
       signal: AbortSignal.timeout(30_000),
+    }).catch((error: Error) => {
+      const cause = error.cause instanceof Error ? `: ${error.cause.message}` : "";
+      throw githubError(redact(`GitHub ${operation} failed: ${error.message}${cause}`));
     });
     if (response.ok || expectedStatuses.includes(response.status)) return response;
     const headers = response.headers;
+    const body = await response.text();
+    const diagnostic = redact(`GitHub ${operation} returned HTTP ${response.status} ${response.statusText}\n${body || "(empty response body)"}`);
     const exhausted = headers.get("x-ratelimit-remaining") === "0";
     const limited = response.status === 429 || (response.status === 403 &&
       (exhausted || headers.has("retry-after") ||
-        /(?:secondary |API )?rate limit/i.test(await response.text())));
-    if (!limited) throw unknownError();
+        /(?:secondary |API )?rate limit/i.test(body)));
+    if (!limited) throw githubError(diagnostic);
 
     const now = Date.now();
     const seconds = Number(headers.get("retry-after"));
@@ -55,7 +68,7 @@ async function requestGithubWithRetry(url: URL, token: string, expectedStatuses:
     const delay = Math.max(minimum, fallback);
     const deadline = now + delay + Math.floor(Math.random() * 1000);
     const retryAt = new Date(deadline).toISOString();
-    if (retry === 4) throw new CliError("network", "GitHub backoff retries exhausted.", {
+    if (retry === 4) throw new CliError("network", `GitHub backoff retries exhausted.\n${diagnostic}`, {
       apiCode: "backoff_exhausted", details: { retryAt },
     });
     while (Date.now() < deadline) {
@@ -75,7 +88,7 @@ export async function searchGithubExampleCandidates(query: string, page: number)
   try {
     const response = await requestGithubWithRetry(url, token);
     const data = searchPage.parse(await response.json());
-    if (data.incomplete_results) throw unknownError();
+    if (data.incomplete_results) throw githubError("GitHub returned incomplete code search results.");
     const names = new Map<string, string>();
     for (const { repository } of data.items) {
       const key = repository.full_name.toLowerCase();
@@ -84,7 +97,7 @@ export async function searchGithubExampleCandidates(query: string, page: number)
     return [...names.values()];
   } catch (error) {
     if (error instanceof CliError) throw error;
-    throw unknownError();
+    throw githubError(`Invalid GitHub search response: ${String(error)}`);
   }
 }
 
@@ -107,7 +120,7 @@ async function countCommits(base: URL, sha: string, token: string, name: string)
   const last = links.match(/<([^>]+)>;\s*rel="last"/);
   if (last) {
     const count = Number(new URL(last[1]).searchParams.get("page"));
-    if (!Number.isSafeInteger(count) || count < 1) throw unknownError();
+    if (!Number.isSafeInteger(count) || count < 1) throw githubError("GitHub returned an invalid last commit page.");
     return count;
   }
   if (!links.includes('rel="next"')) return firstPage.length;
@@ -133,7 +146,7 @@ async function fetchExample(name: string, token: string): Promise<RepoExample | 
   search.searchParams.set("q", `repo:${name} fork:true`);
   const response = await requestGithubWithRetry(search, token);
   const page = repositoryPage.parse(await response.json());
-  if (page.incomplete_results) throw unknownError();
+  if (page.incomplete_results) throw githubError("GitHub returned incomplete repository search results.");
   const repo = page.items.find(item => !item.private && item.full_name.toLowerCase() === name.toLowerCase());
   if (!repo) return skip("no matching public repository");
 
@@ -144,7 +157,7 @@ async function fetchExample(name: string, token: string): Promise<RepoExample | 
   if (tip.status === 409) {
     const body = z.object({ message: z.string() }).parse(await tip.json());
     if (body.message === "Git Repository is empty.") return skip("empty repository (0 commits)");
-    throw unknownError();
+    throw githubError(`GitHub GET ${tipUrl.pathname} returned HTTP 409: ${body.message.replaceAll(token, "[redacted]")}`);
   }
   const [head] = commits.parse(await tip.json());
   if (!head) return skip("default branch has 0 commits");
@@ -189,7 +202,7 @@ export async function getGithubExamples(names: string[]): Promise<RepoExample[]>
         console.error(`${name}: eligible — ${example.commitCount} commits, README found.`);
       }
     } catch (cause) {
-      const error = cause instanceof CliError ? cause : unknownError();
+      const error = cause instanceof CliError ? cause : githubError(String(cause));
       console.error(`${name}: failed — ${error.message}`);
       throw new CliError(error.code, error.message, {
         apiCode: error.apiCode,
@@ -200,8 +213,102 @@ export async function getGithubExamples(names: string[]): Promise<RepoExample[]>
   return examples;
 }
 
+const fields = canonicalFileDefinition.items.properties;
+const canonicalList = z.array(z.strictObject({
+  name: z.string().regex(new RegExp(fields.name.pattern)).trim(),
+  description: z.string().regex(new RegExp(fields.description.pattern)),
+  repos: z.array(z.string().regex(new RegExp(fields.repos.items.pattern)))
+    .min(fields.repos.minItems).refine(urls => new Set(urls.map(url => url.toLowerCase())).size === urls.length,
+      "Source repository URLs must be unique within a group."),
+  Readme: z.string().regex(new RegExp(fields.Readme.pattern)).nullable(),
+}));
+
+async function flushCanonical(opts: { file: string; name: string }) {
+  let input: unknown;
+  try {
+    input = JSON.parse((await readFile(opts.file, "utf8")).replace(/^\uFEFF/, ""));
+  } catch {
+    throw invalid("Could not read a JSON list from --file.");
+  }
+  const groups = canonicalList.parse(input);
+  const matches = groups.filter(group => group.name.toLowerCase() === opts.name.trim().toLowerCase());
+  if (matches.length !== 1) throw invalid("Select exactly one canonical in the file with --name.");
+  const record = matches[0];
+  const store = openLocalStore(resolve(findWorkspace() ?? process.cwd(), ".gauge"));
+  let createdUrl: string | undefined;
+  try {
+    // Serialize the name check and insert across simultaneous CLI invocations.
+    store.db.exec("BEGIN IMMEDIATE");
+    if (store.db.prepare("SELECT 1 FROM canonical_repos WHERE name = ?").get(record.name))
+      throw invalid(`Canonical name "${record.name}" already exists. Try another name.`);
+    if (!record.Readme) throw invalid("Complete the approved canonical's Readme before publishing.");
+    const slug = record.name.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
+    if (!slug || slug.length > 100) throw invalid("Choose a name that yields a GitHub repository name of 1–100 characters.");
+    const token = resolveGithubToken();
+    if (!token) throw invalid("Run gauge auth provide-gh-token or set GAUGE_GITHUB_TOKEN.");
+    const api = (path: string) => new URL(path, "https://api.github.com");
+    const user = await requestGithubWithRetry(api("/user"), token);
+    const { login } = z.object({ login: z.string().min(1) }).parse(await user.json());
+    const target = `${login}/${slug}`;
+    const url = `https://github.com/${target}`;
+    // Keep the GitHub ID locally until the README and database row are both saved.
+    const key = createHash("sha256").update(target.toLowerCase()).digest("hex");
+    const receipt = resolve(store.gaugeDir, `pending-canonical-${key}.json`);
+    let pendingId: number | undefined;
+    try {
+      pendingId = z.number().int().positive().parse(JSON.parse(await readFile(receipt, "utf8")));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    if (pendingId !== undefined) {
+      const existing = await requestGithubWithRetry(api(`/repos/${target}`), token);
+      const repo = z.object({ id: z.number(), private: z.boolean() }).parse(await existing.json());
+      if (repo.id !== pendingId || repo.private) throw invalid(`Pending public repository identity changed at ${url}.`);
+      createdUrl = url;
+    } else {
+      const response = await requestGithubWithRetry(api("/user/repos"), token, [], undefined, {
+        method: "POST", body: JSON.stringify({ name: slug, private: false, auto_init: false }),
+      });
+      createdUrl = url;
+      const { id } = z.object({ id: z.number().int().positive() }).parse(await response.json());
+      await writeFile(receipt + ".tmp", JSON.stringify(id));
+      await rename(receipt + ".tmp", receipt);
+    }
+    const contents = api(`/repos/${target}/contents/README.md`);
+    const prior = pendingId === undefined ? undefined :
+      await requestGithubWithRetry(contents, token, [404], "application/vnd.github.raw+json");
+    if (!prior || prior.status === 404) {
+      await requestGithubWithRetry(contents, token, [], undefined, {
+        method: "PUT", body: JSON.stringify({
+          message: "Add canonical README", content: Buffer.from(record.Readme).toString("base64"),
+        }),
+      });
+    } else if (await prior.text() !== record.Readme) {
+      throw invalid("The published README differs from the selected record.");
+    }
+    store.db.prepare('INSERT INTO canonical_repos (url,name,description,"source-repos") VALUES (?,?,?,?)')
+      .run(url, record.name, record.description, JSON.stringify(record.repos));
+    store.db.exec("COMMIT");
+    await rm(receipt, { force: true }).catch(() => console.error(`Saved canonical. Pending receipt remains at ${receipt}.`));
+    return url;
+  } catch (error) {
+    if (createdUrl) throw new CliError("internal", `Repository exists at ${createdUrl}, but flush did not complete: ${error instanceof Error ? error.message : "unknown error"}`);
+    throw error;
+  } finally {
+    store.close(); // Closing rolls back any unfinished transaction.
+  }
+}
+
 export function register(program: Command) {
   const group = program.command("canonical-repos").description("Discover canonical repository candidates");
+  group.command("flush-canonical-repos")
+    .description("Publish one approved canonical README and save its local catalog entry")
+    .requiredOption("--file <path>", "canonical JSON list")
+    .requiredOption("--name <name>", "group name in the list")
+    .action(async (opts: { file: string; name: string }, command: Command) => {
+      if (command.optsWithGlobals().hosted) throw invalid("Use canonical-repos locally.");
+      console.log(await flushCanonical(opts));
+    });
   group
     .command("searchGithubExampleCandidates")
     .description("Return a JSON array of public owner/repository names from one GitHub code search page")

@@ -12,7 +12,7 @@ import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { CliError } from "./client";
 
-export const LOCAL_DATABASE_VERSION = 1;
+export const LOCAL_DATABASE_VERSION = 2;
 export type MeasurementKind = "eval" | "preference";
 export type MeasurementDefinition = {
   name: string;
@@ -113,6 +113,16 @@ PRAGMA user_version = 1;
 `;
 
 type Row = Record<string, unknown>;
+const canonicalSchema = `
+CREATE TABLE canonical_repos (
+  url TEXT NOT NULL PRIMARY KEY,
+  name TEXT NOT NULL COLLATE NOCASE,
+  description TEXT NOT NULL,
+  "source-repos" TEXT NOT NULL CHECK(json_valid("source-repos") AND json_type("source-repos") = 'array')
+);
+CREATE UNIQUE INDEX canonical_repos_name ON canonical_repos(name);
+PRAGMA user_version = 2;
+`;
 const json = (value: unknown) => JSON.stringify(value);
 const object = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value)
@@ -565,11 +575,13 @@ export function openLocalStore(gaugeDir: string): LocalStore {
         `This workspace uses database version ${version}; this CLI supports ${LOCAL_DATABASE_VERSION}. Upgrade Gauge. Your data has not been changed.`,
       );
     db.exec("PRAGMA journal_mode = WAL;");
-    if (version === 0) {
+    if (version < LOCAL_DATABASE_VERSION) {
       db.exec("BEGIN IMMEDIATE");
       try {
         if (Number(db.prepare("PRAGMA user_version").get()!.user_version) === 0)
           db.exec(schema);
+        if (Number(db.prepare("PRAGMA user_version").get()!.user_version) === 1)
+          db.exec(canonicalSchema);
         db.exec("COMMIT");
       } catch (error) {
         db.exec("ROLLBACK");
