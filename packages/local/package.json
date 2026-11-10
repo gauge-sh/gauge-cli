@@ -27,7 +27,7 @@
     "prepublishOnly": "node ../../scripts/validate-local-execution-release.mjs"
   },
   "dependencies": {
-    "@withgauge/agent-adapters": "0.2.1"
+    "@withgauge/agent-adapters": "0.2.2"
   },
   "repository": {
     "type": "git",
