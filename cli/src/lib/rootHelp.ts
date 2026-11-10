@@ -19,6 +19,7 @@ const GROUPS: [string, Record<string, string>][] = [
       instructions: "Instructions for coding agents",
       init: "Initialize a Gauge workspace",
       local: "Configure local execution",
+      "canonical-repos": "Discover canonical repository candidates",
       "install-skill": "Install the Gauge agent skill",
       onboard: "Sign in and set up your workspace",
       status: "One-shot org summary (Gauge account)",
