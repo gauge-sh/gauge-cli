@@ -11,6 +11,9 @@ export const repoExampleSchema = z.strictObject({
   languages: z.array(z.string().min(1)),
   commitCount: z.number().int().min(20),
   readme: z.string().min(1),
+  languageBytes: z.record(z.string(), z.number().nonnegative()).optional(),
+  defaultBranch: z.string().min(1).optional(),
+  headSha: z.string().regex(/^[a-f0-9]{40}$/i).optional(),
 });
 
 export type RepoExample = z.infer<typeof repoExampleSchema>;

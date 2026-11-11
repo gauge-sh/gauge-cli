@@ -12,7 +12,7 @@ import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { CliError } from "./client";
 
-export const LOCAL_DATABASE_VERSION = 2;
+export const LOCAL_DATABASE_VERSION = 4;
 export type MeasurementKind = "eval" | "preference";
 export type MeasurementDefinition = {
   name: string;
@@ -122,6 +122,29 @@ CREATE TABLE canonical_repos (
 );
 CREATE UNIQUE INDEX canonical_repos_name ON canonical_repos(name);
 PRAGMA user_version = 2;
+`;
+const canonicalSourcesSchema = `
+CREATE TABLE source_repos (
+  url TEXT NOT NULL PRIMARY KEY COLLATE NOCASE,
+  languages TEXT CHECK(languages IS NULL OR (json_valid(languages) AND json_type(languages) = 'array')),
+  commit_count INTEGER CHECK(commit_count IS NULL OR commit_count >= 0),
+  readme TEXT,
+  language_bytes TEXT CHECK(language_bytes IS NULL OR (json_valid(language_bytes) AND json_type(language_bytes) = 'object')),
+  default_branch TEXT,
+  head_sha TEXT
+);
+CREATE TABLE canonical_repo_sources (
+  canonical_url TEXT NOT NULL REFERENCES canonical_repos(url) ON DELETE CASCADE,
+  source_url TEXT NOT NULL COLLATE NOCASE REFERENCES source_repos(url) ON DELETE CASCADE,
+  PRIMARY KEY(canonical_url, source_url)
+);
+CREATE INDEX canonical_repo_sources_source ON canonical_repo_sources(source_url);
+INSERT OR IGNORE INTO source_repos (url)
+  SELECT value FROM canonical_repos, json_each("source-repos");
+INSERT OR IGNORE INTO canonical_repo_sources (canonical_url, source_url)
+  SELECT canonical_repos.url, value FROM canonical_repos, json_each("source-repos");
+ALTER TABLE canonical_repos DROP COLUMN "source-repos";
+PRAGMA user_version = 3;
 `;
 const json = (value: unknown) => JSON.stringify(value);
 const object = (value: unknown): Record<string, unknown> =>
@@ -582,6 +605,10 @@ export function openLocalStore(gaugeDir: string): LocalStore {
           db.exec(schema);
         if (Number(db.prepare("PRAGMA user_version").get()!.user_version) === 1)
           db.exec(canonicalSchema);
+        if (Number(db.prepare("PRAGMA user_version").get()!.user_version) === 2)
+          db.exec(canonicalSourcesSchema);
+        if (Number(db.prepare("PRAGMA user_version").get()!.user_version) === 3)
+          db.exec("ALTER TABLE source_repos DROP COLUMN readme; PRAGMA user_version = 4;");
         db.exec("COMMIT");
       } catch (error) {
         db.exec("ROLLBACK");

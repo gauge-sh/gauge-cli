@@ -177,6 +177,9 @@ async function fetchExample(name: string, token: string): Promise<RepoExample | 
     languages: Object.keys(bytes).sort(),
     commitCount,
     readme,
+    languageBytes: bytes,
+    defaultBranch: repo.default_branch,
+    headSha: head.sha,
   });
 }
 
@@ -223,7 +226,7 @@ const canonicalList = z.array(z.strictObject({
   Readme: z.string().regex(new RegExp(fields.Readme.pattern)).nullable(),
 }));
 
-async function flushCanonical(opts: { file: string; name: string }) {
+async function flushCanonical(opts: { file: string; name: string; examplesFile?: string }) {
   let input: unknown;
   try {
     input = JSON.parse((await readFile(opts.file, "utf8")).replace(/^\uFEFF/, ""));
@@ -234,6 +237,17 @@ async function flushCanonical(opts: { file: string; name: string }) {
   const matches = groups.filter(group => group.name.toLowerCase() === opts.name.trim().toLowerCase());
   if (matches.length !== 1) throw invalid("Select exactly one canonical in the file with --name.");
   const record = matches[0];
+  const examples = new Map<string, RepoExample>();
+  if (opts.examplesFile) {
+    const lines = (await readFile(opts.examplesFile, "utf8")).replace(/^\uFEFF/, "").split(/\r?\n/);
+    for (const line of lines.filter(line => line.trim())) {
+      const example = repoExampleSchema.parse(JSON.parse(line));
+      if (!examples.has(example.url.toLowerCase())) examples.set(example.url.toLowerCase(), example);
+    }
+    for (const url of record.repos) {
+      if (!examples.has(url.toLowerCase())) throw invalid(`No example metadata found for ${url}.`);
+    }
+  }
   const store = openLocalStore(resolve(findWorkspace() ?? process.cwd(), ".gauge"));
   let createdUrl: string | undefined;
   try {
@@ -286,8 +300,26 @@ async function flushCanonical(opts: { file: string; name: string }) {
     } else if (await prior.text() !== record.Readme) {
       throw invalid("The published README differs from the selected record.");
     }
-    store.db.prepare('INSERT INTO canonical_repos (url,name,description,"source-repos") VALUES (?,?,?,?)')
-      .run(url, record.name, record.description, JSON.stringify(record.repos));
+    store.db.prepare('INSERT INTO canonical_repos (url,name,description) VALUES (?,?,?)')
+      .run(url, record.name, record.description);
+    const insertSource = store.db.prepare(`INSERT INTO source_repos
+      (url,languages,commit_count,language_bytes,default_branch,head_sha)
+      VALUES (?,?,?,?,?,?) ON CONFLICT(url) DO UPDATE SET
+      languages = COALESCE(excluded.languages, source_repos.languages),
+      commit_count = COALESCE(excluded.commit_count, source_repos.commit_count),
+      language_bytes = COALESCE(excluded.language_bytes, source_repos.language_bytes),
+      default_branch = COALESCE(excluded.default_branch, source_repos.default_branch),
+      head_sha = COALESCE(excluded.head_sha, source_repos.head_sha)`);
+    const insertLink = store.db.prepare(`INSERT INTO canonical_repo_sources
+      (canonical_url,source_url) VALUES (?,?)`);
+    for (const sourceUrl of record.repos) {
+      const example = examples.get(sourceUrl.toLowerCase());
+      insertSource.run(sourceUrl, example ? JSON.stringify(example.languages) : null,
+        example?.commitCount ?? null,
+        example?.languageBytes ? JSON.stringify(example.languageBytes) : null,
+        example?.defaultBranch ?? null, example?.headSha ?? null);
+      insertLink.run(url, sourceUrl);
+    }
     store.db.exec("COMMIT");
     await rm(receipt, { force: true }).catch(() => console.error(`Saved canonical. Pending receipt remains at ${receipt}.`));
     return url;
@@ -305,7 +337,8 @@ export function register(program: Command) {
     .description("Publish one approved canonical README and save its local catalog entry")
     .requiredOption("--file <path>", "canonical JSON list")
     .requiredOption("--name <name>", "group name in the list")
-    .action(async (opts: { file: string; name: string }, command: Command) => {
+    .option("--examples-file <path>", "enrichment JSONL supplying source repository metadata")
+    .action(async (opts: { file: string; name: string; examplesFile?: string }, command: Command) => {
       if (command.optsWithGlobals().hosted) throw invalid("Use canonical-repos locally.");
       console.log(await flushCanonical(opts));
     });

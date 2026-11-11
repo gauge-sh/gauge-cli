@@ -26,7 +26,7 @@ Run from the same workspace throughout. Substitute real paths under the run dire
 
     gauge canonical-repos searchGithubExampleCandidates --query "<usage signature and qualifiers>" --page 1 > names.json
     gauge canonical-repos getGithubExamples --file names.json --output-file examples.jsonl
-    gauge canonical-repos flush-canonical-repos --file canonicals.json --name "<one approved group name>"
+    gauge canonical-repos flush-canonical-repos --file canonicals.json --name "<one approved group name>" --examples-file examples.jsonl
 
 Search emits names for one page. Enrichment appends one complete JSON object per eligible README and prints the output path. Flush validates the canonical list, selects the named record, checks local name uniqueness, publishes its README and saves the catalog row. GitHub authentication uses GAUGE_GITHUB_TOKEN or the credential saved by gauge auth provide-gh-token.
 
@@ -38,7 +38,7 @@ Keep run-owned files under .gauge/canonical-repo-discovery/<run-uuid>/. Save che
 - **examples.jsonl** — Append-only enrichment output. Parse one line at a time and pass one frozen example's README to its assigned worker. Per-line schema: ${JSON.stringify(z.toJSONSchema(repoExampleSchema))}
 - **summaries/<hash-of-lowercase-repo-url>.json** — One worker-written summary per repo. The filename identifies the source. The readmeSha256 field identifies the exact README text. Summary schema: ${JSON.stringify(summarySchema)}
 - **canonicals.json** — Start with an empty JSON array. Save the entire edited group list after each revision. Flush reads this same file once per selected name. Schema: ${JSON.stringify(canonicalSchema)}
-- **.gauge/gauge.sqlite** — Permanent workspace catalog outside the run directory. A successful flush stores the canonical URL, unique name, description and source URLs here.
+- **.gauge/gauge.sqlite** — Permanent workspace catalog outside the run directory. A successful flush stores the canonical URL, unique name and description in canonical_repos, shared source metadata in source_repos, and their many-to-many associations in canonical_repo_sources. Pass --examples-file to preserve enrichment metadata; URL-only flushes preserve any existing source metadata.
 `;
 
 const CANONICAL_README_GUIDANCE = `## Write the canonical README

@@ -10,6 +10,29 @@
     --code: #232321; --sel: #1d2a30; }
 }
 * { box-sizing: border-box; }
+nav { display: flex; flex-direction: column; gap: 4px; padding: 10px; border-bottom: 1px solid var(--line); }
+nav a { color: var(--text); text-decoration: none; padding: 8px; border-radius: 3px; }
+nav a[aria-current="page"] { background: var(--sel); font-weight: 600; }
+.show-repositories #filters, .show-repositories #list { display: none; }
+.show-repositories #view { overflow-y: auto; display: block; }
+.repositories-page { padding: 24px; max-width: 1500px; margin: auto; }
+.repositories-page h1 { font-size: 22px; margin: 0 0 20px; }
+.repositories-page h2 { font-size: 16px; margin: 0 0 16px; }
+.repositories-page a { color: var(--accent); }
+.repo-table-scroll { overflow-x: auto; }
+.repo-table { width: 100%; border-collapse: collapse; background: var(--panel); }
+.repo-table th, .repo-table td { padding: 12px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+.repo-table th { color: var(--muted); font-weight: 600; }
+.language-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; margin: 36px 0; }
+.pie-layout { display: flex; flex-wrap: wrap; align-items: start; gap: 20px; }
+.repo-pie { width: 180px; height: 180px; border-radius: 50%; flex-shrink: 0; }
+.pie-legend { padding: 0; margin: 0; list-style: none; flex: 1; min-width: 180px; max-height: 320px; overflow-y: auto; }
+.pie-legend li { margin-bottom: 8px; line-height: 1.5; }
+.pie-key { display: inline-block; width: 10px; height: 10px; margin-right: 7px; }
+.repo-note { color: var(--muted); line-height: 1.5; }
+.language-json { white-space: pre-wrap; overflow-wrap: anywhere; }
+.repo-pagination { display: flex; gap: 20px; justify-content: flex-end; padding: 16px 0; }
+@media (max-width: 900px) { .language-charts { grid-template-columns: 1fr; } .show-repositories aside { width: 160px; } .repositories-page { padding: 16px; } }
 body { margin: 0; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; -webkit-font-smoothing: antialiased; }
 .mono, pre, .t-tools { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 header { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; border-bottom: 1px solid var(--line); background: var(--panel); flex-shrink: 0; }
