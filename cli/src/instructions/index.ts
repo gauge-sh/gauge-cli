@@ -88,10 +88,8 @@ ${MODES}
 
 ## Module guidance
 
-To discover repository examples and publish representative READMEs, run \`gauge instructions canonical-repo-discovery\`.
-
-Read the full page before detailed work: \`gauge instructions --list\`. Modules
-are workflow guidance, not a page per command; most end with their -h command.
+Read the relevant module before detailed work. Find topics with \`gauge instructions --list\`.
+For repository discovery and README publication, use \`gauge instructions canonical-repo-discovery\`.
 
 ### Run
 
