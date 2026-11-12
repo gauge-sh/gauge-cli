@@ -442,3 +442,28 @@ connections:
   try { assert.equal(JSON.stringify(store.getLaunch(batchId)).includes(process.env.LOCAL_TEST_CONNECTION_SECRET!), false); }
   finally { store.close(); }
 });
+
+test("connection plans warn once for a shared gateway failure and retain credential problems", async (t) => {
+  const f = await fakeDocker(t);
+  f.state.connections = "";
+  await f.save();
+  const connectionsFile = join(f.root, "connections.yaml");
+  await writeFile(connectionsFile, JSON.stringify({ version: 1, connections: ["one", "two"].map((name) => ({
+    name, origin: `https://${name}.example.test`, header: "Authorization", env: "ANTHROPIC_API_KEY",
+  })) }));
+  const configured = { ...definition, cases: [{ ...definition.cases[0], config: {
+    ...definition.cases[0].config, connectionIds: ["one", "two"],
+  } }] };
+  const options = { runtimeImage: "custom:test", gatewayImage: "gateway:test", connectionsFile };
+  const plan = await planLocal(configured, options);
+  const problem = plan.gateway!.problem!;
+  assert.deepEqual(plan.connections.map((connection) => connection.ready), [false, false]);
+  assert.deepEqual(plan.warnings.filter((warning) => warning.includes(problem.message)), [
+    `${problem.message} ${problem.hint}`,
+  ]);
+  delete process.env.ANTHROPIC_API_KEY;
+  const missing = await planLocal(configured, options);
+  assert.equal(missing.warnings.filter((warning) => warning.includes(problem.message)).length, 1);
+  for (const name of ["one", "two"])
+    assert.ok(missing.warnings.includes(`Local connection ${name}: environment variable ANTHROPIC_API_KEY is missing or empty.`));
+});

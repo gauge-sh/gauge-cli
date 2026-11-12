@@ -134,7 +134,9 @@ export async function planLocal(
   const hasConnections = Object.values(connectionPlan).some((selected) => selected.length);
   const gateway = hasConnections || definition.resources.some((r) => r.use.type === "web-fixture") ? inspectLocalGateway(options.gatewayImage, undefined, hasConnections) : undefined;
   const connections = inspectLocalConnections(connectionPlan, gateway?.problem?.message);
-  for (const connection of connections) if (!connection.ready) warnings.push(connection.problem!);
+  for (const connection of connections)
+    if (!connection.ready && connection.problem !== gateway?.problem?.message)
+      warnings.push(connection.problem!);
   if (gateway?.problem) warnings.push(`${gateway.problem.message} ${gateway.problem.hint}`);
   if (runtime.problem)
     warnings.push(`${runtime.problem.message} ${runtime.problem.hint}`);
