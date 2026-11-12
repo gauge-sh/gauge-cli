@@ -566,6 +566,66 @@ JSON is still the only output. Automatic PR checks continue to use configured
 sources; disable those checks in Gauge's GitHub settings if CI owns the trigger.
 Save `results.json` as a CI artifact even when the check fails.
 
+### Self-contained product experiments (hosted)
+
+A self-contained experiment supplies its product revision, input declarations,
+and cases in one JSON file. It needs no checkout or `gauge.json`. Gauge resolves
+the product through your organization's GitHub App connection; grant the App
+access to that repository, including when it is public.
+
+```sh
+gauge run --example --format experiment > experiment.json
+# Edit the product, inputs, task, and criteria, then preview:
+gauge run --hosted --org <org> --apply experiment.json --dry-run -o json > preview.json
+# Save the resolved commit so a branch moving cannot change the launch:
+jq '.experiment' preview.json > pinned-experiment.json
+gauge run --hosted --org <org> --apply pinned-experiment.json --yes -o json
+```
+
+For example:
+
+```json
+{
+  "version": 2,
+  "product": { "repository": "example/product", "revision": "main" },
+  "inputs": { "docs": { "type": "files", "paths": ["docs/**"] } },
+  "cases": [{
+    "key": "first-request",
+    "prompt": "Use the supplied documentation to write a minimal API client.",
+    "criteria": [{ "name": "Working example", "rubric": "The client follows the documented API contract." }],
+    "config": { "agents": [{ "agent": "CODEX_CLI" }], "inputs": ["docs"] }
+  }]
+}
+```
+
+`product.repository` accepts `owner/repository` or an HTTPS GitHub repository URL;
+`revision` accepts a branch, tag, or full commit SHA. Each invocation resolves it
+once. The preview includes the immutable revision in `experiment`, suitable for
+another `--apply`. Reusing the original branch-based file resolves the branch anew.
+Use `gauge run --schema --format experiment` for the complete authoring schema.
+
+Input declarations use the same vocabulary as `gauge.json`: files, skills,
+npm packages, binaries, web fixtures, and website previews. All product inputs
+come from the selected repository and commit, using the declared Git, Actions,
+or deployment source. An npm input selects an existing packed `.tgz` from Git or
+an Actions artifact; Gauge does not build a package directory for you.
+
+The tested agent's consumer workspace is separate. Omit `cases[].config.repoUrl`
+to use the default workspace, or set it explicitly for a consumer project.
+The product repository does not become the consumer workspace. Cases select
+named inputs through `config.inputs`; omitting the selection includes all inputs
+declared in this specification. An explicit empty `inputs` object is allowed.
+
+This form never discovers cases or inputs from the working directory and does
+not upload local files. `--input` overrides, `--cli-rules`, and local execution
+are unavailable for this form. Existing case specifications keep their normal
+workspace behavior. A preview validates the plan and reports source readiness;
+it may read source metadata and manifests, but does not prepare input artifacts
+or start sessions. Pinning a commit
+does not freeze a future CI artifact or deployment: preparation records the
+actual artifacts and receipts when the request runs. Launches use the ordinary
+organization permissions, execution limits, and credits.
+
 ### Antigravity (hosted)
 
 Antigravity is available to organizations enrolled in Antigravity access. Run

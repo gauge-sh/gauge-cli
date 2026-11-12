@@ -48,6 +48,14 @@ import {
   parseCaseSpec,
 } from "../lib/caseSpec";
 import { CliError, createClient } from "../lib/client";
+import type { Experiment } from "@withgauge/api-schemas/experiments";
+import {
+  EXPERIMENT_SCHEMA,
+  EXAMPLE_EXPERIMENT,
+  isExperimentSpec,
+  parseExperimentSpec,
+  loadExperiment,
+} from "../lib/experimentSpec";
 import { confirmOrAbort } from "../lib/confirm";
 import { registerRunFork } from "./runFork";
 import { triggeredByLabel } from "../lib/createdBy";
@@ -494,7 +502,7 @@ type LaunchOpts = LifecycleOpts & {
   requireExperiment?: string;
   schema?: boolean;
   example?: boolean;
-  format?: "case" | "battery";
+  format?: "case" | "battery" | "experiment";
   yes?: boolean;
 };
 
@@ -697,6 +705,14 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
     const flag = opts.schema ? "--schema" : "--example";
     if (source || (opts.schema && opts.example))
       throw new CliError("usage", `${flag} prints and exits; pass it alone`);
+    if (opts.format === "experiment") {
+      printJson(opts.schema ? EXPERIMENT_SCHEMA() : EXAMPLE_EXPERIMENT);
+      if (opts.example)
+        console.error(
+          "Save as experiment.json, edit the product and cases, then preview: gauge run --hosted --apply experiment.json --dry-run",
+        );
+      return;
+    }
     const cases = opts.format !== "battery";
     if (opts.schema) printJson(cases ? CASE_SPEC_SCHEMA() : BATTERY_SCHEMA());
     else {
@@ -771,9 +787,22 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
     throw new CliError("usage", "--require-experiment applies with --apply");
 
   let spec: CaseSpec | undefined;
+  let experiment: Experiment | undefined;
   if (opts.apply !== undefined) {
     const json = await readSpecJson(opts.apply);
-    if (!isCaseSpec(json)) {
+    if (isExperimentSpec(json)) {
+      experiment = parseExperimentSpec(json);
+      if (gaugeState(cmd).mode !== "hosted")
+        throw new CliError(
+          "usage",
+          "Self-contained product experiments require --hosted; remote inputs are prepared by Gauge.",
+        );
+      if (opts.input.length || opts.cliRules || opts.requireExperiment)
+        throw new CliError(
+          "usage",
+          "A self-contained experiment takes its inputs and cases only from the specification; --input, --cli-rules, and --require-experiment are unavailable.",
+        );
+    } else if (!isCaseSpec(json)) {
       if (cliRules)
         throw new CliError(
           "usage",
@@ -800,12 +829,12 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
         console.error(RUN_PRESENTATION_REMINDER);
       return;
     }
-    if (opts.requireExperiment !== undefined)
+    if (!experiment && opts.requireExperiment !== undefined)
       throw new CliError(
         "usage",
         "--require-experiment applies to battery specs, not case specs",
       );
-    spec = parseCaseSpec(json);
+    if (!experiment) spec = parseCaseSpec(json);
   }
   if (opts.prompt !== undefined)
     spec = promptSpec(
@@ -822,7 +851,7 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
     await runLocalCases(cmd, opts, saved.spec, saved.measurement);
     return;
   }
-  if (opts.dryRun && source && !spec)
+  if (opts.dryRun && source && !spec && !experiment)
     throw new CliError(
       "usage",
       `--dry-run previews this repo's eval cases or an --apply spec; drop ${source}`,
@@ -848,8 +877,12 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
     await runLocalCases(cmd, opts, spec);
     return;
   }
-  const { definition, org, inputSnapshots, unattachedInputs } =
-    await loadWorkingTree(cmd, opts, !opts.dryRun, spec, cliRules);
+  const loaded: Awaited<ReturnType<typeof loadWorkingTree>> & {
+    experiment?: Experiment;
+  } = experiment
+    ? await loadExperiment(cmd, experiment, opts)
+    : await loadWorkingTree(cmd, opts, !opts.dryRun, spec, cliRules);
+  const { definition, org, inputSnapshots, unattachedInputs } = loaded;
   const orgPath = `/api/v1/orgs/${encodeURIComponent(org)}/run-definitions`;
   if (opts.dryRun) {
     const result =
@@ -857,9 +890,20 @@ async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
         `${orgPath}/plan`,
         definition,
       );
-    const preview = { ...result, inputSnapshots, unattachedInputs };
+    const preview = {
+      ...result,
+      inputSnapshots,
+      unattachedInputs,
+      ...(loaded.experiment ? { experiment: loaded.experiment } : {}),
+    };
     if (resolveOutput(cmd) === "json") printJson(preview);
-    else printPlan(preview);
+    else {
+      if (loaded.experiment)
+        console.log(
+          `Product: ${loaded.experiment.product.repository} @ ${loaded.experiment.product.revision}\nInputs are declared; a preview does not prepare their bytes. Use -o json to save the pinned experiment for launch.`,
+        );
+      printPlan(preview);
+    }
     return;
   }
   const result =
@@ -1202,7 +1246,7 @@ export function register(program: Command): void {
     )
     .option(
       "--apply <file>",
-      'run a JSON spec ("-" for stdin): a case spec (`cases`, both modes) or a battery spec (`prompts`, hosted). See --example',
+      'run a JSON spec ("-" for stdin): cases, a self-contained product experiment (hosted), or a battery. See --example --format experiment',
     )
     .option(
       "--files <paths...>",
@@ -1245,7 +1289,7 @@ export function register(program: Command): void {
       new Option(
         "--format <format>",
         "schema/example format (default: case)",
-      ).choices(["case", "battery"]),
+      ).choices(["case", "battery", "experiment"]),
     )
     .option("--yes", "skip the confirmation")
     .action(async (arg: string | undefined, opts: LaunchOpts, cmd: Command) => {
