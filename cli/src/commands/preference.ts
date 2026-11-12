@@ -1,4 +1,4 @@
-import type { Command } from "commander";
+import { type Command, Option } from "commander";
 import { resolveOutput } from "../lib/context";
 import { filterByCreator } from "../lib/createdBy";
 import { collect } from "../lib/flags";
@@ -16,6 +16,7 @@ import {
   listPreferencePrompts,
   listScenarios,
   markets,
+  preferenceSchedule,
   type PreferenceCreateOpts,
   type PreferenceEditOpts,
   preferencePromptRow,
@@ -63,7 +64,9 @@ export function register(program: Command): void {
       )
       .option("--ref <ref>", "branch, tag, or commit (with --repo)")
       .option("--persona <profileId>", "persona profile id"),
+    { cadence: false },
   )
+    .addOption(new Option("--cadence <cadence>").hideHelp())
     .option("--kind <kind>", KIND_CHOICES.join(" | "))
     .option("--brand-a <name>", "first brand (head-to-head)")
     .option("--brand-b <name>", "second brand (head-to-head)")
@@ -78,6 +81,8 @@ export function register(program: Command): void {
       collect,
       [] as string[],
     )
+    .option("--tracked", "run on the org schedule (hosted default)")
+    .option("--no-tracked", "run only on demand")
     .action(async (opts: PreferenceCreateOpts, cmd: Command) => {
       await createPreferencePrompt(cmd, opts);
     });
@@ -94,7 +99,9 @@ export function register(program: Command): void {
         "--file <path>",
         'replace the prompt text from a file ("-" stdin)',
       ),
+    { cadence: false },
   )
+    .addOption(new Option("--cadence <cadence>").hideHelp())
     .option("--brand-a <name>", "first brand")
     .option("--brand-b <name>", "second brand")
     .option("--branded", "mark branded (open-ended only)")
@@ -108,6 +115,8 @@ export function register(program: Command): void {
       [] as string[],
     )
     .option("--clear-tags", "remove all user tags")
+    .option("--tracked", "run on the org schedule")
+    .option("--no-tracked", "stop scheduled runs")
     .action(async (id: string, opts: PreferenceEditOpts, cmd: Command) => {
       await editPreferencePrompt(cmd, id, opts);
     });
@@ -165,5 +174,16 @@ export function register(program: Command): void {
     .option("--add <marketId>", "track a published market")
     .action(async (opts: { add?: string }, cmd: Command) => {
       await markets(cmd, opts);
+    });
+
+  preference
+    .command("schedule")
+    .description(
+      "Show or set when tracked prompts run. Rankings count only these scheduled runs",
+    )
+    .option("--cadence <cadence>", "daily | weekly")
+    .option("--day <weekday>", "weekly run day, such as monday")
+    .action(async (opts: { cadence?: string; day?: string }, cmd: Command) => {
+      await preferenceSchedule(cmd, opts);
     });
 }

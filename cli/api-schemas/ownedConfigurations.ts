@@ -127,8 +127,8 @@ export const visibilityPromptSettingsSchema = z.object({
   lifecycle: lifecycleSchema.nullish(),
   cadence: ownedCadenceSchema,
   sampleCount: sampleCountSchema,
-  lastScheduledAt: z.string().nullable(),
-  nextRunAt: z.string().nullable(),
+  lastScheduledAt: z.string().nullish(),
+  nextRunAt: z.string().nullish(),
 });
 export type VisibilityPromptSettings = z.infer<
   typeof visibilityPromptSettingsSchema

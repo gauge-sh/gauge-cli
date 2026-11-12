@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Added
+
+- `gauge preference create` and `edit` take `--tracked` / `--no-tracked`.
+  Tracked prompts run on the org's preference schedule; rankings count only
+  those runs. Hosted prompts are tracked by default.
+- `gauge preference schedule` shows the org's preference schedule.
+  `--cadence daily|weekly` and `--day <weekday>` change it.
+
+### Changed
+
+- Preference prompts no longer take `--cadence`. A cadence other than `none`
+  fails with a pointer to `--tracked` and `gauge preference schedule`.
+  `gauge preference get` shows `tracked` in place of a cadence. Evals keep
+  `--cadence`.
+
 ## 0.30.0 — 2026-11-12
 
 ### Added

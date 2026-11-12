@@ -740,7 +740,7 @@ the copy — one eval is always one configuration.
 A **preference prompt** is a reusable question. The following hosted example
 uses scenarios and recurring scheduling. Locally, save a prompt and launch it
 on demand with `gauge run --preference <id> --local`. It owns one set of run
-settings — roster, resources, cadence, samples — and any number of
+settings — roster, resources, samples — and any number of
 **scenarios**, each one repository × persona cell. Every scenario runs with
 the prompt's settings, so one prompt measures the same question across several
 repositories and personas at once:
@@ -749,10 +749,10 @@ repositories and personas at once:
 gauge preference create --name "CLI deployment preference" \
   --kind head-to-head --brand-a acme --brand-b globex \
   --text "Which CLI should I use to deploy?" \
-  --agent claude-code --cadence daily \
+  --agent claude-code \
   --repo https://github.com/acme/api             # first scenario
 
-gauge preference edit <promptId> --agent codex --samples 3 --cadence weekly
+gauge preference edit <promptId> --agent codex --samples 3 --no-tracked
 gauge preference scenarios list <promptId>
 gauge preference scenarios add  <promptId> --persona <profileId>
 gauge preference scenarios add  <promptId> --repo https://github.com/acme/web --persona <profileId>
@@ -855,18 +855,30 @@ Launching runs consumes credits normally.
 
 ## Hosted schedules
 
-`--cadence none` is "manual": the measurement stops coming due and runs only
-when you launch it. There is no separate pause or enabled flag, in the CLI or
-the app. `--cadence daily|weekly|monthly` puts it back on a rhythm, and
-`gauge preference get <id>` reads a manual prompt back as `cadence: manual`.
+An eval has its own cadence. `--cadence none` is "manual": the eval stops
+coming due and runs only when you launch it. `--cadence daily|weekly|monthly`
+puts it back on a rhythm.
+
+Preference prompts have no cadence of their own. A hosted prompt is
+**tracked** by default: it runs on the org's one preference schedule, with
+every other tracked prompt. Rankings count only these scheduled runs, so
+each point compares the same set of prompts.
+
+```sh
+gauge preference schedule                              # show the schedule
+gauge preference schedule --cadence weekly --day monday
+gauge preference schedule --cadence daily
+gauge preference edit <promptId> --no-tracked          # run only on demand
+gauge preference edit <promptId> --tracked
+```
 
 `gauge run --eval <id>` and `gauge run --preference <id>` are the separate
 immediate launches. They use the stored configuration and ask before spending
 (`--yes` skips the prompt for scripts).
 `gauge run --preference <id> --scenario <scenarioId>` (repeatable) runs a subset;
-omit it and every scenario runs. On a recurring cadence, an eval launch or a
-full preference launch moves the next scheduled run to one period from now. A
-scenario subset leaves the schedule unchanged.
+omit it and every scenario runs. On a recurring cadence, an eval launch moves
+the next scheduled run to one period from now. A preference launch leaves the
+org schedule unchanged and does not count toward rankings.
 
 ## Issues (hosted)
 

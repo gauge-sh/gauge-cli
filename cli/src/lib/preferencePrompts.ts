@@ -22,7 +22,6 @@ import { resolveOrg, resolveOutput } from "./context";
 import { readPromptText } from "./flags";
 import { printItems, printJson } from "./output";
 import {
-  cadenceLabel,
   hasRunSettingsFlags,
   type RunSettingsCreateOpts,
   type RunSettingsEditOpts,
@@ -82,6 +81,7 @@ export function preferencePromptRow(v: VisibilityPrompt) {
     brands: brandsLabel(v),
     market: v.market?.slug ?? "",
     tags: v.tags.join(", "),
+    tracked: v.tracked === undefined ? "" : v.tracked ? "yes" : "no",
     runs: v.runCount,
     "last run": v.lastRunAt ?? "-",
     "created by": creatorLabel(v.createdBy),
@@ -99,12 +99,12 @@ function printDetail(v: VisibilityPrompt): void {
     `market:  ${v.market ? `${v.market.name} (${v.market.slug})` : "(none)"}`,
   );
   console.log(`tags:    ${v.tags.join(", ") || "(none)"}`);
+  if (v.tracked !== undefined)
+    console.log(`tracked: ${v.tracked ? "yes" : "no"}`);
   console.log(`runs:    ${v.runCount} (last: ${v.lastRunAt ?? "never"})`);
   console.log(`creator: ${creatorLabel(v.createdBy)}`);
   console.log(`prompt:  ${v.promptText}`);
-  console.log(
-    `cadence: ${cadenceLabel(v.cadence)} — ${v.sampleCount} sample(s)`,
-  );
+  console.log(`samples: ${v.sampleCount}`);
   console.log(
     `agents:  ${v.agents
       .map((a) =>
@@ -159,12 +159,32 @@ export type PreferenceCreateOpts = RunSettingsCreateOpts & {
   persona?: string;
   market?: string;
   tag: string[];
+  tracked?: boolean;
 };
+
+function rejectPromptCadence(cadence: string | undefined): void {
+  if (cadence !== undefined && cadence.trim().toUpperCase() !== "NONE")
+    throw new CliError(
+      "usage",
+      "Preference prompts no longer have a cadence. Tracked prompts run on the org schedule: pass --tracked, and set the schedule with `gauge preference schedule --cadence daily|weekly`.",
+    );
+}
+
+function rejectLocalTracked(cmd: Command, tracked: boolean | undefined): void {
+  if (tracked !== undefined && isLocal(cmd))
+    throw new CliError(
+      "usage",
+      "Tracking requires hosted Gauge; local prompts run on demand. Pass --hosted.",
+    );
+}
 
 export async function createPreferencePrompt(
   cmd: Command,
   opts: PreferenceCreateOpts,
 ): Promise<void> {
+  rejectPromptCadence(opts.cadence);
+  rejectLocalTracked(cmd, opts.tracked);
+  opts = { ...opts, cadence: undefined };
   if (hasLifecycleFlags(opts) && isLocal(cmd))
     throw new CliError(
       "usage",
@@ -188,6 +208,7 @@ export async function createPreferencePrompt(
     brandB: opts.brandB ?? null,
     marketId: opts.market ?? null,
     tags: opts.tag.length > 0 ? opts.tag : undefined,
+    ...(opts.tracked !== undefined ? { tracked: opts.tracked } : {}),
     ...(hasRunSettingsFlags(opts) ? runSettingsFromOpts(opts) : {}),
     scenarios: hasScenario
       ? [
@@ -221,6 +242,7 @@ export type PreferenceEditOpts = RunSettingsEditOpts & {
   clearMarket?: boolean;
   tag: string[];
   clearTags?: boolean;
+  tracked?: boolean;
 };
 
 export async function editPreferencePrompt(
@@ -228,6 +250,9 @@ export async function editPreferencePrompt(
   id: string,
   opts: PreferenceEditOpts,
 ): Promise<void> {
+  rejectPromptCadence(opts.cadence);
+  rejectLocalTracked(cmd, opts.tracked);
+  opts = { ...opts, cadence: undefined };
   if (hasLifecycleFlags(opts) && isLocal(cmd))
     throw new CliError(
       "usage",
@@ -264,6 +289,8 @@ export async function editPreferencePrompt(
     throw new CliError("usage", "--tag and --clear-tags conflict");
   if (opts.clearTags) body.tags = [];
   else if (opts.tag.length > 0) body.tags = opts.tag;
+
+  if (opts.tracked !== undefined) body.tracked = opts.tracked;
 
   if (Object.keys(body).length === 0)
     throw new CliError("usage", "nothing to change");
@@ -484,4 +511,68 @@ export async function markets(
     ],
     "table",
   );
+}
+
+const WEEKDAYS = [
+  "sunday",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+] as const;
+
+function parseWeekday(raw: string): number {
+  const value = raw.trim().toLowerCase();
+  const day = /^[0-6]$/.test(value)
+    ? Number(value)
+    : WEEKDAYS.findIndex((d) => value.length >= 3 && d.startsWith(value));
+  if (day < 0)
+    throw new CliError(
+      "usage",
+      `invalid --day "${raw}" (expected a weekday name, such as monday)`,
+    );
+  return day;
+}
+
+function parseScheduleCadence(
+  raw: string,
+): visibility.UpdatePreferenceScheduleBody["cadence"] {
+  const cadence = raw.trim().toUpperCase();
+  if (cadence !== "DAILY" && cadence !== "WEEKLY")
+    throw new CliError(
+      "usage",
+      `invalid --cadence "${raw}" (expected daily or weekly)`,
+    );
+  return cadence;
+}
+
+export async function preferenceSchedule(
+  cmd: Command,
+  opts: { cadence?: string; day?: string },
+): Promise<void> {
+  if (isLocal(cmd))
+    throw new CliError(
+      "usage",
+      "The tracking schedule requires hosted Gauge. Pass --hosted.",
+    );
+  const path = `/api/v1/orgs/${encodeURIComponent(await resolveOrg(cmd))}/preference-schedule`;
+  const body: visibility.UpdatePreferenceScheduleBody = {};
+  if (opts.cadence !== undefined)
+    body.cadence = parseScheduleCadence(opts.cadence);
+  if (opts.day !== undefined) body.weeklyRunDay = parseWeekday(opts.day);
+  const schedule =
+    Object.keys(body).length > 0
+      ? await createClient().patch<visibility.PreferenceSchedule>(path, body)
+      : await createClient().get<visibility.PreferenceSchedule>(path);
+  if (resolveOutput(cmd) === "json") {
+    printJson(schedule);
+    return;
+  }
+  const day = WEEKDAYS[schedule.weeklyRunDay] ?? String(schedule.weeklyRunDay);
+  console.log(
+    `cadence:  ${schedule.cadence === "DAILY" ? "daily" : `weekly on ${day}`}`,
+  );
+  console.log(`next run: ${schedule.nextRunAt ?? "(set on the next tick)"}`);
 }
