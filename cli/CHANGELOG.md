@@ -2,9 +2,21 @@
 
 ## Unreleased
 
+## 0.30.0 — 2026-11-12
+
 ### Added
 
-- CLI rules accept literal-prefix selectors such as `{"kind":"prefix","argv":["token","create"]}`. They match leading arguments without parsing trailing options, for hosted launches and optimization edits.
+- `gauge run --hosted --apply experiment.json` launches a self-contained
+  product experiment: one JSON file that supplies the product repository and
+  revision, input declarations, and cases, with no checkout or `gauge.json`.
+  Gauge resolves the product through the organization's GitHub App
+  connection. Start from `gauge run --example --format experiment`, see all
+  fields with `--schema --format experiment`, and save the `experiment` field
+  of a `--dry-run -o json` preview to launch with the resolved commit pinned.
+- CLI rules accept literal-prefix selectors such as
+  `{"kind":"prefix","argv":["token","create"]}`. They match leading arguments
+  without parsing trailing options, for hosted launches and optimization
+  edits.
 
 ## 0.29.0 — 2026-11-09
 
