@@ -1099,11 +1099,69 @@ response deadline, so losing a supervisor cannot leave an idle worker forever.
 Cleanup cannot discover sessions whose `.gauge` records were deleted; keep
 those records until cleanup has succeeded.
 
-### Local connection credentials
+## Local connection credentials
 
-Use `gauge run --local --connection <name>` to select a named entry from
-`.gauge/connections.yaml`, or pass `--connections-file <path>`. The YAML names
-an exact HTTPS origin, one header, and an environment variable containing the
-complete header value. Credentials go only to the gateway. See
-[local connections](../docs/local-connections.md) for configuration and the
-required development gateway image.
+Local connections inject authentication headers into outbound HTTPS requests.
+Credentials go to the gateway, not the agent. Hosted connections are unchanged.
+
+Create `.gauge/connections.yaml` with environment variable **names**, never tokens
+or `${...}` substitutions:
+
+```yaml
+version: 1
+connections:
+  - name: supabase
+    origin: https://your-project.supabase.co
+    header: Authorization
+    env: SUPABASE_AUTH
+```
+
+Set `SUPABASE_AUTH` in the launching shell to the complete header value, including
+`Bearer ` when required. For an API-key header such as `apikey`, use the raw key.
+Keep secrets out of YAML, shell history, prompts, and inputs. Use a separate
+credential variable for each integration and provider.
+
+The published gateway does not yet support connections. Build the updated image:
+
+```sh
+docker build -t gauge-gateway:connections packages/local/gateway
+gauge run "Inspect the Supabase API" --local --connection supabase \
+  --gateway-image gauge-gateway:connections --dry-run
+```
+
+Remove `--dry-run` to launch; add `--detach` to run in the background. Repeat
+`--connection` for multiple names. These flags replace case-level selections for
+that launch. Saved local evals/preferences and case files can select names through
+`config.connectionIds`. Use `--connections-file <path>` for a different registry.
+Multiple accounts may share an origin/header in the registry, but only one can be
+selected per case. With no selected connections, no registry is read.
+
+Dry runs check credential availability and the gateway image capability without
+starting containers. They show names, origins, headers, environment variable names,
+and readiness, never values. Unknown names, missing/empty values, and invalid header
+characters prevent launch. Unselected entries need no values. The running gateway
+is checked again before the agent starts, so old images fail closed.
+
+### Matching and security boundaries
+
+- Only the exact HTTPS DNS origin on port 443 is authenticated, across all paths.
+  A trailing slash or `:443` is normalized. Paths, queries, fragments, wildcards,
+  IP addresses, embedded credentials, and other ports are rejected.
+- TLS SNI and HTTP authority must both match; upstream certificates are verified.
+  HTTP, subdomains, suffix lookalikes, ambiguous authorities, HTTP/1 absolute-form
+  targets, and non-origin-form paths receive no credentials. The configured header
+  replaces all existing copies. Routing/framing/proxy headers cannot be configured.
+- Synthetic fixture responses and requests rewritten to fixture upstreams receive
+  no credentials. Redirect requests are matched independently at each destination.
+- Registry metadata is frozen per batch. Values are resolved on the host per
+  session and never written to batch requests, run specs, Docker arguments,
+  container environments, or intervention logs. A detached batch retains its
+  launching environment in the host supervisor.
+- Values use a `0600` temporary host file in a `0700` directory, mounted read-only
+  into only the gateway and copied privately before dropping privileges. Session
+  cleanup removes it and the gateway after completion, cancellation, or recoverable
+  launch failures. Abrupt host termination may require `gauge cleanup --local`.
+
+Select a connection only when the agent should act with its authority. A service
+could echo the credential in a response; this feature neither redacts responses
+nor restricts API operations. Use a trusted destination and a least-privilege token.

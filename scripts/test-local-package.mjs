@@ -18,7 +18,7 @@ try {
     cwd: join(root, directory), encoding: "utf8",
   }))[0];
   const packed = pack("packages/local");
-  const modules = ["connections", "credentials", "docker", "driver", "fsAtomic", "gateway", "index", "scripts", "session", "types", "worker", "workspace"];
+  const modules = ["credentials", "docker", "driver", "fsAtomic", "gateway", "index", "scripts", "session", "types", "worker", "workspace"];
   assert.deepEqual(packed.files.map((f) => f.path).sort(), [
     "LICENSE", "README.md", "package.json", "image/Dockerfile", "image/gauge-path.sh",
     ...["Dockerfile", "entrypoint.sh", "fixtures.py", "health.py", "test_fixtures.py", "test_connections.py"].map(name => `gateway/${name}`),

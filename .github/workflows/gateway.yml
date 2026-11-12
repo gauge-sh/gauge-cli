@@ -49,6 +49,10 @@ jobs:
           docker pull "$runtime"
           docker tag "$runtime" gauge-runtime:dev
           docker build -t gauge-session-fixture:test packages/local/test/runtime-fixture
+          # A pinned, pre-connections image must fail closed before the workload starts.
+          old_gateway=ghcr.io/gauge-sh/gauge-gateway@sha256:ab5489cfe65feb717a79d7be6bd76be8bf915f3e44a5e832cee313772e590e1c
+          docker pull "$old_gateway"
+          echo "GAUGE_OLD_GATEWAY_IMAGE=$old_gateway" >> "$GITHUB_ENV"
       - name: Qualify routing, trust, and lifecycle
         env:
           GAUGE_DOCKER_FIXTURES: "1"

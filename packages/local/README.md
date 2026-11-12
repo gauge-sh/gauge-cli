@@ -166,5 +166,5 @@ Pass the source environment variable names in `connectionEnvNames` so they are
 removed from the detached session worker's environment. Values are validated and
 written into the gateway-only temporary credential file, never the persisted
 session record. The gateway must support the connections capability; old images
-fail before the agent is started. See [local connections](../../docs/local-connections.md)
+fail before the agent is started. See [local connections](../../cli/README.md#local-connection-credentials)
 for CLI configuration, matching, cleanup, and security boundaries.

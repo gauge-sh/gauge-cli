@@ -450,6 +450,7 @@ export function localMeasurementSpec(
       repoUrl: scenario.repoUrl,
       repoRef: scenario.repoRef,
       inputs: opts.inputs,
+      connectionIds: settings.connectionIds as string[] | undefined,
     },
   }));
   return {

@@ -5,8 +5,7 @@ import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { validateGatewayConnections, workerEnvironment } from "../src/connections.js";
-import { prepareGateway } from "../src/gateway.js";
+import { prepareGateway, validateGatewayConnections } from "../src/gateway.js";
 import { DockerCli, type ContainerSpec } from "../src/docker.js";
 import { startSession, stopSession } from "../src/session.js";
 import type { LaunchRecord } from "../src/types.js";
@@ -15,13 +14,13 @@ import { spec } from "./fakes.js";
 const { spawn } = vi.hoisted(() => ({ spawn: vi.fn() }));
 vi.mock("node:child_process", async (original) => ({ ...await original<typeof import("node:child_process")>(), spawn }));
 vi.mock("node:net", async (original) => { const net = await original<typeof import("node:net")>(); return { ...net, createConnection: vi.fn(net.createConnection) }; });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 const connection = { name: "example", origin: "https://api.example.com", header: "Authorization", value: "Bearer fixture-connection-secret" };
 const fixture = { version: 1 as const, searches: [], pages: [] };
 const gateway = { image: "gateway:test", fixture, digest: `sha256:${createHash("sha256").update(JSON.stringify(fixture)).digest("hex")}` };
 
 it("validates and canonicalizes credentials without mutating input", () => {
-  expect(validateGatewayConnections([{ ...connection, origin: "https://API.example.com:443/" }])[0].origin).toBe(connection.origin);
+  expect(validateGatewayConnections([{ ...connection, origin: "https://API.example.com:0443/" }])[0].origin).toBe(connection.origin);
   expect(connection.origin).toBe("https://api.example.com");
 });
 it.each([
@@ -44,10 +43,6 @@ it.each([
 it("rejects duplicate names and origin/header assignments", () => {
   expect(() => validateGatewayConnections([connection, connection])).toThrow("duplicate");
   expect(() => validateGatewayConnections([connection, { ...connection, name: "other", header: "authorization" }])).toThrow("Duplicate");
-});
-it("removes arbitrarily named connection source variables from worker environment", () => {
-  expect(workerEnvironment({ PATH: "/bin", ODD_NAME: connection.value, SOME_API_KEY: "another" }, ["ODD_NAME"]))
-    .toEqual({ PATH: "/bin" });
 });
 it("mounts the connection file read-only into only the gateway", async () => {
   const root = await mkdtemp(join(tmpdir(), "gauge-"));
@@ -77,6 +72,8 @@ it("keeps connection values in a private temporary file and cleans up on launch 
   const directory = join(root, "session");
   const runtimeDirectory = join(root, "runtime");
   let inspected = false;
+  vi.stubEnv("ODD_NAME", connection.value);
+  vi.stubEnv("SOME_API_KEY", "another");
   spawn.mockImplementation(() => {
     const child = new EventEmitter();
     queueMicrotask(() => { void (async () => {
@@ -96,6 +93,9 @@ it("keeps connection values in a private temporary file and cleans up on launch 
   try {
     await expect(startSession({ directory, runtimeDirectory, spec: spec({ gateway }), credentials: { env: { CLAUDE_CODE_OAUTH_TOKEN: "fixture-only" }, homeDir: root }, gatewayConnections: [connection], connectionEnvNames: ["ODD_NAME"] })).rejects.toThrow("launch failed");
     expect(inspected).toBe(true);
+    expect(spawn.mock.lastCall![2].env).not.toHaveProperty("ODD_NAME");
+    expect(spawn.mock.lastCall![2].env).not.toHaveProperty("SOME_API_KEY");
+    expect(spawn.mock.lastCall![2].env.PATH).toBe(process.env.PATH);
     expect(await readdir(runtimeDirectory)).toEqual([]);
     expect(await readFile(join(directory, "status.json"), "utf8")).not.toContain(connection.value);
   } finally { await rm(root, { recursive: true, force: true }); }

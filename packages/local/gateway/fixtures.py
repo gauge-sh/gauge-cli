@@ -89,15 +89,14 @@ class Connections:
                 raise ValueError("Invalid connection header")
             if not re.fullmatch(r"[\x20-\x7e]+", value) or not value.strip():
                 raise ValueError("Invalid connection header value")
-            key = (p.hostname.lower(), header.lower())
-            if key in self.headers:
+            headers = self.headers.setdefault(p.hostname.lower(), {})
+            if header.lower() in headers:
                 raise ValueError("Duplicate connection header")
-            self.headers[key] = value
+            headers[header.lower()] = value
 
     def inject(self, flow):
         request = flow.request
-        if (flow.metadata.get("fixture_intervened") or flow.response is not None
-                or request.scheme != "https" or request.port != 443):
+        if flow.response is not None or request.scheme != "https" or request.port != 443:
             return
         # Transparent mode exposes the original destination IP in request.host.
         # SNI identifies the TLS origin; mitmproxy verifies its upstream certificate.
@@ -106,6 +105,9 @@ class Connections:
         if not client or not client.tls or not client.sni or server is None:
             return
         host = client.sni.lower()
+        headers = self.headers.get(host)
+        if not headers:
+            return
         if server.sni is not None and server.sni.lower() != host:
             return
         if getattr(server, "timestamp_tls_setup", None) is not None and server.sni is None:
@@ -134,10 +136,8 @@ class Connections:
                 return
         except ValueError:
             return
-        for (configured_host, header), value in self.headers.items():
-            if configured_host == host:
-                server.sni = host
-                request.headers[header] = value
+        server.sni = host
+        request.headers.update(headers)
 
 
 class Fixtures:
@@ -197,7 +197,6 @@ class Fixtures:
                           "url": flow.metadata["fixture_url"], "method": flow.request.method, **extra}), flush=True)
 
     def reply(self, flow, status, body, content_type="text/plain", action="hit"):
-        flow.metadata["fixture_intervened"] = True
         # Synthetic fixtures are GET/HEAD representations. Reject body-bearing
         # requests at headers, without reading or buffering an unbounded upload.
         if flow.request.headers.get("transfer-encoding") or flow.request.headers.get("content-length", "0") != "0":
@@ -215,10 +214,6 @@ class Fixtures:
         self.event(flow, action, status=status)
 
     def requestheaders(self, flow):
-        self.apply_fixture(flow)
-        self.connections.inject(flow)
-
-    def apply_fixture(self, flow):
         flow.request.stream = True
         try:
             url = normalize(flow.request.pretty_url)
@@ -227,7 +222,6 @@ class Fixtures:
         flow.metadata["fixture_url"] = url
         source = origin(url)
         if source in self.origins:
-            flow.metadata["fixture_intervened"] = True
             target = urlsplit(self.origins[source])
             flow.request.scheme = target.scheme
             flow.request.host = target.hostname
@@ -240,6 +234,8 @@ class Fixtures:
             self.reply(flow, page["status"], page["body"], page["contentType"])
         elif any(within(url, scope) for scope in self.scopes):
             self.reply(flow, 404, "Fixture missing within scope", action="blocked")
+        else:
+            self.connections.inject(flow)
 
     def responseheaders(self, flow):
         flow.response.stream = not flow.metadata.get("fixture_reply", False)

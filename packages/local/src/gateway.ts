@@ -1,9 +1,51 @@
 import { createHash } from "node:crypto";
 import { chmod, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { isIP } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import { DockerCli, type BindMount } from "./docker.js";
 import type { LaunchRecord, SessionSpec } from "./types.js";
+
+/** Resolved credentials stay in host memory and the gateway-only temporary file. */
+export interface GatewayConnection {
+  name: string;
+  origin: string;
+  header: string;
+  value: string;
+}
+
+const FORBIDDEN_HEADERS = new Set([
+  "host", "connection", "proxy-connection", "keep-alive", "transfer-encoding",
+  "te", "trailer", "upgrade", "content-length", "expect", "proxy-authorization",
+  "proxy-authenticate", "forwarded", "via",
+]);
+
+/** Errors deliberately omit input text, which may contain a credential. */
+export function validateGatewayConnections(connections: GatewayConnection[]): GatewayConnection[] {
+  if (!Array.isArray(connections)) throw new Error("Invalid gateway connections");
+  const names = new Set<string>();
+  const targets = new Set<string>();
+  return connections.map((connection) => {
+    if (!connection || typeof connection.name !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(connection.name) || names.has(connection.name))
+      throw new Error("Invalid or duplicate gateway connection name");
+    if (typeof connection.origin !== "string" || !/^https:\/\/[A-Za-z0-9.-]+(?::0*443)?\/?$/.test(connection.origin))
+      throw new Error("Gateway connections require an HTTPS DNS origin on port 443");
+    let url: URL;
+    try { url = new URL(connection.origin); } catch { throw new Error("Invalid gateway connection origin"); }
+    const hostname = url.hostname;
+    if (isIP(hostname) || hostname.length > 253 || !hostname.replace(/\.$/, "").split(".").every((label) => /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/.test(label)))
+      throw new Error("Gateway connections require a valid DNS hostname, not an IP address");
+    if (typeof connection.header !== "string" || !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(connection.header) || FORBIDDEN_HEADERS.has(connection.header.toLowerCase()) || connection.header.toLowerCase().startsWith("x-forwarded-"))
+      throw new Error("Invalid gateway connection header");
+    if (typeof connection.value !== "string" || !/^[\x20-\x7e]+$/.test(connection.value) || !connection.value.trim())
+      throw new Error("Invalid gateway connection credential value");
+    const target = `${url.origin}\n${connection.header.toLowerCase()}`;
+    if (targets.has(target)) throw new Error("Duplicate gateway connection origin and header");
+    names.add(connection.name);
+    targets.add(target);
+    return { name: connection.name, origin: url.origin, header: connection.header, value: connection.value };
+  });
+}
 
 export function validateGateway(gateway: NonNullable<SessionSpec["gateway"]>): void {
   const body = JSON.stringify(gateway.fixture);

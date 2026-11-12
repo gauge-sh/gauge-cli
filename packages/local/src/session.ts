@@ -6,9 +6,8 @@ import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveSessionCredential, type CredentialSources } from "./credentials.js";
-import { validateGatewayConnections, workerEnvironment, type GatewayConnection } from "./connections.js";
 import { DockerCli } from "./docker.js";
-import { cleanupGateway, validateGateway } from "./gateway.js";
+import { cleanupGateway, validateGateway, validateGatewayConnections, type GatewayConnection } from "./gateway.js";
 import { preserveWorkspace } from "./workspace.js";
 import { readJson, writeJsonAtomic } from "./fsAtomic.js";
 import { agentEnv, harnessCommand, prepareScript, shellQuote } from "./scripts.js";
@@ -122,7 +121,8 @@ export async function startSession(options: StartSessionOptions): Promise<Sessio
     try {
       const child = spawn(process.execPath, [fileURLToPath(new URL("./worker.js", import.meta.url)), directory], {
         detached: true, stdio: ["ignore", log.fd, log.fd],
-        env: workerEnvironment(process.env, options.connectionEnvNames),
+        env: Object.fromEntries(Object.entries(process.env).filter(([key]) =>
+          !options.connectionEnvNames?.includes(key) && !/(?:API_KEY|AUTH_TOKEN|OAUTH_TOKEN|ACCESS_TOKEN|REFRESH_TOKEN)$/.test(key))),
       });
       const spawned = new Promise<void>((yes, no) => { child.once("spawn", yes); child.once("error", no); });
       await spawned;

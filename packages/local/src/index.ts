@@ -9,5 +9,4 @@ export type {
   SessionEvent, Question, CommandReceipt,
 } from "./types.js";
 
-export { validateGatewayConnections } from "./connections.js";
-export type { GatewayConnection } from "./connections.js";
+export { validateGatewayConnections, type GatewayConnection } from "./gateway.js";

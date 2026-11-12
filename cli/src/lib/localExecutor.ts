@@ -131,8 +131,9 @@ export async function planLocal(
   const warnings: string[] = [];
   const runtime = inspectLocalRuntime(options.runtimeImage);
   const connectionPlan = await loadConnectionPlan(definition, options.connectionsFile ?? join(process.cwd(), ".gauge", "connections.yaml"));
-  const connections = inspectLocalConnections(connectionPlan);
-  const gateway = connections.length || definition.resources.some((r) => r.use.type === "web-fixture") ? inspectLocalGateway(options.gatewayImage) : undefined;
+  const hasConnections = Object.values(connectionPlan).some((selected) => selected.length);
+  const gateway = hasConnections || definition.resources.some((r) => r.use.type === "web-fixture") ? inspectLocalGateway(options.gatewayImage, undefined, hasConnections) : undefined;
+  const connections = inspectLocalConnections(connectionPlan, gateway?.problem?.message);
   for (const connection of connections) if (!connection.ready) warnings.push(connection.problem!);
   if (gateway?.problem) warnings.push(`${gateway.problem.message} ${gateway.problem.hint}`);
   if (runtime.problem)
@@ -249,7 +250,8 @@ export async function prepareLocal(
   const webFixtures = await freezeWebFixtures(definition, uploads);
   const connections = await loadConnectionPlan(definition, options.connectionsFile ?? join(gaugeDir, "connections.yaml"));
   for (const selected of Object.values(connections)) resolveLocalConnections(selected);
-  const gateway = Object.keys(webFixtures).length || Object.values(connections).some((selected) => selected.length) ? requireLocalGateway(options.gatewayImage) : undefined;
+  const hasConnections = Object.values(connections).some((selected) => selected.length);
+  const gateway = Object.keys(webFixtures).length || hasConnections ? requireLocalGateway(options.gatewayImage, hasConnections) : undefined;
   await freezeCredentials(queue, options);
   const runtime = requireLocalRuntime(options.runtimeImage);
   await checkLocalRuntimeCompatibility(runtime.imageId, [
@@ -418,6 +420,7 @@ export async function runLocal(
       while (!canceled()) {
         const job = queue.shift();
         if (!job) break;
+        const connections = connectionsForCase(connectionPlan, job.item.path);
         const run = await runJob(job, {
           batchId,
           gaugeDir,
@@ -425,8 +428,8 @@ export async function runLocal(
           resources,
           credentialSelections,
           runtime,
-          gateway: gatewayForCase(gatewayPlan.gateway, Object.hasOwn(gatewayPlan.cases, job.item.path) ? gatewayPlan.cases[job.item.path] : undefined, connectionsForCase(connectionPlan, job.item.path)),
-          connections: connectionsForCase(connectionPlan, job.item.path),
+          gateway: gatewayForCase(gatewayPlan.gateway, Object.hasOwn(gatewayPlan.cases, job.item.path) ? gatewayPlan.cases[job.item.path] : undefined, connections),
+          connections,
           connectionEnvNames,
           canceled,
           measurement: options.measurement,

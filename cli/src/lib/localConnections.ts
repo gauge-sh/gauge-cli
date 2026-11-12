@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { parseDocument } from "yaml";
+import { z } from "zod";
 import type { RunDefinitionSubmission } from "@withgauge/api-schemas/runDefinitions";
 import { validateGatewayConnections, type GatewayConnection } from "@withgauge/local-execution";
 import { CliError } from "./client";
@@ -9,8 +10,13 @@ export type LocalConnection = Omit<GatewayConnection, "value"> & { env: string }
 export type ConnectionPlan = Record<string, LocalConnection[]>;
 
 function fail(message: string): never { throw new CliError("usage", message); }
-const object = (value: unknown): value is Record<string, unknown> =>
-  !!value && typeof value === "object" && !Array.isArray(value);
+const registrySchema = z.strictObject({
+  version: z.literal(1),
+  connections: z.array(z.strictObject({
+    name: z.string(), origin: z.string(), header: z.string(),
+    env: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
+  })).max(32),
+});
 
 export function parseLocalConnections(source: string): LocalConnection[] {
   if (Buffer.byteLength(source) > 64 * 1024) fail("Local connections YAML exceeds 64 KiB.");
@@ -22,24 +28,18 @@ export function parseLocalConnections(source: string): LocalConnection[] {
     if (document.errors.length || document.warnings.length) fail("Invalid local connections YAML.");
     value = document.toJS({ maxAliasCount: 0 });
   } catch { fail("Invalid local connections YAML."); }
-  if (!object(value) || Object.keys(value).some((key) => !["version", "connections"].includes(key)) ||
-      value.version !== 1 || !Array.isArray(value.connections) || value.connections.length > 32)
-    fail("Expected local connections YAML with version: 1 and a connections list (at most 32).");
-  const connections: LocalConnection[] = [];
+  const parsed = registrySchema.safeParse(value);
+  if (!parsed.success)
+    fail("Expected version: 1 and at most 32 connections with name, origin, header, and env (an environment variable name). Inline secrets are not supported.");
   const names = new Set<string>();
-  for (const entry of value.connections) {
-    if (!object(entry) || Object.keys(entry).sort().join(",") !== "env,header,name,origin" ||
-        ![entry.name, entry.origin, entry.header, entry.env].every((item) => typeof item === "string") ||
-        !/^[A-Za-z_][A-Za-z0-9_]*$/.test(entry.env as string))
-      fail("Each local connection requires name, origin, header, and env (an environment variable name). Inline secrets are not supported.");
-    if (names.has(entry.name as string)) fail("Duplicate local connection name.");
-    names.add(entry.name as string);
-    connections.push(entry as LocalConnection);
-  }
   try {
-    const validated = connections.map(({ env: _, ...entry }) => validateGatewayConnections([{ ...entry, value: "validation-placeholder" }])[0]);
-    return connections.map((entry, index) => ({ ...entry, origin: validated[index].origin }));
-  } catch { return fail("Invalid local connection name, HTTPS origin, or header. Use a DNS hostname on HTTPS port 443 without a path, query, fragment, credentials, or IP address, and an authentication header."); }
+    return parsed.data.connections.map(({ env, ...entry }) => {
+      if (names.has(entry.name)) fail("Duplicate local connection name.");
+      names.add(entry.name);
+      const { value: _, ...connection } = validateGatewayConnections([{ ...entry, value: "validation-placeholder" }])[0];
+      return { ...connection, env };
+    });
+  } catch { return fail("Invalid or duplicate local connection name, HTTPS DNS origin on port 443, or authentication header."); }
 }
 
 export async function loadConnectionPlan(definition: RunDefinitionSubmission, path: string): Promise<ConnectionPlan> {
@@ -73,10 +73,14 @@ export function resolveLocalConnections(connections: LocalConnection[], env: Nod
   catch { return fail("Invalid local connection header value. Use a complete nonempty header value without control characters."); }
 }
 
-export function inspectLocalConnections(plan: ConnectionPlan) {
+export function inspectLocalConnections(plan: ConnectionPlan, gatewayProblem?: string) {
   const connections = [...new Map(Object.values(plan).flat().map((connection) => [connection.name, connection])).values()];
   return connections.map((connection) => {
-    try { resolveLocalConnections([connection]); return { ...connection, ready: true as const }; }
+    try {
+      resolveLocalConnections([connection]);
+      if (gatewayProblem) fail(gatewayProblem);
+      return { ...connection, ready: true as const };
+    }
     catch (error) { return { ...connection, ready: false as const, problem: (error as Error).message }; }
   });
 }
