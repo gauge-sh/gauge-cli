@@ -16,15 +16,23 @@ Start with this rules.json, replacing the package/program with your CLI:
       "shippingIntent": "interaction",
       "rules": [{
         "id": "create-token",
-        "selector": { "kind": "exact", "argv": ["token", "create"] },
+        "selector": { "kind": "prefix", "argv": ["token", "create"] },
         "operations": [{ "id": "fake-token", "kind": "stub",
           "stdout": "test-token-not-a-real-credential\\n", "stderr": "", "exitCode": 0 }]
       }]
     }
 
 This stubs \`example token create\`: it skips the command and returns the fake
-token. Exact argv excludes the executable and is order-sensitive; unmatched
-commands execute normally.
+token, including calls with trailing arguments such as \`example token create --output json\`.
+A literal prefix compares leading arguments after the executable without parsing
+the tail, so matching needs no optionArity. It does not match leading global
+options such as \`example --debug token create\`. Unmatched commands execute normally.
+Use \`exact\` when the complete argument list must match. Rules run in order; put
+specific help rules such as \`['token','create','--help']\` before the broader prefix.
+Use a \`command\` selector with optionArity when matching must depend on flags
+or accept options before the subcommand. Argument-edit operations still parse
+the full invocation and need declared option arities. Existing rules keep their
+meaning until you explicitly change them. Both v3 and v4 support prefix selectors.
 For a path target use {"kind":"path","path":"/absolute/path/to/program"}.
 
 To run a replacement command instead, use this operation:

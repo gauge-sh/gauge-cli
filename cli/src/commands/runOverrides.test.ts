@@ -718,7 +718,7 @@ const cliRulesFixture = cliRuleAuthorInputSchema.parse({
   rules: [
     {
       id: "token",
-      selector: { kind: "exact", argv: ["token", "create"] },
+      selector: { kind: "prefix", argv: ["token", "create"] },
       operations: [
         {
           id: "fake-token",
