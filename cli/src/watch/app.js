@@ -567,6 +567,55 @@ function renderLanguagePie(element, data, bytes) {
   element.appendChild(h("div", { class: "pie-layout" }, h("div", { class: "repo-pie", role: "img", "aria-label": bytes ? "Language bytes distribution, values in accompanying legend" : "Language occurrence distribution, values in accompanying legend", style: "background:conic-gradient(" + stops.join(",") + ")" }), legend));
 }
 
+function discoveryDiagram() {
+  function box(kind, title, description) {
+    return h("details", { class: "discovery-box discovery-" + kind },
+      h("summary", null, title), h("p", null, description));
+  }
+  function arrow(direction) {
+    return h("span", { class: "discovery-arrow discovery-arrow-" + (direction === "↓" ? "down" : direction === "←" ? "left" : "right"), "aria-hidden": "true" });
+  }
+  function row(left, phase, right, last, input) {
+    var center = h("div", { class: "discovery-center" }, phase);
+    if (!last) center.appendChild(arrow("↓"));
+    return h("div", { class: "discovery-row" },
+      h("div", { class: "discovery-left" }, left, arrow(input ? "→" : "←")),
+      center,
+      h("div", { class: "discovery-right" }, arrow("→"), right));
+  }
+  var workers = h("div", { class: "discovery-workers" });
+  ["1", "2", "…"].forEach(function (number) {
+    workers.appendChild(h("div", { class: "discovery-worker" },
+      box("phase", "Subagent " + number, "Receive one full README, the run ID, repository URL, README hash, and assigned output path. Write a structured summary of purpose, objectives, intended use, audience, and application type."),
+      arrow("→"),
+      box("file", "Summary JSON", "summaries/<hash-of-lowercase-repo-url>.json — One file per repository. Validate its schema, run ID, URL, and README hash before using it for grouping.")));
+  });
+  var flow = h("div", { class: "discovery-flow", "aria-label": "Canonical repository discovery workflow" },
+    row(
+      box("file", "examples.jsonl", "Collected READMEs and repository metadata. Deduplicate by repository URL and freeze the sample. Pass each README to a subagent, and pass this file to publication to preserve source metadata."),
+      box("phase", "Collect repositories from GitHub using the GitHub API", "Start with the technology definition, qualifying usage, and sample target. Plan a finite search budget, search and enrich pages, and freeze the eligible sample. Eligible repositories are public, have a nonempty README, and have at least 20 commits."),
+      h("div", { class: "discovery-commands" },
+        box("command", "gauge canonical-repos searchGithubExampleCandidates", 'Search one page using a concrete usage signature. Command: gauge canonical-repos searchGithubExampleCandidates --query "<usage signature and qualifiers>" --page 1'),
+        box("command", "gauge canonical-repos getGithubExamples", "Enrich candidate names with README and repository metadata. Command: gauge canonical-repos getGithubExamples --file names.json --output-file examples.jsonl"))),
+    row(
+      box("file", "examples.jsonl", "Input to the parallel subagents. Give each worker one frozen repository's full README and the same summary instructions."),
+      box("phase", "Use parallel subagents to turn READMEs into a comparable structure", "Run as many ephemeral subagents in parallel as the environment allows, one README per assignment. Describe purpose and use in technology-neutral terms. Reuse validated summaries and replace missing or stale ones."),
+      workers, false, true),
+    row(
+      box("file", "canonicals.json", "The group definitions passed to publication. Save the full list after each revision, initially with Readme set to null. Every frozen repository must have exactly one group assignment."),
+      box("phase", "Define groups of repositories based on common intent", "Use the summaries to group shared user tasks and desired outcomes into 5–10 nonempty groups. Present the membership and sample shares for review. Obtain explicit user approval before drafting READMEs or publishing. A list-only request ends here."),
+      h("div", { class: "discovery-approval" }, "User approval before publication")),
+    row(
+      box("file", ".gauge/gauge.sqlite", "The permanent local catalog. Successful publication saves canonical names, URLs and descriptions, shared source metadata, and associations in canonical_repos, source_repos, and canonical_repo_sources."),
+      box("phase", "Create GitHub repositories for each defined group and save them in the local store", "Draft an original README for each approved group, describing its users, objectives, and representative workflow. Apply publication review, publish one group at a time, report the URLs, and remove the completed run's temporary directory."),
+      box("command", "gauge canonical-repos flush-canonical-repos", 'Publish one approved group and save it locally. Command: gauge canonical-repos flush-canonical-repos --file canonicals.json --name "<one approved group name>" --examples-file examples.jsonl'), true));
+  return h("div", { class: "discovery-section" },
+    h("hr"), h("h2", null, "Canonical Repository Workflow"),
+    h("p", { class: "repo-note" }, "Run ", h("code", null, "gauge instructions canonical-repo-discovery"), " to teach your agent how to run this workflow."),
+    h("div", { class: "discovery-legend" }, h("span", { class: "discovery-phase" }, "Phases and subagents"), h("span", { class: "discovery-command" }, "Commands"), h("span", { class: "discovery-file" }, "Files")),
+    h("div", { class: "discovery-scroll", tabindex: "0", role: "region", "aria-label": "Scrollable discovery diagram" }, flow));
+}
+
 function showRepositories(page) {
   var view = document.getElementById("view");
   var token = ++repositoryToken;
@@ -578,7 +627,7 @@ function showRepositories(page) {
     canonical,
     h("div", { class: "language-charts" },
       h("div", null, h("h2", null, "Repositories by language"), counts),
-      h("div", null, h("h2", null, "Code bytes by language"), bytes)), sources));
+      h("div", null, h("h2", null, "Code bytes by language"), bytes)), sources, discoveryDiagram()));
   repositorySection(canonical, "canonical", function (element, data) {
     if (!data.repositories.length) { element.textContent = "No canonical repositories recorded."; return; }
     element.appendChild(repositoryTable(["Name", "Description", "Associated repositories", "Share of voice"], data.repositories.map(function (repo) {
