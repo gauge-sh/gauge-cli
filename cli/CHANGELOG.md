@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- CLI rules accept literal-prefix selectors such as `{"kind":"prefix","argv":["token","create"]}`. They match leading arguments without parsing trailing options, for hosted launches and optimization edits.
+
 ## 0.29.0 — 2026-11-09
 
 ### Added

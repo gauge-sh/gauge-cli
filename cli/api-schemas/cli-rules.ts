@@ -124,6 +124,12 @@ export const cliRuleTargetSchema = z.discriminatedUnion("kind", [
 export const cliRuleSelectorSchema = z.discriminatedUnion("kind", [
   z
     .object({
+      kind: z.literal("prefix"),
+      argv: z.array(arg).max(CLI_RULE_LIMITS.arguments - 1),
+    })
+    .strict(),
+  z
+    .object({
       kind: z.literal("exact"),
       argv: z.array(arg).max(CLI_RULE_LIMITS.arguments - 1),
     })
@@ -312,7 +318,7 @@ export const cliRuleSchema = z
         fail(["selector"], "An absent option cannot also be required");
     }
     if (
-      rule.selector.kind === "exact" &&
+      (rule.selector.kind === "exact" || rule.selector.kind === "prefix") &&
       rule.operations.some(
         (op) => op.kind === "ensureOption" || op.kind === "replaceOption",
       )
@@ -321,10 +327,20 @@ export const cliRuleSchema = z
         rule.selector.argv,
         rule.optionArity,
       );
-      if (parsed.kind === "ambiguous")
+      if (
+        parsed.kind === "ambiguous" &&
+        // A prefix's final value-taking option can consume the first tail token.
+        !(
+          rule.selector.kind === "prefix" &&
+          parsed.reason === "missing_value" &&
+          rule.selector.argv.length < CLI_RULE_LIMITS.arguments - 1 &&
+          parseCliRuleArguments([...rule.selector.argv, ""], rule.optionArity)
+            .kind === "parsed"
+        )
+      )
         fail(
           ["optionArity"],
-          `Exact rules with argument edits must parse their argv (${parsed.reason}); declare each option's arity and supply its required value`,
+          `Literal rules with argument edits must parse their argv (${parsed.reason}); declare each option's arity and supply its required value`,
         );
     }
     if (
@@ -503,8 +519,10 @@ export function isRetiredCliBundle(value: unknown): boolean {
 export const CLI_RULE_GUIDANCE = [
   "Target one exposed owned CLI. Ordinary/reused session evidence is enough; no recorded invocation or command whitelist is needed.",
   "Use an exact logical argv array for a precise call; exclude the executable and interpreter prefix. ['--help'] differs from ['optimizations', '--help'].",
+  "For ordinary subcommand mocks, prefer selector {kind:'prefix',argv:['tokens','create']}. It compares literal leading argv tokens without parsing any options or the remaining tail. It matches tokens create --anything, but not --debug tokens create; --version and login --help simply do not match. Use exact when the entire argv must match. Empty prefix argv matches every call, so normally put it last.",
   "Argument edits require optionArity for every parsed option, including with exact selectors. For exact --help plus ensureOption --format=json, declare {'--help':0,'--format':1}; output-only exact rules need no arities.",
-  "Use command positionals (exact or prefix), required/absent options, and last-occurrence option values for broader matching. Declare optionArity (0 or 1) on the rule, beside selector, never inside it. Unknown ambiguous options stop matching unchanged.",
+  "Use command selectors only when you need parsed positional matching or option predicates (including options before the subcommand). Declare optionArity (0 means no following value, 1 means consume one following token) for every parsed option on the rule, beside selector, never inside it. This is a per-rule parser, not an inferred CLI grammar. Unknown or ambiguous options stop selection; when the ambiguous rule is a stub/exec replacement, the supervisor fails closed instead of running the real CLI. Existing command selectors retain this behavior; change and preview the selector explicitly to adopt literal prefix matching.",
+  "Literal prefix matching itself needs no arities. Argument-edit operations still parse the full invocation using optionArity, so an unknown tail option can prevent edits. Prefer stub/exec or output/env/stdin operations when arbitrary tail arguments should remain opaque.",
   "For root help with globals: selector with exact empty positionals and optionsPresent ['--help'], plus rule optionArity {'--help':0,'--org':1}. This handles --org acme --help and --org=acme --help, but not optimizations --help or --version.",
   "Rules run in order against original arguments. First match wins, even if its edits do nothing, fail, or skip on exit. An exact --help rule before the broader help rule wins their overlap.",
   "Empty positional prefix with no option predicates explicitly matches every call of the selected CLI, without parsing options; usually put it last.",
