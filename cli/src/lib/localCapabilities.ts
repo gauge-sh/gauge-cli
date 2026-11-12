@@ -16,7 +16,6 @@ export function assertLocalCapabilities(
     "marketId",
     "skillRefs",
     "mcpRefs",
-    "connectionIds",
   ]) {
     const value = config[field];
     if (Array.isArray(value) ? value.length > 0 : Boolean(value))

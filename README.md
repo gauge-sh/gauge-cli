@@ -94,7 +94,8 @@ Hillclimbing means making a change, measuring whether it helped, and repeating.
    and injects the working-tree version of your configured inputs.
    Each test agent sees the task and configured inputs within its sandbox.
    Local mode supports Skills, SDKs, CLIs, and files. Hosted compute adds support for
-   docs, authenticated MCPs, and authenticated APIs.
+   docs, authenticated MCPs, and managed connections. Local authenticated APIs
+   can use [gateway connections](docs/local-connections.md).
 3. **Find friction.** Gauge normalizes events from Claude Code, Codex, Pi, and
    OpenCode into consistent transcripts. In local mode, your agent reads the evidence,
    checks the outcome against the criteria, and identifies what slowed or
@@ -324,6 +325,14 @@ gauge telemetry disable
 Or set `GAUGE_TELEMETRY_DISABLED=1` for a process or CI environment. See
 [telemetry details](cli/README.md#anonymous-cli-telemetry) for storage, delivery,
 and the distinction from authenticated API usage analytics.
+
+## Local authenticated APIs
+
+[Local connections](docs/local-connections.md) let the gateway inject a header
+for an explicitly selected HTTPS API. Configure a YAML registry with an
+environment-variable reference, then launch with `--local --connection <name>`.
+Credentials are provided to the gateway, not the agent. See the guide for the
+required development gateway image.
 
 ## Development
 

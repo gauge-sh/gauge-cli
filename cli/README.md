@@ -228,7 +228,8 @@ contains the execution preference. Git is optional for workspace initialization.
 | Findings and summary queries | yes, supported fields | yes |
 | Personas, recurring schedules, PR checks | no | yes |
 | Optimizations (edit and rerun sessions) | no | yes |
-| Stored credentials for MCP servers and connections | no | yes |
+| Managed credentials for MCP servers and connections | no | yes |
+| Local HTTPS header injection from environment variables | yes, with a compatible gateway | no |
 | Additional reporting datasets, dashboards, org settings | no | yes |
 
 Local runs need Docker and the agent's own login (`claude` or
@@ -1097,3 +1098,12 @@ Local workers have a 30-minute turn deadline and a 60-second supervisor
 response deadline, so losing a supervisor cannot leave an idle worker forever.
 Cleanup cannot discover sessions whose `.gauge` records were deleted; keep
 those records until cleanup has succeeded.
+
+### Local connection credentials
+
+Use `gauge run --local --connection <name>` to select a named entry from
+`.gauge/connections.yaml`, or pass `--connections-file <path>`. The YAML names
+an exact HTTPS origin, one header, and an environment variable containing the
+complete header value. Credentials go only to the gateway. See
+[local connections](../docs/local-connections.md) for configuration and the
+required development gateway image.

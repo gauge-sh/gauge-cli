@@ -54,7 +54,7 @@ jobs:
           GAUGE_DOCKER_FIXTURES: "1"
           GAUGE_GATEWAY_IMAGE: gauge-gateway:test
         run: |
-          docker run --rm --network none --entrypoint python -v "$PWD/packages/local/gateway:/tests:ro" -w /tests gauge-gateway:test -m unittest test_fixtures
+          docker run --rm --network none --entrypoint python -v "$PWD/packages/local/gateway:/tests:ro" -w /tests gauge-gateway:test -m unittest test_fixtures test_connections
           npx vitest run packages/local/test/gateway.it.test.ts packages/local/test/lifecycle.it.test.ts
       - name: Qualify the packaged CLI fixture flow
         working-directory: cli

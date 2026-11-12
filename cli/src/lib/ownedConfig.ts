@@ -173,8 +173,8 @@ export function addRunSettingsCreateOptions(command: Command): Command {
       [] as string[],
     )
     .option(
-      "--connection <id>",
-      "connection id (repeatable)",
+      "--connection <id-or-name>",
+      "hosted connection ID or local YAML name (repeatable)",
       collect,
       [] as string[],
     )
@@ -205,8 +205,8 @@ export function addRunSettingsEditOptions(command: Command): Command {
     )
     .option("--clear-mcp", "remove all MCP servers")
     .option(
-      "--connection <id>",
-      "replace connections (repeatable)",
+      "--connection <id-or-name>",
+      "replace hosted connection IDs or local YAML names (repeatable)",
       collect,
       [] as string[],
     )

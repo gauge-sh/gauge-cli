@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveSessionCredential, type CredentialSources } from "./credentials.js";
+import { validateGatewayConnections, workerEnvironment, type GatewayConnection } from "./connections.js";
 import { DockerCli } from "./docker.js";
 import { cleanupGateway, validateGateway } from "./gateway.js";
 import { preserveWorkspace } from "./workspace.js";
@@ -19,6 +20,9 @@ export interface StartSessionOptions {
   credentials: Omit<CredentialSources, "now">;
   blobsDirectory?: string;
   runtimeDirectory?: string;
+  gatewayConnections?: GatewayConnection[];
+  /** Host environment variable names to remove before launching the worker. Never persisted. */
+  connectionEnvNames?: string[];
 }
 
 export class SessionNotFoundError extends Error {
@@ -68,6 +72,8 @@ export function validateSpec(spec: SessionSpec): void {
 
 export async function startSession(options: StartSessionOptions): Promise<SessionStatus> {
   validateSpec(options.spec);
+  const connections = validateGatewayConnections(options.gatewayConnections ?? []);
+  if (connections.length && !options.spec.gateway) throw new Error("Gateway connections require a gateway");
   const directory = resolve(options.directory);
   const credential = await resolveSessionCredential(options.spec, { ...options.credentials, now: new Date() });
   await mkdir(dirname(directory), { recursive: true });
@@ -81,10 +87,12 @@ export async function startSession(options: StartSessionOptions): Promise<Sessio
     credentialDir = await mkdtemp(join(runtime, "gauge-"));
     await chmod(credentialDir, 0o700);
     await mkdir(join(credentialDir, "workspace"), { mode: 0o700 });
+    if (connections.length) await writeFile(join(credentialDir, "connections.json"), JSON.stringify({ version: 1, connections }), { mode: 0o600, flag: "wx" });
     const record: LaunchRecord = {
       version: 2, containerName, credentialDir,
       socketPath: join(credentialDir, "control.sock"), spec: options.spec,
       credentialExpiresAt: credential.expiresAt?.toISOString(),
+      ...(connections.length ? { hasGatewayConnections: true } : {}),
       ...(options.spec.gateway ? { gatewayName: `${containerName}-gateway`, trustContainerName: `${containerName}-trust` } : {}),
     };
     if (Buffer.byteLength(record.socketPath) > 100) throw new Error("runtimeDirectory is too long for a Unix socket");
@@ -114,8 +122,7 @@ export async function startSession(options: StartSessionOptions): Promise<Sessio
     try {
       const child = spawn(process.execPath, [fileURLToPath(new URL("./worker.js", import.meta.url)), directory], {
         detached: true, stdio: ["ignore", log.fd, log.fd],
-        env: Object.fromEntries(Object.entries(process.env).filter(([key]) =>
-          !/(?:API_KEY|AUTH_TOKEN|OAUTH_TOKEN|ACCESS_TOKEN|REFRESH_TOKEN)$/.test(key))),
+        env: workerEnvironment(process.env, options.connectionEnvNames),
       });
       const spawned = new Promise<void>((yes, no) => { child.once("spawn", yes); child.once("error", no); });
       await spawned;

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import {
   chmod,
+  mkdir,
   mkdtemp,
   readFile,
   readdir,
@@ -54,7 +55,7 @@ const fs = require('node:fs');
 const args = process.argv.slice(2), state = JSON.parse(fs.readFileSync(${JSON.stringify(stateFile)}, 'utf8'));
 fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');
 if (args[0] === 'version') console.log(JSON.stringify({Os:'linux',Arch:'amd64'}));
-else if (args[0] === 'image') console.log(JSON.stringify([{Id:state.imageId,Os:'linux',Architecture:'amd64',Config:{Labels:{'sh.gauge.contract':'1'}}}]));
+else if (args[0] === 'image') console.log(JSON.stringify([{Id:state.imageId,Os:'linux',Architecture:'amd64',Config:{Labels:{'sh.gauge.contract':args.at(-1).startsWith('gateway:')?'gateway-1':'1'}}}]));
 else if (args[0] === 'run') { process.stdout.write(state.output); if(state.error) { process.stderr.write(state.error); process.exitCode = 1; } }
 else if (args[0] !== 'rm') process.exitCode = 1;
 `,
@@ -95,7 +96,6 @@ test("local cases reject hosted settings before credential or runtime preflight"
     ["profileId", "persona-1"],
     ["skillRefs", ["docs@latest"]],
     ["mcpRefs", ["tools@latest"]],
-    ["connectionIds", ["connection-1"]],
     ["addons", { browser: { session: "test", projectId: 1, region: "us" } }],
   ] as const) {
     const unsupported = {
@@ -397,3 +397,33 @@ test(
     assert.match(stdout, /^Python 3\./);
   },
 );
+
+test("prepared connection batches persist only registry metadata, never header values", async (t) => {
+  const f = await fakeDocker(t);
+  const gaugeDir = join(f.root, ".gauge");
+  await mkdir(gaugeDir, { recursive: true });
+  await writeFile(join(gaugeDir, "connections.yaml"), `version: 1
+connections:
+  - name: example
+    origin: https://api.example.test
+    header: Authorization
+    env: LOCAL_TEST_CONNECTION_SECRET
+`);
+  const prior = process.env.LOCAL_TEST_CONNECTION_SECRET;
+  process.env.LOCAL_TEST_CONNECTION_SECRET = "Bearer fixture-connection-never-persisted";
+  t.after(() => {
+    if (prior === undefined) delete process.env.LOCAL_TEST_CONNECTION_SECRET;
+    else process.env.LOCAL_TEST_CONNECTION_SECRET = prior;
+  });
+  const configured = { ...definition, cases: [{ ...definition.cases[0], config: { ...definition.cases[0].config, connectionIds: ["example"] } }] };
+  const batchId = await prepareLocal(configured, [], gaugeDir, { runtimeImage: "custom:test", gatewayImage: "gateway:test" });
+  const directory = join(gaugeDir, "batches", batchId);
+  const saved = await readFile(join(directory, "gateway.json"), "utf8");
+  assert.deepEqual(JSON.parse(saved).connections["case.md"], [{ name: "example", origin: "https://api.example.test", header: "Authorization", env: "LOCAL_TEST_CONNECTION_SECRET" }]);
+  for (const name of await readdir(directory))
+    assert.equal((await readFile(join(directory, name), "utf8")).includes(process.env.LOCAL_TEST_CONNECTION_SECRET!), false);
+  assert.equal(JSON.stringify(await f.calls()).includes(process.env.LOCAL_TEST_CONNECTION_SECRET!), false);
+  const store = openLocalStore(gaugeDir);
+  try { assert.equal(JSON.stringify(store.getLaunch(batchId)).includes(process.env.LOCAL_TEST_CONNECTION_SECRET!), false); }
+  finally { store.close(); }
+});

@@ -8,3 +8,6 @@ export type {
   AgentKind, AuthMode, ResourceRef, SessionSpec, SessionStatus,
   SessionEvent, Question, CommandReceipt,
 } from "./types.js";
+
+export { validateGatewayConnections } from "./connections.js";
+export type { GatewayConnection } from "./connections.js";

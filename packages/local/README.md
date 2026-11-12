@@ -156,3 +156,15 @@ GAUGE_DOCKER_TESTS=1 GAUGE_IT_CHATGPT=1 npm run test:docker -w @withgauge/local-
 Use `GAUGE_IT_AGENTS=codex,pi` to select live cases. The stock image pins harness
 versions independently of the host package. A compatible custom image can later
 implement the same tool/path contract without embedding Gauge code.
+
+## Gateway connections
+
+`startSession` accepts `gatewayConnections` separately from `SessionSpec`. Each
+entry contains `{ name, origin, header, value }`, with a complete header value and
+an exact HTTPS origin on port 443. A gateway must be configured on the session.
+Pass the source environment variable names in `connectionEnvNames` so they are
+removed from the detached session worker's environment. Values are validated and
+written into the gateway-only temporary credential file, never the persisted
+session record. The gateway must support the connections capability; old images
+fail before the agent is started. See [local connections](../../docs/local-connections.md)
+for CLI configuration, matching, cleanup, and security boundaries.

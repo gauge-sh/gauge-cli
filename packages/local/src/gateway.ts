@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { chmod, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { DockerCli } from "./docker.js";
+import { DockerCli, type BindMount } from "./docker.js";
 import type { LaunchRecord, SessionSpec } from "./types.js";
 
 export function validateGateway(gateway: NonNullable<SessionSpec["gateway"]>): void {
@@ -26,9 +26,11 @@ export async function prepareGateway(launch: LaunchRecord, canceled: () => boole
   const fixturePath = join(launch.credentialDir, "fixture.json");
   await writeFile(fixturePath, JSON.stringify(gateway.fixture), { mode: 0o644 });
   check();
+  const mounts: BindMount[] = [{ type: "bind", source: fixturePath, target: "/gateway/fixture.json", readonly: true }];
+  if (launch.hasGatewayConnections) mounts.push({ type: "bind", source: join(launch.credentialDir, "connections.json"), target: "/gateway/connections.json", readonly: true });
   if (await docker.create({ name, image: gateway.image, gateway: true,
     labels: { ...labels, "sh.gauge.role": "gateway" },
-    mounts: [{ type: "bind", source: fixturePath, target: "/gateway/fixture.json", readonly: true }],
+    mounts,
     env: {}, command: [] }) !== "created") throw new Error("Gateway container already exists");
   check();
   await docker.start(name);
@@ -39,6 +41,16 @@ export async function prepareGateway(launch: LaunchRecord, canceled: () => boole
     await delay(200);
   }
   check();
+  if (launch.hasGatewayConnections) {
+    const marker = join(launch.credentialDir, "connections-ready");
+    try {
+      await docker.copy(name, "/gateway/private/connections-ready", marker);
+      if (await readFile(marker, "utf8") !== "1\n") throw new Error("Unsupported connections protocol");
+    } catch {
+      throw new Error("Selected gateway image does not support local connections; build a current gateway image and select it with --gateway-image");
+    }
+    check();
+  }
   const cert = join(launch.credentialDir, "gateway.crt");
   await docker.copy(name, "/gateway/private/mitmproxy-ca-cert.pem", cert);
   // A stopped, networkless container exposes the selected image's existing trust

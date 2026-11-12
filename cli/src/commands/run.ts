@@ -491,6 +491,8 @@ type LaunchOpts = LifecycleOpts & {
   detach?: boolean;
   runtimeImage?: string;
   gatewayImage?: string;
+  connection: string[];
+  connectionsFile?: string;
   requireExperiment?: string;
   schema?: boolean;
   example?: boolean;
@@ -646,6 +648,10 @@ function promptSpec(prompt: string, agents: string[]): CaseSpec {
 }
 
 async function launch(cmd: Command, opts: LaunchOpts): Promise<void> {
+  if ((opts.connection.length || opts.connectionsFile) && gaugeState(cmd).mode !== "local")
+    throw new CliError("usage", "Run --connection and --connections-file apply only to local runs. Configure hosted connections on the saved measurement instead.");
+  if ((opts.connection.length || opts.connectionsFile) && (opts.verify || opts.schema || opts.example))
+    throw new CliError("usage", "Connection flags apply to a launch or --dry-run, not --verify, --schema, or --example.");
   if (opts.cliRules !== undefined) {
     if (gaugeState(cmd).mode !== "hosted")
       throw new CliError(
@@ -900,6 +906,10 @@ async function runLocalCases(
     process.cwd(),
     { local: true, spec },
   );
+  if (opts.connection.length) {
+    for (const item of local.definition.cases) item.config.connectionIds = [...opts.connection];
+  }
+  const connectionsFile = opts.connectionsFile ?? join(root, ".gauge", "connections.yaml");
   const json = resolveOutput(cmd) === "json";
   if (measurement && local.unattachedInputs.length && !opts.dryRun)
     console.error(`note: ${unattachedNote(local.unattachedInputs, true)}`);
@@ -910,6 +920,7 @@ async function runLocalCases(
           profile: opts.profile,
           runtimeImage: opts.runtimeImage,
           gatewayImage: opts.gatewayImage,
+          connectionsFile,
         })),
         inputSnapshots: local.inputSnapshots,
         webFixtures: Object.fromEntries(
@@ -944,6 +955,7 @@ async function runLocalCases(
           profile: opts.profile,
           runtimeImage: opts.runtimeImage,
           gatewayImage: opts.gatewayImage,
+          connectionsFile,
           measurement,
         },
       );
@@ -975,6 +987,7 @@ async function runLocalCases(
         profile: opts.profile,
         runtimeImage: opts.runtimeImage,
         gatewayImage: opts.gatewayImage,
+        connectionsFile,
         onStart: (batchId) => {
           console.error(
             `Batch ${batchId}\nStatus: gauge run status --batch ${batchId} --local\nWait: gauge run wait --batch ${batchId} --local\nStop: gauge run cancel --batch ${batchId} --local`,
@@ -1026,6 +1039,8 @@ function printLocalPlan(
     console.log(
       `Gateway: ${plan.gateway.reference}${plan.gateway.imageId ? ` (${plan.gateway.imageId})` : ""}`,
     );
+  for (const connection of plan.connections)
+    console.log(`Connection: ${connection.name} → ${connection.origin} (${connection.header}, env ${connection.env}; ${connection.ready ? "ready" : "not ready"})`);
   for (const item of plan.cases)
     console.log(
       `  ${item.path}: ${item.sessions.map((s) => `${s.agent} ${s.model} ×${s.samples}`).join(", ")}; ${item.criteria} criteria`,
@@ -1228,8 +1243,15 @@ export function register(program: Command): void {
     )
     .option(
       "--gateway-image <image>",
-      "use a compatible custom gateway image for local web fixtures",
+      "use a compatible custom gateway image for local web fixtures and connections",
     )
+    .option(
+      "--connection <name>",
+      "local connection name from connections YAML; replaces case connections for this launch (repeatable)",
+      collect,
+      [] as string[],
+    )
+    .option("--connections-file <path>", "local connection registry (default .gauge/connections.yaml)")
     .option("--verify", "check this repo's eval files; start no sessions")
     .option(
       "--dry-run",
