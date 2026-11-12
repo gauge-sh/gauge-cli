@@ -13,6 +13,23 @@ export const createOrgResponseSchema = z.object({
 });
 export type CreateOrgResponse = z.infer<typeof createOrgResponseSchema>;
 
+export const PREFERENCE_SCHEDULE_CADENCES = ["DAILY", "WEEKLY"] as const;
+
+export const preferenceScheduleSchema = z.object({
+  cadence: z.enum(PREFERENCE_SCHEDULE_CADENCES),
+  weeklyRunDay: z.number().int().min(0).max(6),
+  nextRunAt: z.string().nullable(),
+});
+export type PreferenceSchedule = z.infer<typeof preferenceScheduleSchema>;
+
+export const updatePreferenceScheduleBodySchema = preferenceScheduleSchema
+  .pick({ cadence: true, weeklyRunDay: true })
+  .partial()
+  .strict();
+export type UpdatePreferenceScheduleBody = z.infer<
+  typeof updatePreferenceScheduleBodySchema
+>;
+
 export const orgSettingsSchema = z.object({
   slug: z.string(),
   name: z.string(),
@@ -22,6 +39,7 @@ export const orgSettingsSchema = z.object({
   overageEnabled: z.boolean(),
   overageCapCredits: z.number().int().nullable(),
   autoJoinDomain: z.string().nullable(),
+  preferenceSchedule: preferenceScheduleSchema.optional(),
 });
 export type OrgSettings = z.infer<typeof orgSettingsSchema>;
 

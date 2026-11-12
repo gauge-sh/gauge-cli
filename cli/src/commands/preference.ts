@@ -16,7 +16,6 @@ import {
   listPreferencePrompts,
   listScenarios,
   markets,
-  preferenceSchedule,
   type PreferenceCreateOpts,
   type PreferenceEditOpts,
   preferencePromptRow,
@@ -81,8 +80,11 @@ export function register(program: Command): void {
       collect,
       [] as string[],
     )
-    .option("--tracked", "run on the org schedule (hosted default)")
-    .option("--no-tracked", "run only on demand")
+    .option(
+      "--tracked",
+      "run on the org's preference schedule and spend credits (default: untracked)",
+    )
+    .option("--no-tracked", "run only on demand (the default)")
     .action(async (opts: PreferenceCreateOpts, cmd: Command) => {
       await createPreferencePrompt(cmd, opts);
     });
@@ -115,8 +117,11 @@ export function register(program: Command): void {
       [] as string[],
     )
     .option("--clear-tags", "remove all user tags")
-    .option("--tracked", "run on the org schedule")
-    .option("--no-tracked", "stop scheduled runs")
+    .option(
+      "--tracked",
+      "run on the org's preference schedule and spend credits",
+    )
+    .option("--no-tracked", "stop scheduled runs; run only on demand")
     .action(async (id: string, opts: PreferenceEditOpts, cmd: Command) => {
       await editPreferencePrompt(cmd, id, opts);
     });
@@ -174,16 +179,5 @@ export function register(program: Command): void {
     .option("--add <marketId>", "track a published market")
     .action(async (opts: { add?: string }, cmd: Command) => {
       await markets(cmd, opts);
-    });
-
-  preference
-    .command("schedule")
-    .description(
-      "Show or set when tracked prompts run. Rankings count only these scheduled runs",
-    )
-    .option("--cadence <cadence>", "daily | weekly")
-    .option("--day <weekday>", "weekly run day, such as monday")
-    .action(async (opts: { cadence?: string; day?: string }, cmd: Command) => {
-      await preferenceSchedule(cmd, opts);
     });
 }

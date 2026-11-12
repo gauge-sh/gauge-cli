@@ -166,7 +166,7 @@ function rejectPromptCadence(cadence: string | undefined): void {
   if (cadence !== undefined && cadence.trim().toUpperCase() !== "NONE")
     throw new CliError(
       "usage",
-      "Preference prompts no longer have a cadence. Tracked prompts run on the org schedule: pass --tracked, and set the schedule with `gauge preference schedule --cadence daily|weekly`.",
+      "Preference prompts no longer have a cadence. Pass --tracked to run the prompt on the org's preference schedule, and set that schedule with `gauge org edit --preference-cadence daily|weekly`.",
     );
 }
 
@@ -511,68 +511,4 @@ export async function markets(
     ],
     "table",
   );
-}
-
-const WEEKDAYS = [
-  "sunday",
-  "monday",
-  "tuesday",
-  "wednesday",
-  "thursday",
-  "friday",
-  "saturday",
-] as const;
-
-function parseWeekday(raw: string): number {
-  const value = raw.trim().toLowerCase();
-  const day = /^[0-6]$/.test(value)
-    ? Number(value)
-    : WEEKDAYS.findIndex((d) => value.length >= 3 && d.startsWith(value));
-  if (day < 0)
-    throw new CliError(
-      "usage",
-      `invalid --day "${raw}" (expected a weekday name, such as monday)`,
-    );
-  return day;
-}
-
-function parseScheduleCadence(
-  raw: string,
-): visibility.UpdatePreferenceScheduleBody["cadence"] {
-  const cadence = raw.trim().toUpperCase();
-  if (cadence !== "DAILY" && cadence !== "WEEKLY")
-    throw new CliError(
-      "usage",
-      `invalid --cadence "${raw}" (expected daily or weekly)`,
-    );
-  return cadence;
-}
-
-export async function preferenceSchedule(
-  cmd: Command,
-  opts: { cadence?: string; day?: string },
-): Promise<void> {
-  if (isLocal(cmd))
-    throw new CliError(
-      "usage",
-      "The tracking schedule requires hosted Gauge. Pass --hosted.",
-    );
-  const path = `/api/v1/orgs/${encodeURIComponent(await resolveOrg(cmd))}/preference-schedule`;
-  const body: visibility.UpdatePreferenceScheduleBody = {};
-  if (opts.cadence !== undefined)
-    body.cadence = parseScheduleCadence(opts.cadence);
-  if (opts.day !== undefined) body.weeklyRunDay = parseWeekday(opts.day);
-  const schedule =
-    Object.keys(body).length > 0
-      ? await createClient().patch<visibility.PreferenceSchedule>(path, body)
-      : await createClient().get<visibility.PreferenceSchedule>(path);
-  if (resolveOutput(cmd) === "json") {
-    printJson(schedule);
-    return;
-  }
-  const day = WEEKDAYS[schedule.weeklyRunDay] ?? String(schedule.weeklyRunDay);
-  console.log(
-    `cadence:  ${schedule.cadence === "DAILY" ? "daily" : `weekly on ${day}`}`,
-  );
-  console.log(`next run: ${schedule.nextRunAt ?? "(set on the next tick)"}`);
 }

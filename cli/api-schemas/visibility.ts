@@ -159,20 +159,3 @@ export type ListMarketsResponse = z.infer<typeof listMarketsResponseSchema>;
 
 export const addMarketBodySchema = z.object({ marketId: z.string().min(1) });
 export type AddMarketBody = z.infer<typeof addMarketBodySchema>;
-
-export const PREFERENCE_SCHEDULE_CADENCES = ["DAILY", "WEEKLY"] as const;
-
-export const preferenceScheduleSchema = z.object({
-  cadence: z.enum(PREFERENCE_SCHEDULE_CADENCES),
-  weeklyRunDay: z.number().int().min(0).max(6),
-  nextRunAt: z.string().nullable(),
-});
-export type PreferenceSchedule = z.infer<typeof preferenceScheduleSchema>;
-
-export const updatePreferenceScheduleBodySchema = preferenceScheduleSchema
-  .pick({ cadence: true, weeklyRunDay: true })
-  .partial()
-  .strict();
-export type UpdatePreferenceScheduleBody = z.infer<
-  typeof updatePreferenceScheduleBodySchema
->;

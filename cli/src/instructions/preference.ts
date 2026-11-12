@@ -1,6 +1,6 @@
 export const PREFERENCE = `---
 name: gauge-preference
-description: Save, edit, and schedule preference prompts that gauge run
+description: Save, edit, and track preference prompts that gauge run
   launches. Read before creating or changing a saved preference prompt.
 ---
 
@@ -41,13 +41,13 @@ Read \`gauge instructions session-analysis\` to analyze the sessions.
   Read \`gauge instructions run\` to choose models.
 - Hosted --setup-file/--teardown-file upload UTF-8 JS/TS files; import bindings from "@withgauge/session". For one launch only, pass the same flags to gauge run --hosted --preference <id>; saved configuration stays unchanged.
   Edits keep the other hook/params; --clear-setup/--clear-teardown/--clear-lifecycle remove hooks (see --help).
-- Hosted prompts are tracked by default (--no-tracked opts out): they run on the org's
-  \`gauge preference schedule\` and spend credits. Confirm changes with the user.
-- For one launch with other agents or samples, use
-  \`gauge run --preference <id> --agent ... --samples <n>\`.
+- New prompts are untracked (launch-only). --tracked on create/edit puts a hosted prompt
+  on the org schedule (\`gauge org get\`; \`gauge org edit --preference-cadence daily|weekly\`).
+  Only tracked runs count toward rankings; each scheduled run spends credits, so ask first.
+- One launch with other agents or samples: \`gauge run --preference <id> --agent ... --samples <n>\`.
 
 Local prompts run on demand. Repository-only scenarios are supported locally;
-hosted personas, markets, recurring schedules, and resource references are not. The user's coding
+hosted personas, markets, tracking, and resource references are not. The user's coding
 agent analyzes local sessions and publishes choices and findings through
 \`gauge run analysis save\`; read \`gauge instructions session-analysis --local\`.
 After an input change, rebuild/repack and rerun the same preference ID. Local launches

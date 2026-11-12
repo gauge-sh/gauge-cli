@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it, type TestContext } from "node:test";
 import { Command } from "commander";
+import { register as registerOrg } from "./org";
 import { register as registerPreference } from "./preference";
 
 const ORG = "8c7f0e1a-1111-4222-8333-944455556666";
@@ -50,6 +51,7 @@ async function gauge(args: string[], mode = "--hosted"): Promise<void> {
     .option("--hosted")
     .exitOverride();
   registerPreference(root);
+  registerOrg(root);
   await root.parseAsync(["--org", ORG, "-o", "json", mode, ...args], {
     from: "user",
   });
@@ -89,33 +91,32 @@ describe("preference tracking", () => {
     );
   });
 
-  it("reads and sets the org schedule", async (t) => {
+});
+
+describe("org edit", () => {
+  it("sets the preference schedule", async (t) => {
     const requests = useApi(t);
-    await gauge(["preference", "schedule"]);
-    await gauge(["preference", "schedule", "--cadence", "Weekly", "--day", "thu"]);
-    await gauge(["preference", "schedule", "--cadence", "daily"]);
+    await gauge(["org", "edit", "--preference-cadence", "Weekly", "--preference-day", "thu"]);
+    await gauge(["org", "edit", "--preference-cadence", "daily"]);
     assert.deepEqual(
       requests.map(({ method, url }) => `${method} ${url}`),
-      [
-        `GET ${BASE}/preference-schedule`,
-        `PATCH ${BASE}/preference-schedule`,
-        `PATCH ${BASE}/preference-schedule`,
-      ],
+      [`PATCH ${BASE}/preference-schedule`, `PATCH ${BASE}/preference-schedule`],
     );
-    assert.deepEqual(requests[1].body, { cadence: "WEEKLY", weeklyRunDay: 4 });
-    assert.deepEqual(requests[2].body, { cadence: "DAILY" });
+    assert.deepEqual(requests[0].body, { cadence: "WEEKLY", weeklyRunDay: 4 });
+    assert.deepEqual(requests[1].body, { cadence: "DAILY" });
   });
 
-  it("rejects a monthly cadence and an unknown day", async (t) => {
+  it("rejects a monthly cadence, an unknown day, and no flags", async (t) => {
     const requests = useApi(t);
     await assert.rejects(
-      gauge(["preference", "schedule", "--cadence", "monthly"]),
+      gauge(["org", "edit", "--preference-cadence", "monthly"]),
       /daily or weekly/,
     );
     await assert.rejects(
-      gauge(["preference", "schedule", "--day", "someday"]),
-      /invalid --day/,
+      gauge(["org", "edit", "--preference-day", "someday"]),
+      /invalid --preference-day/,
     );
+    await assert.rejects(gauge(["org", "edit"]), /nothing to change/);
     assert.equal(requests.length, 0);
   });
 });
