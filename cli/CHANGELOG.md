@@ -2,8 +2,6 @@
 
 ## Unreleased
 
-## 0.31.0 — 2026-11-12
-
 ### Added
 
 - `gauge preference create` and `edit` take `--tracked` / `--no-tracked`.
