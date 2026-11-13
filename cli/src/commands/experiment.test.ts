@@ -181,6 +181,28 @@ it("launches without gauge.json and honors explicit consumer workspace configura
   assert.equal(JSON.parse(result.output[0]).runRequestId, "request-1");
 });
 
+const persona = {
+  name: "Evaluating developer",
+  description: "Done once the agent reports the command it would run.",
+};
+
+it("submits an inline persona with the case", async (t) => {
+  const spec = structuredClone(EXAMPLE_EXPERIMENT);
+  Object.assign(spec.cases[0].config, { persona });
+  const result = await invoke(t, ["--hosted", "--yes"], spec);
+  assert.equal(result.error, undefined);
+  assert.deepEqual(result.requests[0].body.cases[0].config.persona, persona);
+  assert.deepEqual(result.requests[1].body.cases[0].config.persona, persona);
+});
+
+it("rejects an inline persona beside a saved persona", async (t) => {
+  const spec = structuredClone(EXAMPLE_EXPERIMENT);
+  Object.assign(spec.cases[0].config, { persona, profileId: "saved" });
+  const result = await invoke(t, ["--hosted", "--yes"], spec);
+  assert.ok(result.error);
+  assert.equal(result.requests.length, 0);
+});
+
 it("submits a saved pinned experiment without returning to its original branch", async (t) => {
   const spec = structuredClone(EXAMPLE_EXPERIMENT);
   spec.product.revision = sha;
