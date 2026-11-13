@@ -2,7 +2,15 @@
 
 ## Unreleased
 
+## 0.31.0 — 2026-11-13
+
 ### Added
+
+- A case's `config.persona` describes its simulated user inline with a
+  `name` and a `description` of who the user is, what they want, and when
+  they consider the work done. It works in self-contained experiments, run
+  definitions, and case frontmatter. A case sets `persona` or `profileId`,
+  not both. Local execution rejects `persona`.
 
 - `gauge preference create` and `edit` take `--tracked` / `--no-tracked`.
   Tracked prompts run on the org's preference schedule; rankings count only
