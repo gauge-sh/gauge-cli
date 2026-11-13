@@ -9,7 +9,7 @@ description: Write, save, edit, and schedule eval sets that gauge run launches. 
 # Eval sets
 
 An eval set groups sessions under a stable identity and an editable prompt,
-criteria, and default settings: can the agent use the product, and where does it struggle? Local measurements live
+criteria, and default settings: did the agent succeed? Local measurements live
 in this workspace's SQLite database; hosted measurements live in the organization.
 IDs are independent of names, directory paths, and Git commits.
 \`gauge run --eval <id>\` launches one. Committed cases in gauge-cases/ need no
