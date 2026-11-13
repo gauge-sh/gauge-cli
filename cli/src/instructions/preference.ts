@@ -19,7 +19,7 @@ in gauge-cases/ need no preference prompt.
     gauge preference get <id> -o json
     gauge run list --preference <id> -o json    # its sessions with verdicts
 
-Read \`gauge instructions session-analysis\` to analyze the sessions.
+Read \`gauge instructions prompts\` before drafting. Use short, realistic requests; default to explicit research and one recommendation without implementation. Keep open-ended discovery unbranded and name both alternatives for head-to-heads. Preserve existing baselines when rerunning. Read \`gauge instructions session-analysis\` to analyze the sessions.
 
 ## Create and edit
 

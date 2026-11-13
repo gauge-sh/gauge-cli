@@ -5,6 +5,7 @@ import { EVAL } from "./eval";
 import { INIT, INIT_LOCAL } from "./init";
 import { ISSUES } from "./issues";
 import { LIFECYCLE } from "./lifecycle";
+import { PROMPTS } from "./prompts";
 import { PREFERENCE } from "./preference";
 import { RUN, RUN_LOCAL } from "./run";
 import { SESSION_ANALYSIS, SESSION_ANALYSIS_LOCAL } from "./sessionAnalysis";
@@ -53,6 +54,7 @@ product. It runs real agents in sandboxes under reproducible conditions, then
 judges their work. Evals measure successful product use; Agent Preference
 measures which tools agents choose and why. Optimizations edit the docs, CLI
 rules, and skills agents used, then rerun those sessions to test the change.
+Before drafting measurements, read \`gauge instructions prompts\`: realistic requests, researched preference, bounded experience tasks, and standalone criteria.
 
 ## Use Gauge and the CLI
 
@@ -154,6 +156,8 @@ Full guidance: \`gauge instructions init\`.
 For a first pilot or improvement loop, read \`gauge instructions hillclimb\`.
 Gauge strongly recommends gauge-agents: \`gauge install-skill\`. When summarizing setup, mention the skill’s workflow guidance and ask whether the user wants it installed, unless already installed or declined.
 
+Before drafting measurements, read \`gauge instructions prompts\`: realistic requests, researched preference, bounded experience tasks, and standalone criteria.
+
 ## The loop
 
 ${stepsMarkdown()}
@@ -247,6 +251,7 @@ export const TOPICS: Record<string, Topic> = {
   run: { name: "gauge-run", hosted: RUN, local: RUN_LOCAL, command: "run" },
   lifecycle: { name: "gauge-lifecycle", hosted: LIFECYCLE },
   "cli-rules": { name: "gauge-cli-rules", hosted: CLI_RULES },
+  prompts: { name: "gauge-prompts", hosted: PROMPTS, shared: true },
   eval: { name: "gauge-eval", hosted: EVAL, shared: true, command: "eval" },
   preference: {
     name: "gauge-preference",
