@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+### Added
+
+- `gauge preference create` and `edit` take `--tracked` / `--no-tracked`.
+  Tracked prompts run on the org's preference schedule; rankings count only
+  those runs. New prompts are not tracked unless you pass `--tracked`.
+- `gauge preference tracking` shows the org's preference schedule, its tracked
+  models, and how many prompts are tracked. `gauge preference tracking set`
+  takes `--cadence daily|weekly`, `--day <weekday>`, and repeatable
+  `--agent <agent[:models]>` (replaces the list; `--no-agents` stops scheduled
+  runs).
+- `gauge preference track <id...>` and `untrack <id...>` change tracking for
+  many prompts at once. `gauge preference list` takes `--tracked` and
+  `--untracked`. `gauge org get` shows the schedule.
+
+### Changed
+
+- Preference prompts no longer take `--cadence`. A cadence other than `none`
+  fails with a pointer to `gauge preference track` and
+  `gauge preference tracking set`. `gauge preference get` shows `tracked` in
+  place of a cadence. Evals keep `--cadence`.
+- Hosted preference prompts no longer take `--agent`; they run on the org's
+  tracked models, and `gauge preference get` labels them that way. Local
+  prompts keep their own `--agent` roster. `gauge run --preference <id>
+  --agent ...` still picks models for one launch.
+
 ## 0.30.0 — 2026-11-12
 
 ### Added

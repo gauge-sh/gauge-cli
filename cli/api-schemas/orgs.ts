@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { agentConfigInputSchema, agentConfigSchema } from "./runConfig";
 
 export const createOrgRequestSchema = z.object({
   name: z.string().trim().min(1).max(200),
@@ -13,6 +14,27 @@ export const createOrgResponseSchema = z.object({
 });
 export type CreateOrgResponse = z.infer<typeof createOrgResponseSchema>;
 
+export const PREFERENCE_SCHEDULE_CADENCES = ["DAILY", "WEEKLY"] as const;
+
+export const preferenceScheduleSchema = z.object({
+  cadence: z.enum(PREFERENCE_SCHEDULE_CADENCES),
+  weeklyRunDay: z.number().int().min(0).max(6),
+  nextRunAt: z.string().nullable(),
+  /** Every tracked prompt runs on each of these. Empty models = the platform
+   *  default; an empty list stops tracking. Absent on older servers. */
+  agents: z.array(agentConfigSchema).optional(),
+});
+export type PreferenceSchedule = z.infer<typeof preferenceScheduleSchema>;
+
+export const updatePreferenceScheduleBodySchema = preferenceScheduleSchema
+  .pick({ cadence: true, weeklyRunDay: true })
+  .extend({ agents: z.array(agentConfigInputSchema) })
+  .partial()
+  .strict();
+export type UpdatePreferenceScheduleBody = z.input<
+  typeof updatePreferenceScheduleBodySchema
+>;
+
 export const orgSettingsSchema = z.object({
   slug: z.string(),
   name: z.string(),
@@ -22,6 +44,7 @@ export const orgSettingsSchema = z.object({
   overageEnabled: z.boolean(),
   overageCapCredits: z.number().int().nullable(),
   autoJoinDomain: z.string().nullable(),
+  preferenceSchedule: preferenceScheduleSchema.optional(),
 });
 export type OrgSettings = z.infer<typeof orgSettingsSchema>;
 

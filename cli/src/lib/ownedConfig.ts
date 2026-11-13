@@ -39,7 +39,7 @@ export type OwnedConfigCreateOpts = LifecycleOpts & {
   skill: string[];
   mcp: string[];
   connection: string[];
-  cadence: string;
+  cadence?: string;
   samples: string;
 };
 
@@ -149,11 +149,14 @@ export type RunSettingsEditOpts = Omit<
 
 type RunSettingsInput = Omit<
   OwnedConfigInput,
-  "repoUrl" | "repoRef" | "profileId" | "agents"
-> & { agents?: OwnedConfigInput["agents"] };
+  "repoUrl" | "repoRef" | "profileId" | "agents" | "cadence"
+> & { agents?: OwnedConfigInput["agents"]; cadence?: Cadence };
 
-export function addRunSettingsCreateOptions(command: Command): Command {
-  return addLifecycleOptions(command)
+export function addRunSettingsCreateOptions(
+  command: Command,
+  { cadence = true } = {},
+): Command {
+  addLifecycleOptions(command)
     .option(
       "--agent <agent[:m1,m2]>",
       "agent and optional model pins (repeatable)",
@@ -177,13 +180,21 @@ export function addRunSettingsCreateOptions(command: Command): Command {
       "connection id (repeatable)",
       collect,
       [] as string[],
-    )
-    .option("--cadence <cadence>", "none | daily | weekly | monthly", "none")
-    .option("--samples <n>", "sample count from 1 to 50", "1");
+    );
+  if (cadence)
+    command.option(
+      "--cadence <cadence>",
+      "none | daily | weekly | monthly",
+      "none",
+    );
+  return command.option("--samples <n>", "sample count from 1 to 50", "1");
 }
 
-export function addRunSettingsEditOptions(command: Command): Command {
-  return addLifecycleEditOptions(command)
+export function addRunSettingsEditOptions(
+  command: Command,
+  { cadence = true } = {},
+): Command {
+  addLifecycleEditOptions(command)
     .option(
       "--agent <agent[:m1,m2]>",
       "replace agents and model pins (repeatable)",
@@ -210,9 +221,10 @@ export function addRunSettingsEditOptions(command: Command): Command {
       collect,
       [] as string[],
     )
-    .option("--clear-connections", "remove all connections")
-    .option("--cadence <cadence>", "none | daily | weekly | monthly")
-    .option("--samples <n>", "sample count from 1 to 50");
+    .option("--clear-connections", "remove all connections");
+  if (cadence)
+    command.option("--cadence <cadence>", "none | daily | weekly | monthly");
+  return command.option("--samples <n>", "sample count from 1 to 50");
 }
 
 export function hasRunSettingsFlags(opts: RunSettingsCreateOpts): boolean {
@@ -222,7 +234,7 @@ export function hasRunSettingsFlags(opts: RunSettingsCreateOpts): boolean {
     opts.skill.length > 0 ||
     opts.mcp.length > 0 ||
     opts.connection.length > 0 ||
-    opts.cadence.toUpperCase() !== "NONE" ||
+    (opts.cadence ?? "none").toUpperCase() !== "NONE" ||
     opts.samples !== "1"
   );
 }
@@ -236,7 +248,9 @@ export function runSettingsFromOpts(
     skillRefs: validateAssetRefs("skill", opts.skill),
     mcpRefs: validateAssetRefs("mcp", opts.mcp),
     connectionIds: opts.connection,
-    cadence: parseCadence(opts.cadence),
+    ...(opts.cadence !== undefined
+      ? { cadence: parseCadence(opts.cadence) }
+      : {}),
     sampleCount: parseSampleCount(opts.samples),
   };
 }

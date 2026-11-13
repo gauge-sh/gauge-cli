@@ -1,8 +1,9 @@
 import type { billing, orgs } from "@withgauge/api-schemas";
 import type { Command } from "commander";
-import { createClient } from "../lib/client";
+import { CliError, createClient } from "../lib/client";
 import { hostedOnly, resolveOrg, resolveOutput } from "../lib/context";
 import { printJson } from "../lib/output";
+import { scheduleLabel } from "../lib/preferenceTracking";
 import { fmtOverage } from "./billing";
 
 function printSettings(
@@ -17,13 +18,16 @@ function printSettings(
   );
   console.log(`overage:         ${fmtOverage(billingStatus)}`);
   console.log(`auto-join:       ${s.autoJoinDomain ?? "off"}`);
+  if (s.preferenceSchedule)
+    console.log(
+      `preference runs: ${scheduleLabel(s.preferenceSchedule)} (see \`gauge preference tracking\`)`,
+    );
 }
 
 export function register(program: Command): void {
-  const group = hostedOnly(program.command("org"))
-    .description(
-      "This org's settings, read-only (see `gauge orgs` for the org list)",
-    );
+  const group = hostedOnly(program.command("org")).description(
+    "This org's settings, read-only (see `gauge orgs` for the org list)",
+  );
 
   group
     .command("get")

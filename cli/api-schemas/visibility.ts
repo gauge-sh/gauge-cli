@@ -43,6 +43,7 @@ export const visibilityPromptSchema = visibilityPromptSettingsSchema.extend({
   runCount: z.number().int(),
   lastRunAt: z.string().nullable(),
   scenarios: z.array(visibilityScenarioSchema),
+  tracked: z.boolean().optional(),
 });
 export type VisibilityPrompt = z.infer<typeof visibilityPromptSchema>;
 
@@ -70,6 +71,7 @@ export const createVisibilityPromptBodySchema = z
     lifecycle: visibilityPromptSettingsInputShape.lifecycle,
     cadence: visibilityPromptSettingsInputShape.cadence,
     sampleCount: visibilityPromptSettingsInputShape.sampleCount,
+    tracked: z.boolean().optional(),
     scenarios: z.array(visibilityScenarioInputSchema).optional().default([]),
   })
   .strict();
@@ -90,6 +92,7 @@ export const updateVisibilityPromptBodySchema = z
     marketId: z.string().nullish(),
     tags: z.array(z.string()).optional(),
     ...visibilityPromptSettingsPatchShape,
+    tracked: z.boolean().optional(),
     scenarios: z.array(visibilityScenarioInputSchema).optional(),
   })
   .strict();

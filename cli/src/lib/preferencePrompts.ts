@@ -22,7 +22,6 @@ import { resolveOrg, resolveOutput } from "./context";
 import { readPromptText } from "./flags";
 import { printItems, printJson } from "./output";
 import {
-  cadenceLabel,
   hasRunSettingsFlags,
   type RunSettingsCreateOpts,
   type RunSettingsEditOpts,
@@ -82,13 +81,14 @@ export function preferencePromptRow(v: VisibilityPrompt) {
     brands: brandsLabel(v),
     market: v.market?.slug ?? "",
     tags: v.tags.join(", "),
+    tracked: v.tracked === undefined ? "" : v.tracked ? "yes" : "no",
     runs: v.runCount,
     "last run": v.lastRunAt ?? "-",
     "created by": creatorLabel(v.createdBy),
   };
 }
 
-function printDetail(v: VisibilityPrompt): void {
+function printDetail(v: VisibilityPrompt, local: boolean): void {
   console.log(`id:      ${v.id}`);
   console.log(`name:    ${v.name}`);
   console.log(
@@ -99,18 +99,18 @@ function printDetail(v: VisibilityPrompt): void {
     `market:  ${v.market ? `${v.market.name} (${v.market.slug})` : "(none)"}`,
   );
   console.log(`tags:    ${v.tags.join(", ") || "(none)"}`);
+  if (v.tracked !== undefined)
+    console.log(`tracked: ${v.tracked ? "yes" : "no"}`);
   console.log(`runs:    ${v.runCount} (last: ${v.lastRunAt ?? "never"})`);
   console.log(`creator: ${creatorLabel(v.createdBy)}`);
   console.log(`prompt:  ${v.promptText}`);
+  console.log(`samples: ${v.sampleCount}`);
   console.log(
-    `cadence: ${cadenceLabel(v.cadence)} — ${v.sampleCount} sample(s)`,
-  );
-  console.log(
-    `agents:  ${v.agents
+    `${local ? "agents: " : "models: "} ${v.agents
       .map((a) =>
         a.models.length ? `${a.agent}:${a.models.join(",")}` : a.agent,
       )
-      .join(", ")}`,
+      .join(", ")}${local ? "" : " (the org's tracked models)"}`,
   );
   console.log(`skills:  ${v.skillRefs.join(", ") || "(none)"}`);
   console.log(`mcp:     ${v.mcpRefs.join(", ") || "(none)"}`);
@@ -143,7 +143,7 @@ export async function getPreferencePrompt(
         promptPath(await resolveOrg(cmd), id),
       );
   if (resolveOutput(cmd) === "json") printJson(vp);
-  else printDetail(vp);
+  else printDetail(vp, isLocal(cmd));
 }
 
 export type PreferenceCreateOpts = RunSettingsCreateOpts & {
@@ -159,12 +159,42 @@ export type PreferenceCreateOpts = RunSettingsCreateOpts & {
   persona?: string;
   market?: string;
   tag: string[];
+  tracked?: boolean;
 };
+
+function rejectPromptCadence(cadence: string | undefined): void {
+  if (cadence !== undefined && cadence.trim().toUpperCase() !== "NONE")
+    throw new CliError(
+      "usage",
+      "Preference prompts no longer have a cadence. Run `gauge preference track <id>` to put a prompt on the org's preference schedule, and set that schedule with `gauge preference tracking set --cadence daily|weekly`.",
+    );
+}
+
+/** Hosted prompts run on the org's tracked models; local prompts keep their own. */
+function rejectHostedAgents(cmd: Command, agents: string[]): void {
+  if (agents.length > 0 && !isLocal(cmd))
+    throw new CliError(
+      "usage",
+      "Preference prompts no longer store models. Set the models every tracked prompt runs on with `gauge preference tracking set --agent <agent[:models]>`, or run once on other models with `gauge run --preference <id> --agent <agent[:models]>`.",
+    );
+}
+
+function rejectLocalTracked(cmd: Command, tracked: boolean | undefined): void {
+  if (tracked !== undefined && isLocal(cmd))
+    throw new CliError(
+      "usage",
+      "Tracking requires hosted Gauge; local prompts run on demand. Pass --hosted.",
+    );
+}
 
 export async function createPreferencePrompt(
   cmd: Command,
   opts: PreferenceCreateOpts,
 ): Promise<void> {
+  rejectPromptCadence(opts.cadence);
+  rejectLocalTracked(cmd, opts.tracked);
+  rejectHostedAgents(cmd, opts.agent);
+  opts = { ...opts, cadence: undefined };
   if (hasLifecycleFlags(opts) && isLocal(cmd))
     throw new CliError(
       "usage",
@@ -188,6 +218,7 @@ export async function createPreferencePrompt(
     brandB: opts.brandB ?? null,
     marketId: opts.market ?? null,
     tags: opts.tag.length > 0 ? opts.tag : undefined,
+    ...(opts.tracked !== undefined ? { tracked: opts.tracked } : {}),
     ...(hasRunSettingsFlags(opts) ? runSettingsFromOpts(opts) : {}),
     scenarios: hasScenario
       ? [
@@ -221,6 +252,7 @@ export type PreferenceEditOpts = RunSettingsEditOpts & {
   clearMarket?: boolean;
   tag: string[];
   clearTags?: boolean;
+  tracked?: boolean;
 };
 
 export async function editPreferencePrompt(
@@ -228,6 +260,10 @@ export async function editPreferencePrompt(
   id: string,
   opts: PreferenceEditOpts,
 ): Promise<void> {
+  rejectPromptCadence(opts.cadence);
+  rejectLocalTracked(cmd, opts.tracked);
+  rejectHostedAgents(cmd, opts.agent);
+  opts = { ...opts, cadence: undefined };
   if (hasLifecycleFlags(opts) && isLocal(cmd))
     throw new CliError(
       "usage",
@@ -264,6 +300,8 @@ export async function editPreferencePrompt(
     throw new CliError("usage", "--tag and --clear-tags conflict");
   if (opts.clearTags) body.tags = [];
   else if (opts.tag.length > 0) body.tags = opts.tag;
+
+  if (opts.tracked !== undefined) body.tracked = opts.tracked;
 
   if (Object.keys(body).length === 0)
     throw new CliError("usage", "nothing to change");
