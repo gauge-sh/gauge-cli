@@ -93,6 +93,7 @@ test("custom-image dry run reports identity without starting or pulling containe
 test("local cases reject hosted settings before credential or runtime preflight", async () => {
   for (const [field, value] of [
     ["profileId", "persona-1"],
+    ["persona", { name: "Evaluating developer", description: "Done once it reports." }],
     ["skillRefs", ["docs@latest"]],
     ["mcpRefs", ["tools@latest"]],
     ["connectionIds", ["connection-1"]],

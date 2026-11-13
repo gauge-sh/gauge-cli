@@ -604,6 +604,14 @@ once. The preview includes the immutable revision in `experiment`, suitable for
 another `--apply`. Reusing the original branch-based file resolves the branch anew.
 Use `gauge run --schema --format experiment` for the complete authoring schema.
 
+After the agent's first turn, a simulated user answers its questions and decides
+when the work is finished. By default that user expects working software. To
+describe a different user, set `config.persona` on a case to a `name` and a
+`description` of who the user is, what they want, and when they consider the
+work done, for example "done once the agent reports the command it would run;
+does not want a project created". A case uses either an inline `persona` or a
+saved `profileId`, not both. Inline personas require hosted Gauge.
+
 Input declarations use the same vocabulary as `gauge.json`: files, skills,
 npm packages, binaries, web fixtures, and website previews. All product inputs
 come from the selected repository and commit, using the declared Git, Actions,
@@ -699,8 +707,8 @@ do not test discovery of the canonical docs. Static verification validates
 configuration; it does not prove backend support, delivery, or an eval pass.
 
 Editor schemas are published at
-`https://agents.withgauge.com/schemas/gauge/v2.10.0/gauge.json` and
-`https://agents.withgauge.com/schemas/gauge/v2.10.0/case.json`. Associate them in editor
+`https://agents.withgauge.com/schemas/gauge/v2.11.0/gauge.json` and
+`https://agents.withgauge.com/schemas/gauge/v2.11.0/case.json`. Associate them in editor
 settings; `gauge.json` does not accept a `$schema` field. These release URLs are
 immutable. Cases default to `gauge-cases/`, or use explicit `cases` paths.
 

@@ -13,6 +13,7 @@ export function assertLocalCapabilities(
     });
   for (const field of [
     "profileId",
+    "persona",
     "marketId",
     "skillRefs",
     "mcpRefs",

@@ -53,6 +53,16 @@ export const runDefinitionChecksSchema = z
   .object({ paths: z.array(inputPathSchema).min(1).max(32) })
   .strict();
 
+/** A simulated user written into the case: who they are, what they want, and
+ * when they consider the work done. */
+export const inlinePersonaSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    description: z.string().trim().min(1).max(4000),
+  })
+  .strict();
+export type InlinePersona = z.infer<typeof inlinePersonaSchema>;
+
 export const runDefinitionConfigSchema = z
   .object({
     agents: z.array(agentConfigInputSchema).min(1),
@@ -60,6 +70,7 @@ export const runDefinitionConfigSchema = z
     repoUrl: uncredentialedRepoUrlSchema.nullable().optional(),
     repoRef: z.string().min(1).nullable().optional(),
     profileId: z.string().min(1).nullable().optional(),
+    persona: inlinePersonaSchema.optional(),
     skillRefs: assetRefListSchema.optional(),
     mcpRefs: assetRefListSchema.optional(),
     connectionIds: z.array(z.string().min(1)).max(32).optional(),
@@ -67,7 +78,11 @@ export const runDefinitionConfigSchema = z
     inputs: z.array(z.string()).optional(),
     checks: runDefinitionChecksSchema.optional(),
   })
-  .strict();
+  .strict()
+  .refine((config) => !(config.profileId && config.persona), {
+    message: "Use profileId or an inline persona, not both",
+    path: ["persona"],
+  });
 export type RunDefinitionConfig = z.infer<typeof runDefinitionConfigSchema>;
 
 export const runDefinitionFileConfigSchema = z
