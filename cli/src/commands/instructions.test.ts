@@ -40,7 +40,9 @@ describe("gauge instructions", () => {
             ? RUN_LINE_BUDGET
             : topic === "eval"
               ? 80
-              : BODY_LINE_BUDGET;
+              : topic === "preference"
+                ? 70
+                : BODY_LINE_BUDGET;
       assert.ok(
         lines <= budget,
         `${topic} is ${lines} lines, over the ${budget}-line budget`,

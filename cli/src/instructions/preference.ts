@@ -21,6 +21,23 @@ in gauge-cases/ need no preference prompt.
 
 Read \`gauge instructions session-analysis\` to analyze the sessions.
 
+## Write the prompt
+
+- Understand the product, its use cases, and relevant competitors before drafting.
+- Write a short first-person request for a real use case. Include necessary context,
+  but avoid invented requirements that steer the agent toward a particular product.
+- Ask the agent to **research**, make one clear recommendation, and stop before
+  implementation. Test implementation separately with an experience eval.
+  Preserve existing prompts on reruns; omit research when measuring unaided choice.
+- Keep open-ended discovery unbranded. For a head-to-head, name both alternatives
+  in the prompt and configuration, and keep the use case consistent across pairs.
+- Let the fixture supply the existing project context. A persona should answer
+  from its stated needs without endorsing a vendor or approving implementation.
+
+For a supplied project: "I want a hosted documentation site for this project.
+Research the options and recommend one. Don't build anything yet." For a
+head-to-head, replace "the options" with the two products being compared.
+
 ## Create and edit
 
     gauge preference create --kind open-ended --name <name> --text "<prompt>"

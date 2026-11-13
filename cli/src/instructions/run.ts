@@ -119,9 +119,8 @@ ${SNAPSHOTS}
 
 ## Write good cases
 
-- Measure one meaningful developer outcome. Record the learning goal, reproducible starting state, and observable finish line.
-- Write the prompt as a real user's request, in their language. Describe their goal, relevant context, and intended outcome. Preserve constraints they actually supplied; do not assume technical expertise or invent features, UI actions, business rules, commands, filenames, or verification recipes. Leave discovery and implementation choices to the agent. Every file, app, or fact that the prompt names must exist in the starting state, or be in the prompt.
-- Align a small set of independently assessable criteria with the requested outcome and existing application. Accept equivalent supported approaches and execution evidence; remove hidden requirements when revising the prompt.
+${AUTHORING}
+- Every file, app, or fact that the prompt names must exist in the starting state, or be in the prompt.
 - **CLI:** the package's commands are on PATH. Cover first use, a common workflow, and recovery from a mistake. Judge the result (files, output, state), not the exact commands or flags.
 - **Skill:** the skill is installed. Ask for a task the skill should help with, but do not name the skill: the eval also shows whether the agent finds it. Judge the result, not whether the agent opened the skill.
 - **SDK:** the agent starts in a new app that depends on the package. Ask for a feature a user would build with it. Judge that the app runs and makes real SDK calls, not mocks or hardcoded values.
