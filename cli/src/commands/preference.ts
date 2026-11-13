@@ -1,5 +1,6 @@
 import { type Command, Option } from "commander";
-import { resolveOutput } from "../lib/context";
+import { CliError } from "../lib/client";
+import { hostedOnly, resolveOutput } from "../lib/context";
 import { filterByCreator } from "../lib/createdBy";
 import { collect } from "../lib/flags";
 import { printItems, printJson } from "../lib/output";
@@ -22,6 +23,14 @@ import {
   removePreferencePrompt,
   removeScenario,
 } from "../lib/preferencePrompts";
+import {
+  setPromptsTracked,
+  setTracking,
+  showTracking,
+  type TrackingSetOpts,
+} from "../lib/preferenceTracking";
+
+type ListOpts = { createdBy?: string; tracked?: boolean; untracked?: boolean };
 
 export function register(program: Command): void {
   const preference = program
@@ -34,14 +43,74 @@ export function register(program: Command): void {
     .command("list")
     .description("List preference prompts")
     .option("--created-by <email|me>", "only prompts created by this user")
-    .action(async (opts: { createdBy?: string }, cmd: Command) => {
-      const items = await filterByCreator(
-        await listPreferencePrompts(cmd),
-        opts.createdBy,
+    .option("--tracked", "only prompts on the org's preference schedule")
+    .option("--untracked", "only prompts that run on demand")
+    .action(async (opts: ListOpts, cmd: Command) => {
+      if (opts.tracked && opts.untracked)
+        throw new CliError("usage", "--tracked and --untracked conflict");
+      const items = (
+        await filterByCreator(await listPreferencePrompts(cmd), opts.createdBy)
+      ).filter((item) =>
+        opts.tracked
+          ? item.tracked === true
+          : opts.untracked
+            ? item.tracked !== true
+            : true,
       );
       if (resolveOutput(cmd) === "json") printJson(items);
       else printItems(items.map(preferencePromptRow), "table");
     });
+
+  const tracking = hostedOnly(
+    preference
+      .command("tracking")
+      .description(
+        "When tracked preference prompts run and the models they run on. Rankings count only these runs",
+      ),
+  );
+
+  tracking
+    .command("show", { isDefault: true })
+    .description("Show the schedule, the tracked models, and how many prompts are tracked")
+    .action(async (_opts: unknown, cmd: Command) => {
+      await showTracking(cmd);
+    });
+
+  tracking
+    .command("set")
+    .description(
+      "Change the schedule or the tracked models for every tracked prompt. Omitted flags keep their value",
+    )
+    .option("--cadence <cadence>", "daily | weekly")
+    .option("--day <weekday>", "weekly run day, such as monday")
+    .option(
+      "--agent <agent[:m1,m2]>",
+      "a tracked agent and its models (repeatable; replaces the whole list; see `gauge models`)",
+      collect,
+      [] as string[],
+    )
+    .option("--no-agents", "track no models, which stops scheduled runs")
+    .action(async (opts: TrackingSetOpts, cmd: Command) => {
+      await setTracking(cmd, opts);
+    });
+
+  hostedOnly(
+    preference
+      .command("track <ids...>")
+      .description(
+        "Put preference prompts on the org's schedule. Each scheduled run spends credits",
+      ),
+  ).action(async (ids: string[], _opts: unknown, cmd: Command) => {
+    await setPromptsTracked(cmd, ids, true);
+  });
+
+  hostedOnly(
+    preference
+      .command("untrack <ids...>")
+      .description("Take preference prompts off the org's schedule"),
+  ).action(async (ids: string[], _opts: unknown, cmd: Command) => {
+    await setPromptsTracked(cmd, ids, false);
+  });
 
   preference
     .command("get <id>")

@@ -23,7 +23,7 @@ Read \`gauge instructions session-analysis\` to analyze the sessions.
 
 ## Create and edit
 
-    gauge preference create --kind open-ended --name <name> --text "<prompt>" --agent codex
+    gauge preference create --kind open-ended --name <name> --text "<prompt>"
     gauge preference edit <id> --market <marketId>
 
 - A head-to-head prompt needs --brand-a and --brand-b. --branded marks an
@@ -36,15 +36,14 @@ Read \`gauge instructions session-analysis\` to analyze the sessions.
   --input <name>\` uses the configured files, and \`--input <name>=<path or glob>\` replaces
   them. Repeat per input; preview with --dry-run. Hosted saved prompts support neither
   project inputs nor --dry-run; use hosted case files/specs for input snapshots and previews.
-- --agent belongs to the prompt. Hosted --skill, --mcp, and --connection
-  references require hosted execution.
-  Read \`gauge instructions run\` to choose models.
+- Hosted prompts run on the org's tracked models; local prompts keep their own --agent.
+  --skill, --mcp, and --connection require hosted. \`gauge instructions run\` covers models.
 - Hosted --setup-file/--teardown-file upload UTF-8 JS/TS files; import bindings from "@withgauge/session". For one launch only, pass the same flags to gauge run --hosted --preference <id>; saved configuration stays unchanged.
   Edits keep the other hook/params; --clear-setup/--clear-teardown/--clear-lifecycle remove hooks (see --help).
-- New prompts are not tracked. --tracked on create/edit puts a hosted prompt on the org schedule
-  (\`gauge org get\`; \`gauge org edit --preference-cadence daily|weekly --preference-day <day>\`).
-  Rankings count only scheduled runs of tracked prompts, never \`gauge run\`; each spends credits, so ask first.
-- One launch with other agents or samples: \`gauge run --preference <id> --agent ... --samples <n>\`.
+- New prompts are not tracked. \`gauge preference track|untrack <id...>\` (or --tracked) sets it.
+  \`gauge preference tracking\` shows the schedule and models; \`tracking set --cadence --day --agent\`
+  changes them (--agent replaces the list). Rankings count only tracked scheduled runs; each spends credits, so ask first.
+- One launch on other agents or samples, outside rankings: \`gauge run --preference <id> --agent ... --samples <n>\`.
 
 Local prompts run on demand. Repository-only scenarios are supported locally;
 hosted personas, markets, tracking, and resource references are not. The user's coding

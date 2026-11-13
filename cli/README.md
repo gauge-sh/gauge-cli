@@ -630,9 +630,10 @@ organization permissions, execution limits, and credits.
 
 Antigravity is available to organizations enrolled in Antigravity access. Run
 `gauge models list --hosted` to find the available model identifiers, then select
-one with `--agent antigravity:<model>` when creating or launching a saved eval or
-preference prompt. Case files and JSON specs use `agent: ANTIGRAVITY` with the
-model identifier in `models`.
+one with `--agent antigravity:<model>` when creating or launching a saved eval,
+in `gauge preference tracking set`, or when launching a preference prompt.
+Case files and JSON specs use `agent: ANTIGRAVITY` with the model identifier in
+`models`.
 
 Launch with `--hosted`, for example:
 
@@ -740,19 +741,20 @@ the copy — one eval is always one configuration.
 A **preference prompt** is a reusable question. The following hosted example
 uses scenarios and tracking on the org schedule. Locally, save a prompt and launch it
 on demand with `gauge run --preference <id> --local`. It owns one set of run
-settings — roster, resources, samples — and any number of
+settings — resources and samples — and any number of
 **scenarios**, each one repository × persona cell. Every scenario runs with
 the prompt's settings, so one prompt measures the same question across several
-repositories and personas at once:
+repositories and personas at once. Hosted prompts run on the org's tracked
+models (see Hosted schedules); local prompts keep their own `--agent` roster:
 
 ```sh
 gauge preference create --name "CLI deployment preference" \
   --kind head-to-head --brand-a acme --brand-b globex \
   --text "Which CLI should I use to deploy?" \
-  --agent claude-code --tracked \
+  --tracked \
   --repo https://github.com/acme/api             # first scenario
 
-gauge preference edit <promptId> --agent codex --samples 3
+gauge preference edit <promptId> --samples 3
 gauge preference scenarios list <promptId>
 gauge preference scenarios add  <promptId> --persona <profileId>
 gauge preference scenarios add  <promptId> --repo https://github.com/acme/web --persona <profileId>
@@ -859,19 +861,24 @@ An eval has its own cadence. `--cadence none` is "manual": the eval stops
 coming due and runs only when you launch it. `--cadence daily|weekly|monthly`
 puts it back on a rhythm.
 
-Preference prompts have no cadence of their own. A new prompt is
-**not tracked**: it runs only when you launch it. Pass `--tracked` to put a
-hosted prompt on the org's one preference schedule, with every other tracked
-prompt. Rankings count only these scheduled runs, so each point compares the
-same set of prompts.
+Preference prompts have no cadence or models of their own. A new prompt is
+**not tracked**: it runs only when you launch it. Track a hosted prompt to put
+it on the org's one preference schedule, with every other tracked prompt, on
+the org's tracked models. Rankings count only these scheduled runs, so each
+point compares the same set of prompts on the same models.
 
 ```sh
-gauge preference edit <promptId> --tracked             # run on the org schedule
-gauge preference edit <promptId> --no-tracked          # run only on demand
-gauge org get                                          # shows the schedule
-gauge org edit --preference-cadence weekly --preference-day monday
-gauge org edit --preference-cadence daily
+gauge preference tracking                              # schedule, models, tracked count
+gauge preference tracking set --cadence weekly --day monday
+gauge preference tracking set --agent claude-code:<model> --agent opencode:<model>
+gauge preference tracking set --no-agents             # stop scheduled runs
+gauge preference track <promptId> [<promptId>...]     # run on the org schedule
+gauge preference untrack <promptId> [<promptId>...]   # run only on demand
+gauge preference list --tracked
 ```
+
+`--agent` on `tracking set` replaces the whole list; `gauge models list --hosted`
+shows the model identifiers. `create|edit --tracked` / `--no-tracked` also work.
 
 `gauge run --eval <id>` and `gauge run --preference <id>` are the separate
 immediate launches. They use the stored configuration and ask before spending

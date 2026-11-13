@@ -88,7 +88,7 @@ export function preferencePromptRow(v: VisibilityPrompt) {
   };
 }
 
-function printDetail(v: VisibilityPrompt): void {
+function printDetail(v: VisibilityPrompt, local: boolean): void {
   console.log(`id:      ${v.id}`);
   console.log(`name:    ${v.name}`);
   console.log(
@@ -106,11 +106,11 @@ function printDetail(v: VisibilityPrompt): void {
   console.log(`prompt:  ${v.promptText}`);
   console.log(`samples: ${v.sampleCount}`);
   console.log(
-    `agents:  ${v.agents
+    `${local ? "agents: " : "models: "} ${v.agents
       .map((a) =>
         a.models.length ? `${a.agent}:${a.models.join(",")}` : a.agent,
       )
-      .join(", ")}`,
+      .join(", ")}${local ? "" : " (the org's tracked models)"}`,
   );
   console.log(`skills:  ${v.skillRefs.join(", ") || "(none)"}`);
   console.log(`mcp:     ${v.mcpRefs.join(", ") || "(none)"}`);
@@ -143,7 +143,7 @@ export async function getPreferencePrompt(
         promptPath(await resolveOrg(cmd), id),
       );
   if (resolveOutput(cmd) === "json") printJson(vp);
-  else printDetail(vp);
+  else printDetail(vp, isLocal(cmd));
 }
 
 export type PreferenceCreateOpts = RunSettingsCreateOpts & {
@@ -166,7 +166,16 @@ function rejectPromptCadence(cadence: string | undefined): void {
   if (cadence !== undefined && cadence.trim().toUpperCase() !== "NONE")
     throw new CliError(
       "usage",
-      "Preference prompts no longer have a cadence. Pass --tracked to run the prompt on the org's preference schedule, and set that schedule with `gauge org edit --preference-cadence daily|weekly`.",
+      "Preference prompts no longer have a cadence. Run `gauge preference track <id>` to put a prompt on the org's preference schedule, and set that schedule with `gauge preference tracking set --cadence daily|weekly`.",
+    );
+}
+
+/** Hosted prompts run on the org's tracked models; local prompts keep their own. */
+function rejectHostedAgents(cmd: Command, agents: string[]): void {
+  if (agents.length > 0 && !isLocal(cmd))
+    throw new CliError(
+      "usage",
+      "Preference prompts no longer store models. Set the models every tracked prompt runs on with `gauge preference tracking set --agent <agent[:models]>`, or run once on other models with `gauge run --preference <id> --agent <agent[:models]>`.",
     );
 }
 
@@ -184,6 +193,7 @@ export async function createPreferencePrompt(
 ): Promise<void> {
   rejectPromptCadence(opts.cadence);
   rejectLocalTracked(cmd, opts.tracked);
+  rejectHostedAgents(cmd, opts.agent);
   opts = { ...opts, cadence: undefined };
   if (hasLifecycleFlags(opts) && isLocal(cmd))
     throw new CliError(
@@ -252,6 +262,7 @@ export async function editPreferencePrompt(
 ): Promise<void> {
   rejectPromptCadence(opts.cadence);
   rejectLocalTracked(cmd, opts.tracked);
+  rejectHostedAgents(cmd, opts.agent);
   opts = { ...opts, cadence: undefined };
   if (hasLifecycleFlags(opts) && isLocal(cmd))
     throw new CliError(
