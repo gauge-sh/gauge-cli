@@ -200,7 +200,6 @@ describe("gauge instructions", () => {
       "run",
       "lifecycle",
       "cli-rules",
-      "prompts",
       "eval",
       "preference",
       "session-analysis",
