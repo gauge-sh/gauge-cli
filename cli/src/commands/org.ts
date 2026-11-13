@@ -40,12 +40,17 @@ function parsePreferenceCadence(
   return cadence;
 }
 
+function weekdayLabel(day: number): string {
+  const name = WEEKDAYS[day];
+  return name ? `${name[0].toUpperCase()}${name.slice(1)}s` : String(day);
+}
+
 function scheduleLabel(s: orgs.PreferenceSchedule): string {
   const when =
     s.cadence === "DAILY"
       ? "daily"
-      : `weekly on ${WEEKDAYS[s.weeklyRunDay] ?? s.weeklyRunDay}`;
-  return `${when} (next run: ${s.nextRunAt ?? "set on the next tick"})`;
+      : `weekly on ${weekdayLabel(s.weeklyRunDay)}`;
+  return `${when} (next run: ${s.nextRunAt ?? "not set yet"})`;
 }
 
 function printSettings(

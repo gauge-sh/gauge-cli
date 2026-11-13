@@ -860,7 +860,7 @@ coming due and runs only when you launch it. `--cadence daily|weekly|monthly`
 puts it back on a rhythm.
 
 Preference prompts have no cadence of their own. A new prompt is
-**untracked**: it runs only when you launch it. Pass `--tracked` to put a
+**not tracked**: it runs only when you launch it. Pass `--tracked` to put a
 hosted prompt on the org's one preference schedule, with every other tracked
 prompt. Rankings count only these scheduled runs, so each point compares the
 same set of prompts.

@@ -41,9 +41,9 @@ Read \`gauge instructions session-analysis\` to analyze the sessions.
   Read \`gauge instructions run\` to choose models.
 - Hosted --setup-file/--teardown-file upload UTF-8 JS/TS files; import bindings from "@withgauge/session". For one launch only, pass the same flags to gauge run --hosted --preference <id>; saved configuration stays unchanged.
   Edits keep the other hook/params; --clear-setup/--clear-teardown/--clear-lifecycle remove hooks (see --help).
-- New prompts are untracked (launch-only). --tracked on create/edit puts a hosted prompt
-  on the org schedule (\`gauge org get\`; \`gauge org edit --preference-cadence daily|weekly\`).
-  Only tracked runs count toward rankings; each scheduled run spends credits, so ask first.
+- New prompts are not tracked. --tracked on create/edit puts a hosted prompt on the org schedule
+  (\`gauge org get\`; \`gauge org edit --preference-cadence daily|weekly --preference-day <day>\`).
+  Rankings count only scheduled runs of tracked prompts, never \`gauge run\`; each spends credits, so ask first.
 - One launch with other agents or samples: \`gauge run --preference <id> --agent ... --samples <n>\`.
 
 Local prompts run on demand. Repository-only scenarios are supported locally;

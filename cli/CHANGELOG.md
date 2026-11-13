@@ -8,7 +8,7 @@
 
 - `gauge preference create` and `edit` take `--tracked` / `--no-tracked`.
   Tracked prompts run on the org's preference schedule; rankings count only
-  those runs. New prompts are untracked unless you pass `--tracked`.
+  those runs. New prompts are not tracked unless you pass `--tracked`.
 - `gauge org edit --preference-cadence daily|weekly --preference-day <weekday>`
   sets the org's preference schedule. `gauge org get` shows it.
 

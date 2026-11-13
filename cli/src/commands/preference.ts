@@ -82,7 +82,7 @@ export function register(program: Command): void {
     )
     .option(
       "--tracked",
-      "run on the org's preference schedule and spend credits (default: untracked)",
+      "run on the org's preference schedule and spend credits (default: not tracked)",
     )
     .option("--no-tracked", "run only on demand (the default)")
     .action(async (opts: PreferenceCreateOpts, cmd: Command) => {
