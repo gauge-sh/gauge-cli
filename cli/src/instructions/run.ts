@@ -75,6 +75,7 @@ description: Write local Gauge eval and Agent Preference cases for this repo's
 ---
 
 # Run (local)
+- For local authenticated HTTPS APIs, select \`gauge run --local --connection <name>\` (repeatable). The name resolves through \`.gauge/connections.yaml\` or \`--connections-file <path>\`: version 1 with a connections list of name, origin, header, and env. The env field names a host environment variable containing the complete header value. Never put secrets in prompts, YAML, or inputs. Only the configured HTTPS DNS origin on port 443 is authenticated; rewritten fixture requests receive no credentials. Preview readiness with \`--dry-run\`. A gateway image with local connection support is required; select a locally built image with \`--gateway-image\` until a compatible release is pinned. Saved local case \`config.connectionIds\` also selects YAML names.
 
 For a product hillclimb and docs exposure limits, read \`gauge instructions hillclimb\`.
 
