@@ -12,7 +12,7 @@ import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { CliError } from "./client";
 
-export const LOCAL_DATABASE_VERSION = 1;
+export const LOCAL_DATABASE_VERSION = 4;
 export type MeasurementKind = "eval" | "preference";
 export type MeasurementDefinition = {
   name: string;
@@ -113,6 +113,39 @@ PRAGMA user_version = 1;
 `;
 
 type Row = Record<string, unknown>;
+const canonicalSchema = `
+CREATE TABLE canonical_repos (
+  url TEXT NOT NULL PRIMARY KEY,
+  name TEXT NOT NULL COLLATE NOCASE,
+  description TEXT NOT NULL,
+  "source-repos" TEXT NOT NULL CHECK(json_valid("source-repos") AND json_type("source-repos") = 'array')
+);
+CREATE UNIQUE INDEX canonical_repos_name ON canonical_repos(name);
+PRAGMA user_version = 2;
+`;
+const canonicalSourcesSchema = `
+CREATE TABLE source_repos (
+  url TEXT NOT NULL PRIMARY KEY COLLATE NOCASE,
+  languages TEXT CHECK(languages IS NULL OR (json_valid(languages) AND json_type(languages) = 'array')),
+  commit_count INTEGER CHECK(commit_count IS NULL OR commit_count >= 0),
+  readme TEXT,
+  language_bytes TEXT CHECK(language_bytes IS NULL OR (json_valid(language_bytes) AND json_type(language_bytes) = 'object')),
+  default_branch TEXT,
+  head_sha TEXT
+);
+CREATE TABLE canonical_repo_sources (
+  canonical_url TEXT NOT NULL REFERENCES canonical_repos(url) ON DELETE CASCADE,
+  source_url TEXT NOT NULL COLLATE NOCASE REFERENCES source_repos(url) ON DELETE CASCADE,
+  PRIMARY KEY(canonical_url, source_url)
+);
+CREATE INDEX canonical_repo_sources_source ON canonical_repo_sources(source_url);
+INSERT OR IGNORE INTO source_repos (url)
+  SELECT value FROM canonical_repos, json_each("source-repos");
+INSERT OR IGNORE INTO canonical_repo_sources (canonical_url, source_url)
+  SELECT canonical_repos.url, value FROM canonical_repos, json_each("source-repos");
+ALTER TABLE canonical_repos DROP COLUMN "source-repos";
+PRAGMA user_version = 3;
+`;
 const json = (value: unknown) => JSON.stringify(value);
 const object = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value)
@@ -565,11 +598,17 @@ export function openLocalStore(gaugeDir: string): LocalStore {
         `This workspace uses database version ${version}; this CLI supports ${LOCAL_DATABASE_VERSION}. Upgrade Gauge. Your data has not been changed.`,
       );
     db.exec("PRAGMA journal_mode = WAL;");
-    if (version === 0) {
+    if (version < LOCAL_DATABASE_VERSION) {
       db.exec("BEGIN IMMEDIATE");
       try {
         if (Number(db.prepare("PRAGMA user_version").get()!.user_version) === 0)
           db.exec(schema);
+        if (Number(db.prepare("PRAGMA user_version").get()!.user_version) === 1)
+          db.exec(canonicalSchema);
+        if (Number(db.prepare("PRAGMA user_version").get()!.user_version) === 2)
+          db.exec(canonicalSourcesSchema);
+        if (Number(db.prepare("PRAGMA user_version").get()!.user_version) === 3)
+          db.exec("ALTER TABLE source_repos DROP COLUMN readme; PRAGMA user_version = 4;");
         db.exec("COMMIT");
       } catch (error) {
         db.exec("ROLLBACK");

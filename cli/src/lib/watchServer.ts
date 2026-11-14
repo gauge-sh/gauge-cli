@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
+import { readWatchRepositories } from "./watchRepositories";
 import {
   getWatchSession,
   listWatchSessions,
@@ -84,6 +85,13 @@ export function createWatchServer(
       }
       if (url.pathname === "/api/health")
         return json(res, 200, { gauge: "watch", version, gaugeDir });
+      const repositoryRoute = /^\/api\/repositories\/(canonical|sources|language-counts|language-bytes)$/.exec(url.pathname);
+      if (repositoryRoute) {
+        const page = Number(url.searchParams.get("page") ?? 1);
+        if (!Number.isSafeInteger(page) || page < 1)
+          return json(res, 400, { error: "invalid_page" });
+        return json(res, 200, readWatchRepositories(gaugeDir, repositoryRoute[1], page));
+      }
       if (url.pathname === "/api/sessions")
         return json(res, 200, { sessions: await listWatchSessions(gaugeDir) });
       const match = /^\/api\/sessions\/([A-Za-z0-9_-]+)(\/trace|\/diff)?$/.exec(url.pathname);

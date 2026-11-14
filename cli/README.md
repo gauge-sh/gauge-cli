@@ -16,6 +16,15 @@ gauge init --hosted       # set a private hosted backend preference
 gauge init --cases        # optionally scaffold shared gauge-cases/
 ```
 
+For GitHub code search, provide a dedicated, disposable GitHub token with
+`gauge auth provide-gh-token`. Paste the token and press Enter.
+The command saves it separately from your Gauge login in
+`~/.config/gauge/github-credentials` (or `$XDG_CONFIG_HOME/gauge/github-credentials`).
+Interactive input uses the terminal's normal echo. The token is stored as plaintext
+with restrictive file permissions where supported. `GAUGE_GITHUB_TOKEN` overrides
+the saved token; `GH_TOKEN` and `GITHUB_TOKEN` are not used. Saving a token does not
+validate it or change its GitHub permissions or expiration.
+
 Requires Node.js ≥ 22.13.
 
 ## Organizations

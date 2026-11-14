@@ -10,6 +10,68 @@
     --code: #232321; --sel: #1d2a30; }
 }
 * { box-sizing: border-box; }
+.discovery-section { margin-top: 32px; }
+.discovery-section hr { border: 0; border-top: 1px solid var(--line); margin: 0 0 28px; }
+.discovery-legend { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0 24px; }
+.discovery-legend span { border: 1px solid; padding: 5px 9px; border-radius: 3px; font-size: 12px; }
+.discovery-phase { --diagram-color: #286ca8; --diagram-bg: #edf5fc; }
+.discovery-command { --diagram-color: #85532b; --diagram-bg: #faf1e8; }
+.discovery-file { --diagram-color: #9c357f; --diagram-bg: #fbeefa; }
+.discovery-box, .discovery-legend span { color: var(--diagram-color); background: var(--diagram-bg); border-color: var(--diagram-color); }
+.discovery-scroll { overflow-x: auto; padding: 4px; }
+.discovery-flow { min-width: 850px; }
+.discovery-row { display: grid; grid-template-columns: minmax(160px, .8fr) minmax(330px, 1.6fr) minmax(280px, 1.2fr); align-items: start; }
+.discovery-left, .discovery-right { display: flex; gap: 8px; align-items: flex-start; }
+.discovery-left > .discovery-box, .discovery-right > :last-child { flex: 1; min-width: 0; }
+.discovery-center { display: flex; flex-direction: column; align-items: stretch; align-self: stretch; padding-bottom: 24px; }
+.discovery-row:last-child .discovery-center { padding-bottom: 0; }
+.discovery-box { border: 1px solid; border-radius: 4px; padding: 12px; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.discovery-box summary { font-weight: 600; cursor: pointer; list-style: none; }
+.discovery-box summary::-webkit-details-marker { display: none; }
+.discovery-box:hover { filter: brightness(.97); }
+.discovery-box[open] { box-shadow: 0 0 0 1px var(--diagram-color); }
+.discovery-center > .discovery-box { padding: 22px; border-width: 2px; }
+.discovery-center > .discovery-box summary { font-size: 17px; line-height: 1.5; }
+.discovery-box summary:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
+.discovery-box p { margin: 12px 0 0; }
+.discovery-command summary { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+.discovery-arrow { display: block; position: relative; color: var(--muted); flex-shrink: 0; width: 20px; height: 1px; background: currentColor; margin-top: 26px; }
+.discovery-arrow::after { content: ""; position: absolute; width: 6px; height: 6px; border-right: 1px solid; border-top: 1px solid; right: 0; top: -3px; transform: rotate(45deg); }
+.discovery-arrow-left::after { right: auto; left: 0; transform: rotate(-135deg); }
+.discovery-center > .discovery-arrow { margin: 14px auto 0; flex: 1; width: 3px; min-height: 32px; color: #286ca8; }
+.discovery-center > .discovery-arrow::after { width: 9px; height: 9px; border-width: 3px; top: auto; bottom: 0; right: -3px; transform: rotate(135deg); }
+.discovery-commands, .discovery-workers { display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px; }
+.discovery-worker { display: grid; grid-template-columns: 1fr 24px 1fr; gap: 4px; align-items: start; }
+.discovery-approval { color: var(--muted); padding: 12px 0; font-size: 12px; }
+@media (prefers-color-scheme: dark) {
+  .discovery-phase { --diagram-color: #9acafa; --diagram-bg: #192d40; }
+  .discovery-center > .discovery-arrow { color: #9acafa; }
+  .discovery-command { --diagram-color: #e4b488; --diagram-bg: #35291e; }
+  .discovery-file { --diagram-color: #eaa8da; --diagram-bg: #352035; }
+}
+nav { display: flex; flex-direction: column; gap: 4px; padding: 10px; border-bottom: 1px solid var(--line); }
+nav a { color: var(--text); text-decoration: none; padding: 8px; border-radius: 3px; }
+nav a[aria-current="page"] { background: var(--sel); font-weight: 600; }
+.show-repositories #filters, .show-repositories #list { display: none; }
+.show-repositories #view { overflow-y: auto; display: block; }
+.repositories-page { padding: 24px; max-width: 1500px; margin: auto; }
+.repositories-page h1 { font-size: 22px; margin: 0 0 20px; }
+.repositories-page h2 { font-size: 16px; margin: 0 0 16px; }
+.repositories-page a { color: var(--accent); }
+.repo-table-scroll { overflow-x: auto; }
+.repo-table { width: 100%; border-collapse: collapse; background: var(--panel); }
+.repo-table th, .repo-table td { padding: 12px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+.repo-table th { color: var(--muted); font-weight: 600; }
+.language-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; margin: 36px 0; }
+.pie-layout { display: flex; flex-wrap: wrap; align-items: start; gap: 20px; }
+.repo-pie { width: 180px; height: 180px; border-radius: 50%; flex-shrink: 0; }
+.pie-legend { padding: 0; margin: 0; list-style: none; flex: 1; min-width: 180px; max-height: 320px; overflow-y: auto; }
+.pie-legend li { margin-bottom: 8px; line-height: 1.5; }
+.pie-key { display: inline-block; width: 10px; height: 10px; margin-right: 7px; }
+.repo-note { color: var(--muted); line-height: 1.5; }
+.language-json { white-space: pre-wrap; overflow-wrap: anywhere; }
+.repo-pagination { display: flex; gap: 20px; justify-content: flex-end; padding: 16px 0; }
+@media (max-width: 900px) { .language-charts { grid-template-columns: 1fr; } .show-repositories aside { width: 160px; } .repositories-page { padding: 16px; } }
 body { margin: 0; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; -webkit-font-smoothing: antialiased; }
 .mono, pre, .t-tools { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 header { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; border-bottom: 1px solid var(--line); background: var(--panel); flex-shrink: 0; }

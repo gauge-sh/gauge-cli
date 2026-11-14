@@ -8,6 +8,7 @@ const EXAMPLES: [string, string][] = [
   ["gauge init --local", "Initialize a workspace; creates no measurements"],
   ['gauge run "<prompt>"', "Run one prompt now; saves no measurement"],
   ["gauge instructions hillclimb", "Choose inputs and prepare a first pilot"],
+  ["gauge instructions canonical-repo-discovery", "Discover examples and create canonical repositories"],
   ["gauge eval create --help", "Save a task and success criteria"],
   ["gauge run --eval <id> --local", "Run a saved eval; rerun after input changes"],
 ];
@@ -19,6 +20,7 @@ const GROUPS: [string, Record<string, string>][] = [
       instructions: "Instructions for coding agents",
       init: "Initialize a Gauge workspace",
       local: "Configure local execution",
+      "canonical-repos": "Discover canonical repository candidates",
       "install-skill": "Install the Gauge agent skill",
       onboard: "Sign in and set up your workspace",
       status: "One-shot org summary (Gauge account)",
