@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.32.0 — 2026-11-17
+
 ### Changed
 
 - A preference prompt runs as one persona across all of its repositories.
