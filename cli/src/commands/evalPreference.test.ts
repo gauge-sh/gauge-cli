@@ -122,6 +122,70 @@ describe("gauge eval and gauge preference", () => {
     });
   });
 
+  it("sets one persona on the prompt, never on a scenario", async (t) => {
+    const requests = useApi(t, { id: "p1", tags: [] });
+    await gauge([
+      "preference",
+      "create",
+      "--name",
+      "Auth",
+      "--kind",
+      "open-ended",
+      "--text",
+      "Which auth provider?",
+      "--repo",
+      "https://github.com/acme/web",
+      "--persona",
+      "prof_1",
+    ]);
+    await gauge(["preference", "edit", "p1", "--persona", "prof_2"]);
+    await gauge(["preference", "edit", "p1", "--default-persona"]);
+    await gauge([
+      "preference",
+      "scenarios",
+      "add",
+      "p1",
+      "--repo",
+      "https://github.com/acme/api",
+    ]);
+    assert.deepEqual(
+      (requests[0].body as Record<string, unknown>).scenarios,
+      [{ repoUrl: "https://github.com/acme/web", repoRef: null }],
+    );
+    assert.equal(
+      (requests[0].body as Record<string, unknown>).profileId,
+      "prof_1",
+    );
+    assert.deepEqual(requests[1].body, { profileId: "prof_2" });
+    assert.deepEqual(requests[2].body, { profileId: null });
+    assert.deepEqual(requests[3].body, {
+      repoUrl: "https://github.com/acme/api",
+      repoRef: null,
+    });
+    assert.match(
+      await usageError([
+        "preference",
+        "scenarios",
+        "add",
+        "p1",
+        "--persona",
+        "prof_1",
+      ]),
+      /preference edit p1 --persona/,
+    );
+    assert.match(
+      await usageError([
+        "preference",
+        "edit",
+        "p1",
+        "--persona",
+        "prof_1",
+        "--default-persona",
+      ]),
+      /conflict/,
+    );
+  });
+
   it("rejects flags that belong to the other command", async () => {
     for (const args of [
       ["eval", "create", "--name", "x", "--kind", "open-ended"],

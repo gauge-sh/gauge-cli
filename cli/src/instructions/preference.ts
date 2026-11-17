@@ -45,9 +45,11 @@ head-to-head, replace "the options" with the two products being compared.
 
 - A head-to-head prompt needs --brand-a and --brand-b. --branded marks an
   open-ended prompt that names a brand.
-- Preference prompts support repository scenarios in either backend; personas
-  require hosted execution:
-  \`gauge preference scenarios add <id> --repo <url>\`.
+- A prompt runs as one persona across all of its repositories. Set it with
+  --persona on create or edit (--default-persona clears it); personas require
+  hosted execution. Add repositories in either backend:
+  \`gauge preference scenarios add <id> --repo <url>\`. To ask the same question
+  as another persona, create a second prompt.
   \`gauge preference markets\` lists the markets a prompt can measure.
 - Attach gauge.json inputs at launch, not on the prompt: \`gauge run --preference <id> --local
   --input <name>\` uses the configured files, and \`--input <name>=<path or glob>\` replaces

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Changed
+
+- A preference prompt runs as one persona across all of its repositories.
+  `gauge preference create --persona` and `gauge preference edit --persona`
+  set it on the prompt; `edit --default-persona` clears it. Scenarios are
+  repositories only: `gauge preference scenarios add` no longer takes
+  `--persona`, and `preference get` shows the persona once.
+
 ## 0.31.0 — 2026-11-13
 
 ### Added

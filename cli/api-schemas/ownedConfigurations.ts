@@ -98,6 +98,7 @@ export type VisibilityScenarioInput = z.input<
 >;
 
 export const visibilityPromptSettingsInputShape = {
+  profileId: ownedConfigurationInputShape.profileId,
   agents: ownedConfigurationInputShape.agents,
   skillRefs: ownedConfigurationInputShape.skillRefs,
   mcpRefs: ownedConfigurationInputShape.mcpRefs,
@@ -109,6 +110,7 @@ export const visibilityPromptSettingsInputShape = {
 } as const;
 
 export const visibilityPromptSettingsPatchShape = {
+  profileId: ownedConfigurationPatchShape.profileId,
   agents: ownedConfigurationPatchShape.agents,
   skillRefs: ownedConfigurationPatchShape.skillRefs,
   mcpRefs: ownedConfigurationPatchShape.mcpRefs,
@@ -120,6 +122,7 @@ export const visibilityPromptSettingsPatchShape = {
 } as const;
 
 export const visibilityPromptSettingsSchema = z.object({
+  profile: z.object({ id: z.string(), name: z.string() }).nullish(),
   agents: z.array(agentConfigSchema),
   skillRefs: z.array(z.string()),
   mcpRefs: z.array(z.string()),

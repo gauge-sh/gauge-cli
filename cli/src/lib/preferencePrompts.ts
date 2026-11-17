@@ -49,9 +49,18 @@ function scenarioRow(scenario: ownedConfigurations.VisibilityScenario) {
     id: scenario.id,
     repo: scenario.repoUrl ?? "(empty project)",
     ref: scenario.repoRef ?? "",
-    persona: scenario.profile?.name ?? "(default)",
   };
 }
+
+// Servers before the one-persona change send the persona only per scenario.
+function personaName(v: VisibilityPrompt): string {
+  const profile =
+    v.profile === undefined ? v.scenarios[0]?.profile : v.profile;
+  return profile?.name ?? "default persona";
+}
+
+const PERSONA_MOVED =
+  "A preference prompt runs as one persona across all its repositories. Set it on the prompt: `gauge preference edit <id> --persona <profileId>`.";
 
 export const KIND_CHOICES = ["head-to-head", "open-ended"] as const;
 
@@ -104,6 +113,7 @@ function printDetail(v: VisibilityPrompt, local: boolean): void {
   console.log(`runs:    ${v.runCount} (last: ${v.lastRunAt ?? "never"})`);
   console.log(`creator: ${creatorLabel(v.createdBy)}`);
   console.log(`prompt:  ${v.promptText}`);
+  console.log(`persona: ${personaName(v)}`);
   console.log(`samples: ${v.sampleCount}`);
   console.log(
     `${local ? "agents: " : "models: "} ${v.agents
@@ -118,7 +128,7 @@ function printDetail(v: VisibilityPrompt, local: boolean): void {
   console.log(`scenarios: ${v.scenarios.length}`);
   for (const scenario of v.scenarios)
     console.log(
-      `  [${scenario.id}] ${scenario.repoUrl ?? "(empty project)"}${scenario.repoRef ? `@${scenario.repoRef}` : ""} — ${scenario.profile?.name ?? "default persona"}`,
+      `  [${scenario.id}] ${scenario.repoUrl ?? "(empty project)"}${scenario.repoRef ? `@${scenario.repoRef}` : ""}`,
     );
 }
 
@@ -208,7 +218,8 @@ export async function createPreferencePrompt(
     );
   if (opts.ref !== undefined && opts.repo === undefined)
     throw new CliError("usage", "--ref requires --repo");
-  const hasScenario = opts.repo !== undefined || opts.persona !== undefined;
+  if (opts.persona !== undefined && isLocal(cmd))
+    throw new CliError("usage", "Personas require hosted Gauge");
   const body: visibility.CreateVisibilityPromptBodyInput = {
     name: opts.name,
     promptText: readPromptText(opts),
@@ -220,15 +231,11 @@ export async function createPreferencePrompt(
     tags: opts.tag.length > 0 ? opts.tag : undefined,
     ...(opts.tracked !== undefined ? { tracked: opts.tracked } : {}),
     ...(hasRunSettingsFlags(opts) ? runSettingsFromOpts(opts) : {}),
-    scenarios: hasScenario
-      ? [
-          {
-            repoUrl: opts.repo ?? null,
-            repoRef: opts.ref ?? null,
-            profileId: opts.persona ?? null,
-          },
-        ]
-      : [],
+    ...(opts.persona !== undefined ? { profileId: opts.persona } : {}),
+    scenarios:
+      opts.repo !== undefined
+        ? [{ repoUrl: opts.repo, repoRef: opts.ref ?? null }]
+        : [],
   };
   const created = isLocal(cmd)
     ? createLocalMeasurement(cmd, "preference", body)
@@ -253,6 +260,8 @@ export type PreferenceEditOpts = RunSettingsEditOpts & {
   tag: string[];
   clearTags?: boolean;
   tracked?: boolean;
+  persona?: string;
+  defaultPersona?: boolean;
 };
 
 export async function editPreferencePrompt(
@@ -303,6 +312,13 @@ export async function editPreferencePrompt(
 
   if (opts.tracked !== undefined) body.tracked = opts.tracked;
 
+  if (opts.persona !== undefined && opts.defaultPersona)
+    throw new CliError("usage", "--persona and --default-persona conflict");
+  if ((opts.persona !== undefined || opts.defaultPersona) && isLocal(cmd))
+    throw new CliError("usage", "Personas require hosted Gauge");
+  if (opts.defaultPersona) body.profileId = null;
+  else if (opts.persona !== undefined) body.profileId = opts.persona;
+
   if (Object.keys(body).length === 0)
     throw new CliError("usage", "nothing to change");
   const updated = isLocal(cmd)
@@ -340,11 +356,11 @@ export async function addScenario(
   id: string,
   opts: { repo?: string; ref?: string; persona?: string },
 ): Promise<void> {
+  if (opts.persona !== undefined)
+    throw new CliError("usage", PERSONA_MOVED.replace("<id>", id));
   if (opts.ref !== undefined && opts.repo === undefined)
     throw new CliError("usage", "--ref requires --repo");
   if (isLocal(cmd)) {
-    if (opts.persona)
-      throw new CliError("usage", "Personas require hosted Gauge");
     const row = getLocalMeasurement(cmd, "preference", id);
     const updated = editLocalMeasurement(cmd, "preference", id, {
       scenarios: [
@@ -364,11 +380,7 @@ export async function addScenario(
   const created =
     await createClient().post<ownedConfigurations.VisibilityScenario>(
       scenariosPath(await resolveOrg(cmd), id),
-      {
-        repoUrl: opts.repo ?? null,
-        repoRef: opts.ref ?? null,
-        profileId: opts.persona ?? null,
-      },
+      { repoUrl: opts.repo ?? null, repoRef: opts.ref ?? null },
     );
   if (resolveOutput(cmd) === "json") printJson(created);
   else console.log(`Added scenario ${created.id}`);
