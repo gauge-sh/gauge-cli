@@ -131,7 +131,10 @@ export function register(program: Command): void {
         "the first scenario's repository (default: empty project)",
       )
       .option("--ref <ref>", "branch, tag, or commit (with --repo)")
-      .option("--persona <profileId>", "persona profile id"),
+      .option(
+        "--persona <profileId>",
+        "the persona every repository runs as (default persona if omitted)",
+      ),
     { cadence: false },
   )
     .addOption(new Option("--cadence <cadence>").hideHelp())
@@ -191,6 +194,11 @@ export function register(program: Command): void {
       "run on the org's preference schedule and spend credits",
     )
     .option("--no-tracked", "stop scheduled runs; run only on demand")
+    .option(
+      "--persona <profileId>",
+      "the persona every repository runs as",
+    )
+    .option("--default-persona", "run as the default persona")
     .action(async (id: string, opts: PreferenceEditOpts, cmd: Command) => {
       await editPreferencePrompt(cmd, id, opts);
     });
@@ -204,7 +212,9 @@ export function register(program: Command): void {
 
   const scenarios = preference
     .command("scenarios")
-    .description("The repo × persona scenarios a preference prompt runs in");
+    .description(
+      "The repositories a preference prompt runs in, all as the prompt's persona",
+    );
 
   scenarios
     .command("list <id>")
@@ -215,13 +225,10 @@ export function register(program: Command): void {
 
   scenarios
     .command("add <id>")
-    .description("Add one repo × persona scenario")
+    .description("Add one repository scenario")
     .option("--repo <url>", "repository URL (default: empty project)")
     .option("--ref <ref>", "branch, tag, or commit (with --repo)")
-    .option(
-      "--persona <profileId>",
-      "persona profile id (default persona if omitted)",
-    )
+    .addOption(new Option("--persona <profileId>").hideHelp())
     .action(
       async (
         id: string,

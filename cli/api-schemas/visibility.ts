@@ -64,6 +64,7 @@ export const createVisibilityPromptBodySchema = z
     brandB: z.string().nullish(),
     marketId: z.string().nullish(),
     tags: z.array(z.string()).optional(),
+    profileId: visibilityPromptSettingsInputShape.profileId,
     agents: visibilityPromptSettingsInputShape.agents.optional(),
     skillRefs: visibilityPromptSettingsInputShape.skillRefs,
     mcpRefs: visibilityPromptSettingsInputShape.mcpRefs,
