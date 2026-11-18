@@ -11,6 +11,7 @@ import {
   removeEvalSet,
 } from "../lib/evalSets";
 import { filterByCreator } from "../lib/createdBy";
+import { registerJourney } from "./journey";
 import { collect } from "../lib/flags";
 import { printItems, printJson } from "../lib/output";
 import {
@@ -32,6 +33,10 @@ export function register(program: Command): void {
     .option("--models <models>", "stats for these model slugs only (csv)")
     .option("--since <date>", "stats for runs since this ISO date only")
     .option("--created-by <email|me>", "only evals created by this user")
+    .option(
+      "--journey <journey>",
+      'only evals in this agent journey (id or name; "none" = no journey)',
+    )
     .action(
       async (
         opts: {
@@ -39,6 +44,7 @@ export function register(program: Command): void {
           models?: string;
           since?: string;
           createdBy?: string;
+          journey?: string;
         },
         cmd: Command,
       ) => {
@@ -88,6 +94,10 @@ export function register(program: Command): void {
       collect,
       [] as string[],
     )
+    .option(
+      "--journey <journey>",
+      "agent journey: onboarding, implementation, product-workflows, activation-cross-sell, maintenance, or a custom one (id or name; `gauge eval journey list` shows all)",
+    )
     .action(async (opts: EvalSetCreateOpts, cmd: Command) => {
       await createEvalSet(cmd, opts);
     });
@@ -131,6 +141,11 @@ export function register(program: Command): void {
       [] as string[],
     )
     .option("--clear-tags", "remove all user tags")
+    .option(
+      "--journey <journey>",
+      "move it to this agent journey: onboarding, implementation, product-workflows, activation-cross-sell, maintenance, or a custom one (id or name; `gauge eval journey list` shows all)",
+    )
+    .option("--clear-journey", "move it out of every agent journey")
     .action(async (id: string, opts: EvalSetEditOpts, cmd: Command) => {
       await editEvalSet(cmd, id, opts);
     });
@@ -141,4 +156,6 @@ export function register(program: Command): void {
     .action(async (id: string, _opts: unknown, cmd: Command) => {
       await removeEvalSet(cmd, id);
     });
+
+  registerJourney(evals);
 }
