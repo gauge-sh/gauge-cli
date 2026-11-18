@@ -251,7 +251,16 @@ export type BeginMcpOauthResponse =
 
 export type McpOauthStatus =
   | { status: "pending"; expiresAt: string }
-  | { status: "connected"; connectionId: string }
+  | {
+      status: "connected";
+      connectionId: string;
+      /**
+       * Present when the server issued a key with no refresh token, so the
+       * connection stops working on its own: the key's expiry (ISO), or null
+       * when the server did not say.
+       */
+      nonRefreshable?: { expiresAt: string | null };
+    }
   | { status: "failed" | "expired"; message: string };
 
 export const saveMcpServerResponseSchema = z.object({
