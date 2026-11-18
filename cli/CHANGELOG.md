@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added
+
+- `gauge connections add`, `gauge connections rotate`, and
+  `gauge connections delete` manage stored credentials without the web app.
+  `add` takes a built-in `--profile` or a custom `--host` with
+  `--auth bearer|header|query`; `rotate` and `delete` take a connection name
+  or id. Values are read only from stdin or `GAUGE_CONNECTION_SECRET`, and HTTP
+  Basic connections take `--username` with the password read the same way.
+  `delete` confirms on a terminal and otherwise requires `--yes`.
+
 ## 0.32.0 — 2026-11-17
 
 ### Changed

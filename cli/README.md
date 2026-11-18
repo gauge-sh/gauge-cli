@@ -675,6 +675,32 @@ organization and permitting the MCP host can be bound. A connection binding is
 part of the saved version: include it when appending an authenticated version.
 `gauge mcp get <name> --hosted` shows each version's connection ID.
 
+### Managing connections
+
+A connection is a stored credential that hosted sessions use to call a vendor
+API or MCP server. Values are write-only: commands read them from stdin or the
+`GAUGE_CONNECTION_SECRET` environment variable, never from an argument, and
+responses show only the last four characters.
+
+```sh
+# A built-in vendor profile
+gauge connections add --hosted --handle gh --profile github < token.txt
+
+# Any other HTTPS host: bearer (default), a named header, or a query parameter
+gauge connections add --hosted --handle vendor --host api.example.com \
+  --auth header --header-name X-Api-Key < key.txt
+
+# Replace the stored value (name or id); HTTP Basic takes --username
+gauge connections rotate --hosted vendor < new-key.txt
+
+# Delete; prompts on a terminal, otherwise requires --yes
+gauge connections delete --hosted vendor --yes
+```
+
+`--header-prefix "Token "` puts text before the value in the header, and
+`--auth query --query-param api_key` sends it as a query parameter. Connections
+authorized with OAuth cannot be rotated; delete and re-authorize them instead.
+
 If the server requires manual client registration, the command prints the
 callback URL. Retry with `--oauth-client-id <id>` and, if needed,
 `--oauth-client-secret-env <ENV_VAR_NAME>`. The variable's value goes only to
