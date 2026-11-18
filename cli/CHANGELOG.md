@@ -11,6 +11,12 @@
   or id. Values are read only from stdin or `GAUGE_CONNECTION_SECRET`, and HTTP
   Basic connections take `--username` with the password read the same way.
   `delete` confirms on a terminal and otherwise requires `--yes`.
+- `gauge connections reauthorize <handle-or-id>` renews an OAuth connection
+  in place with a fresh browser consent. The connection keeps its id and
+  handle, so MCP versions and evals bound to it keep working. Supports
+  `--no-browser`, `--timeout`, `--url`, `--client-id`, and
+  `--client-secret-env`; rerunning it resumes a completed sign-in without new
+  consent.
 
 ## 0.32.0 — 2026-11-17
 

@@ -29,6 +29,25 @@ function openBrowser(url: string): void {
   }
 }
 
+type ConnectedStatus = Extract<mcp.McpOauthStatus, { status: "connected" }>;
+
+/** How a caller names its own retry and client-registration options. */
+type ConsentHints = {
+  needsClientId: (redirectUri: string) => string;
+  timedOut: string;
+};
+
+const MCP_ADD_HINTS: ConsentHints = {
+  needsClientId: (redirectUri) =>
+    `Register an OAuth client with redirect URI ${redirectUri}, then retry with --oauth-client-id. If required, supply its secret using --oauth-client-secret-env.`,
+  timedOut:
+    "If consent succeeded, use `gauge connections list --hosted` and retry with --connection <id>. Otherwise retry with --oauth; incomplete saved grants can resume without new consent.",
+};
+
+function mcpAuthorizationsPath(org: string): string {
+  return `/api/v1/orgs/${encodeURIComponent(org)}/mcp-authorizations`;
+}
+
 /** Human consent stays in the browser; only a non-secret connection ID returns
  * to the caller. Progress goes to stderr so JSON output remains parseable. */
 export async function connectMcpOauth(
@@ -38,6 +57,35 @@ export async function connectMcpOauth(
   options: { browser: boolean; timeoutSeconds: number },
   overrides: Partial<Dependencies> = {},
 ): Promise<string> {
+  const begun = await client.post<mcp.BeginMcpOauthResponse>(
+    mcpAuthorizationsPath(org),
+    input,
+  );
+  const connected = await awaitMcpOauthConsent(
+    client,
+    org,
+    begun,
+    options,
+    MCP_ADD_HINTS,
+    overrides,
+  );
+  return connected.connectionId;
+}
+
+/**
+ * Finish any consent that answered with the MCP OAuth begin shape: open the
+ * browser, then poll `/mcp-authorizations/{id}` until the connection is ready.
+ * A `connected` answer means an earlier consent already finished, so no
+ * browser is needed.
+ */
+export async function awaitMcpOauthConsent(
+  client: Pick<ApiClient, "get">,
+  org: string,
+  result: mcp.BeginMcpOauthResponse,
+  options: { browser: boolean; timeoutSeconds: number },
+  hints: ConsentHints,
+  overrides: Partial<Dependencies> = {},
+): Promise<ConnectedStatus> {
   const deps: Dependencies = {
     openBrowser,
     sleep,
@@ -45,14 +93,14 @@ export async function connectMcpOauth(
     report: console.error,
     ...overrides,
   };
-  const path = `/api/v1/orgs/${encodeURIComponent(org)}/mcp-authorizations`;
-  const result = await client.post<mcp.BeginMcpOauthResponse>(path, input);
-  if (result.kind === "connected") return result.connectionId;
+  const path = mcpAuthorizationsPath(org);
+  if (result.kind === "connected")
+    return { status: "connected", connectionId: result.connectionId };
   if (result.kind === "problem")
     throw new CliError("invalid_request", result.problem);
   if (result.kind === "needs-client-id") {
     throw new CliError("invalid_request", result.reason, {
-      hint: `Register an OAuth client with redirect URI ${result.redirectUri}, then retry with --oauth-client-id. If required, supply its secret using --oauth-client-secret-env.`,
+      hint: hints.needsClientId(result.redirectUri),
     });
   }
   let url: URL;
@@ -97,7 +145,7 @@ export async function connectMcpOauth(
       if (signal.aborted) break;
       throw error;
     }
-    if (status.status === "connected") return status.connectionId;
+    if (status.status === "connected") return status;
     if (status.status === "failed" || status.status === "expired")
       throw new CliError("invalid_request", status.message);
     await deps.sleep(Math.min(2000, Math.max(0, deadline - deps.now())));
@@ -105,8 +153,6 @@ export async function connectMcpOauth(
   throw new CliError(
     "invalid_request",
     "Timed out waiting for MCP authorization.",
-    {
-      hint: "If consent succeeded, use `gauge connections list --hosted` and retry with --connection <id>. Otherwise retry with --oauth; incomplete saved grants can resume without new consent.",
-    },
+    { hint: hints.timedOut },
   );
 }
