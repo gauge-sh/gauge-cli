@@ -86,7 +86,6 @@ test("local verification rejects hosted configuration and explains the MCP hando
     ["profileId", "persona"],
     ["skillRefs", ["docs@v1"]],
     ["mcpRefs", ["tools@v1"]],
-    ["connectionIds", ["connection"]],
     ["addons", { browser: { session: "test", projectId: 1, region: "us" } }],
   ] as const) {
     f.write(

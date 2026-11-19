@@ -23,7 +23,11 @@ class Handler(BaseHTTPRequestHandler):
             for _ in range(12):
                 self.wfile.write(b"x" * 1024 * 1024)
             return
-        body = json.dumps({"path": self.path, "host": self.headers["Host"]}).encode()
+        payload = {"path": self.path, "host": self.headers["Host"]}
+        # This hermetic test endpoint deliberately echoes only the synthetic token.
+        if self.path == "/headers":
+            payload["authorization"] = self.headers.get("Authorization")
+        body = json.dumps(payload).encode()
         self.send_response(200)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()

@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   copyFile,
   mkdir,
@@ -27,6 +27,7 @@ import {
   stopSession,
 } from "@withgauge/local-execution";
 import { CliError } from "./client";
+import { loadConnectionPlan, resolveLocalConnections, inspectLocalConnections, type ConnectionPlan, type LocalConnection } from "./localConnections";
 import { assertLocalCapabilities } from "./localCapabilities";
 import { batchDirectory, cancellationRequested } from "./localLifecycle";
 import { fileURLToPath } from "node:url";
@@ -59,7 +60,7 @@ import {
 export { RUNTIME_IMAGE } from "./localRuntime";
 
 type ResolvedLocalRuntime = RuntimeInspection & { imageId: string };
-export type LocalRuntimeOptions = { runtimeImage?: string; gatewayImage?: string };
+export type LocalRuntimeOptions = { runtimeImage?: string; gatewayImage?: string; connectionsFile?: string };
 
 const CONCURRENCY = 4;
 const POLL_MS = 1_000;
@@ -119,6 +120,7 @@ export type LocalPlan = {
   inputs: { name: string; use: string }[];
   warnings: string[];
   credentials: CredentialReadiness[];
+  connections: ReturnType<typeof inspectLocalConnections>;
 };
 
 export async function planLocal(
@@ -128,7 +130,13 @@ export async function planLocal(
   const { queue } = plan(definition);
   const warnings: string[] = [];
   const runtime = inspectLocalRuntime(options.runtimeImage);
-  const gateway = definition.resources.some((r) => r.use.type === "web-fixture") ? inspectLocalGateway(options.gatewayImage) : undefined;
+  const connectionPlan = await loadConnectionPlan(definition, options.connectionsFile ?? join(process.cwd(), ".gauge", "connections.yaml"));
+  const hasConnections = Object.values(connectionPlan).some((selected) => selected.length);
+  const gateway = hasConnections || definition.resources.some((r) => r.use.type === "web-fixture") ? inspectLocalGateway(options.gatewayImage, undefined, hasConnections) : undefined;
+  const connections = inspectLocalConnections(connectionPlan, gateway?.problem?.message);
+  for (const connection of connections)
+    if (!connection.ready && connection.problem !== gateway?.problem?.message)
+      warnings.push(connection.problem!);
   if (gateway?.problem) warnings.push(`${gateway.problem.message} ${gateway.problem.hint}`);
   if (runtime.problem)
     warnings.push(`${runtime.problem.message} ${runtime.problem.hint}`);
@@ -141,6 +149,7 @@ export async function planLocal(
     runtime,
     gateway,
     runtimeProbe: "not_run",
+    connections,
     expectedSessions: queue.length,
     cases: definition.cases.map((item) => {
       const sessions = new Map<
@@ -241,7 +250,10 @@ export async function prepareLocal(
 ) {
   const { queue } = plan(definition);
   const webFixtures = await freezeWebFixtures(definition, uploads);
-  const gateway = Object.keys(webFixtures).length ? requireLocalGateway(options.gatewayImage) : undefined;
+  const connections = await loadConnectionPlan(definition, options.connectionsFile ?? join(gaugeDir, "connections.yaml"));
+  for (const selected of Object.values(connections)) resolveLocalConnections(selected);
+  const hasConnections = Object.values(connections).some((selected) => selected.length);
+  const gateway = Object.keys(webFixtures).length || hasConnections ? requireLocalGateway(options.gatewayImage, hasConnections) : undefined;
   await freezeCredentials(queue, options);
   const runtime = requireLocalRuntime(options.runtimeImage);
   await checkLocalRuntimeCompatibility(runtime.imageId, [
@@ -255,7 +267,7 @@ export async function prepareLocal(
   const directory = batchDirectory(gaugeDir, batchId);
   await mkdir(directory, { recursive: true, mode: 0o700 });
   await writeJson(join(directory, "runtime.json"), runtime);
-  await writeJson(join(directory, "gateway.json"), { gateway, cases: webFixtures });
+  await writeJson(join(directory, "gateway.json"), { gateway, cases: webFixtures, connections });
   await writeJson(join(directory, "status.json"), {
     batchId,
     runtime,
@@ -376,9 +388,11 @@ export async function runLocal(
   const runtime: ResolvedLocalRuntime = JSON.parse(
     await readFile(join(directory, "runtime.json"), "utf8"),
   );
-  const gatewayPlan: { gateway?: ResolvedLocalRuntime; cases: Record<string, FrozenWebFixture> } = JSON.parse(
+  const gatewayPlan: { gateway?: ResolvedLocalRuntime; cases: Record<string, FrozenWebFixture>; connections?: ConnectionPlan } = JSON.parse(
     await readFile(join(directory, "gateway.json"), "utf8"),
   );
+  const connectionPlan = gatewayPlan.connections ?? {};
+  const connectionEnvNames = [...new Set(Object.values(connectionPlan).flat().map((connection) => connection.env))];
   const expectedSessions = queue.length;
   let interrupted = false;
   const signal = () => {
@@ -408,6 +422,7 @@ export async function runLocal(
       while (!canceled()) {
         const job = queue.shift();
         if (!job) break;
+        const connections = connectionsForCase(connectionPlan, job.item.path);
         const run = await runJob(job, {
           batchId,
           gaugeDir,
@@ -415,8 +430,9 @@ export async function runLocal(
           resources,
           credentialSelections,
           runtime,
-          gateway: gatewayPlan.gateway && gatewayPlan.cases[job.item.path]
-            ? { image: gatewayPlan.gateway.imageId, ...gatewayPlan.cases[job.item.path] } : undefined,
+          gateway: gatewayForCase(gatewayPlan.gateway, Object.hasOwn(gatewayPlan.cases, job.item.path) ? gatewayPlan.cases[job.item.path] : undefined, connections),
+          connections,
+          connectionEnvNames,
           canceled,
           measurement: options.measurement,
           provenance: definition.source ?? {},
@@ -438,6 +454,20 @@ export async function runLocal(
     process.off("SIGINT", signal);
     process.off("SIGTERM", signal);
   }
+}
+
+export function connectionsForCase(plan: ConnectionPlan, path: string): LocalConnection[] {
+  return Object.hasOwn(plan, path) ? plan[path] : [];
+}
+
+export function gatewayForCase(runtime: ResolvedLocalRuntime | undefined, fixture: FrozenWebFixture | undefined, connections: LocalConnection[] = []): SessionSpec["gateway"] {
+  if (!fixture && !connections.length) return undefined;
+  if (!runtime) throw new CliError("usage", "Local connections and web fixtures require a gateway image.");
+  const empty = { version: 1 as const, pages: [], searches: [] };
+  return {
+    image: runtime.imageId,
+    ...(fixture ?? { fixture: empty, digest: `sha256:${createHash("sha256").update(JSON.stringify(empty)).digest("hex")}` }),
+  };
 }
 
 function toResourceRef(resource: RunPlanResource): ResourceRef {
@@ -547,6 +577,8 @@ async function runJob(
     credentialSelections: Record<string, ResolvedLocalProfile>;
     runtime: ResolvedLocalRuntime;
     gateway?: SessionSpec["gateway"];
+    connections: LocalConnection[];
+    connectionEnvNames: string[];
     canceled: () => boolean;
     measurement: BatchOptions["measurement"];
     provenance: Record<string, unknown>;
@@ -644,6 +676,8 @@ async function runJob(
         spec,
         blobsDirectory: context.blobsDirectory,
         credentials: profileCredentialSources(profile),
+        gatewayConnections: resolveLocalConnections(context.connections),
+        connectionEnvNames: context.connectionEnvNames,
       });
       result = await drive(directory, summary, canceled);
     }

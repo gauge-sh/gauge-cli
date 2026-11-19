@@ -1,5 +1,6 @@
 """Portable, immutable web fixtures. No control plane or response transformations."""
 import json
+from ipaddress import ip_address
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -36,8 +37,112 @@ def within(url, scope):
     return origin(url) == origin(scope) and (p.path == prefix or p.path.startswith(prefix + "/"))
 
 
+# Never allow credentials to change transport framing or proxy routing.
+FORBIDDEN_HEADERS = {
+    "host", "connection", "proxy-connection", "keep-alive", "transfer-encoding",
+    "content-length", "te", "trailer", "upgrade", "proxy-authorization",
+    "proxy-authenticate", "expect", "forwarded", "via",
+}
+
+
+class Connections:
+    def __init__(self, config=None):
+        if config is None:
+            path = Path("/gateway/private/connections.json")
+            config = json.loads(path.read_bytes()) if path.exists() else {"version": 1, "connections": []}
+        if (not isinstance(config, dict) or set(config) != {"version", "connections"}
+                or type(config["version"]) is not int or config["version"] != 1
+                or not isinstance(config["connections"], list)):
+            raise ValueError("Invalid connections contract")
+        self.headers = {}
+        names = set()
+        for entry in config["connections"]:
+            if not isinstance(entry, dict) or set(entry) != {"name", "origin", "header", "value"}:
+                raise ValueError("Invalid connection entry")
+            name, url, header, value = (entry[k] for k in ("name", "origin", "header", "value"))
+            if not all(isinstance(v, str) and v for v in (name, url, header, value)):
+                raise ValueError("Invalid connection fields")
+            if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]*", name) or name in names:
+                raise ValueError("Invalid or duplicate connection name")
+            names.add(name)
+            try:
+                p = urlsplit(url)
+                valid = (url.isascii() and not any(ord(c) <= 32 or ord(c) == 127 for c in url)
+                         and p.scheme == "https" and p.hostname and not p.username and p.password is None
+                         and "@" not in p.netloc and p.port in (None, 443)
+                         and not p.path and not p.query and not p.fragment
+                         and "?" not in url and "#" not in url
+                         and re.fullmatch(r"[A-Za-z0-9.:-]+", p.hostname)
+                         and not p.netloc.endswith(":"))
+            except ValueError:
+                valid = False
+            if valid:
+                try:
+                    ip_address(p.hostname)
+                except ValueError:
+                    pass
+                else:
+                    valid = False
+            if not valid:
+                raise ValueError("Connection requires an exact HTTPS DNS origin on port 443")
+            if not re.fullmatch(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+", header) or header.lower() in FORBIDDEN_HEADERS or header.lower().startswith("x-forwarded-"):
+                raise ValueError("Invalid connection header")
+            if not re.fullmatch(r"[\x20-\x7e]+", value) or not value.strip():
+                raise ValueError("Invalid connection header value")
+            headers = self.headers.setdefault(p.hostname.lower(), {})
+            if header.lower() in headers:
+                raise ValueError("Duplicate connection header")
+            headers[header.lower()] = value
+
+    def inject(self, flow):
+        request = flow.request
+        if flow.response is not None or request.scheme != "https" or request.port != 443:
+            return
+        # Transparent mode exposes the original destination IP in request.host.
+        # SNI identifies the TLS origin; mitmproxy verifies its upstream certificate.
+        client = getattr(flow, "client_conn", None)
+        server = getattr(flow, "server_conn", None)
+        if not client or not client.tls or not client.sni or server is None:
+            return
+        host = client.sni.lower()
+        headers = self.headers.get(host)
+        if not headers:
+            return
+        if server.sni is not None and server.sni.lower() != host:
+            return
+        if getattr(server, "timestamp_tls_setup", None) is not None and server.sni is None:
+            return
+        # Absolute-form HTTP/1 targets can route through an upstream proxy
+        # independently of Host. They are outside this local origin contract.
+        if request.authority and not (request.is_http2 or request.is_http3):
+            return
+        if (not request.path.startswith("/") or any(ord(c) <= 32 or ord(c) == 127 for c in request.path)):
+            return
+        host_values = request.headers.get_all("host")
+        if len(host_values) > 1:
+            return
+        if (request.is_http2 or request.is_http3) and host_values:
+            if host_values[0].lower() != request.authority.lower():
+                return
+        authority = request.host_header
+        if not authority or not authority.isascii() or any(ord(c) <= 32 or ord(c) == 127 for c in authority):
+            return
+        try:
+            parsed = urlsplit("https://" + authority)
+            if (parsed.hostname != host or parsed.port not in (None, 443)
+                    or parsed.username is not None or parsed.password is not None
+                    or parsed.path or parsed.query or parsed.fragment
+                    or any(c in authority for c in "/?#@") or authority.endswith(":")):
+                return
+        except ValueError:
+            return
+        server.sni = host
+        request.headers.update(headers)
+
+
 class Fixtures:
-    def __init__(self, fixture=None):
+    def __init__(self, fixture=None, connections=None):
+        self.connections = connections if connections is not None else Connections()
         if fixture is None:
             raw = Path("/gateway/fixture.json").read_bytes()
             if len(raw) > 1_000_000:
@@ -83,6 +188,7 @@ class Fixtures:
                 raise ValueError("Overlapping fixture scopes")
 
     def running(self):
+        Path("/gateway/private/connections-ready").write_text("1\n")
         Path("/gateway/private/ready").write_text("ready\n")
 
     def event(self, flow, action, **extra):
@@ -128,6 +234,8 @@ class Fixtures:
             self.reply(flow, page["status"], page["body"], page["contentType"])
         elif any(within(url, scope) for scope in self.scopes):
             self.reply(flow, 404, "Fixture missing within scope", action="blocked")
+        else:
+            self.connections.inject(flow)
 
     def responseheaders(self, flow):
         flow.response.stream = not flow.metadata.get("fixture_reply", False)

@@ -1,10 +1,10 @@
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { copyFile, mkdtemp, readFile, rm } from "node:fs/promises";
+import { copyFile, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { startSession, stopSession, getSessionStatus } from "../dist/index.js";
+import { startSession, stopSession, getSessionStatus, type GatewayConnection } from "../dist/index.js";
 import type { LaunchRecord, SessionSpec } from "../src/types.js";
 import { spec } from "./fakes.js";
 
@@ -17,11 +17,11 @@ const gateway: NonNullable<SessionSpec["gateway"]> = {
   image: process.env.GAUGE_GATEWAY_IMAGE ?? "ghcr.io/gauge-sh/gauge-gateway:0.1.0", fixture,
   digest: `sha256:${createHash("sha256").update(JSON.stringify(fixture)).digest("hex")}`,
 };
-async function session(test: (directory: string, launch: LaunchRecord) => Promise<void>, overrides: Partial<SessionSpec> = {}) {
+async function session(test: (directory: string, launch: LaunchRecord) => Promise<void>, overrides: Partial<SessionSpec> = {}, gatewayConnections: GatewayConnection[] = []) {
   const root = await mkdtemp(join(tmpdir(), "gauge-gateway-test-"));
   const directory = join(root, "session");
   try {
-    await startSession({ directory, runtimeDirectory: tmpdir(), spec: spec({ image: "gauge-session-fixture:test", workspace: null, prompt: { text: "HANG" }, gateway, ...overrides }), credentials: { env: { CLAUDE_CODE_OAUTH_TOKEN: "fixture-only" }, homeDir: root } });
+    await startSession({ directory, gatewayConnections, runtimeDirectory: tmpdir(), spec: spec({ image: "gauge-session-fixture:test", workspace: null, prompt: { text: "HANG" }, gateway, ...overrides }), credentials: { env: { CLAUDE_CODE_OAUTH_TOKEN: "fixture-only" }, homeDir: root } });
     await test(directory, JSON.parse(await readFile(join(directory, "session.json"), "utf8")));
   } finally {
     await stopSession(directory).catch(() => {});
@@ -98,6 +98,61 @@ describe.skipIf(process.env.GAUGE_DOCKER_FIXTURES !== "1")("transparent gateway 
       try { docker("rm", "-f", name); } finally { await rm(root, { recursive: true, force: true }); }
     }
   });
+  it("injects credentials only for matching TLS origin and authority and keeps them isolated", { timeout: 90_000 }, async () => {
+    const root = await mkdtemp(join(tmpdir(), "gauge-connection-origin-"));
+    const name = `gauge-test-origin-${randomUUID()}`;
+    const value = "Bearer fixture-only-connection-secret";
+    const connections = [
+      { name: "upstream", origin: "https://upstream.example.test", header: "Authorization", value },
+      { name: "rewrite", origin: "https://rewrite.example.test", header: "Authorization", value },
+    ];
+    const routed = { ...fixture, origins: [{ origin: "https://rewrite.example.test", upstream: "https://upstream.example.test" }] };
+    try {
+      execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=upstream.example.test", "-addext", "subjectAltName=DNS:upstream.example.test,DNS:unrelated.example.test,DNS:rewrite.example.test", "-keyout", join(root, "key.pem"), "-out", join(root, "cert.pem")], { stdio: "ignore" });
+      await copyFile(new URL("./gateway-origin.py", import.meta.url), join(root, "server.py"));
+      docker("run", "-d", "--name", name, "--mount", `type=bind,source=${root},target=/origin,readonly`, "--entrypoint", "python", gateway.image, "/origin/server.py");
+      const ip = docker("inspect", "--format", '{{(index .NetworkSettings.Networks "bridge").IPAddress}}', name);
+      await session(async (directory, launch) => {
+        await wait(directory, "running");
+        docker("cp", join(root, "cert.pem"), `${launch.gatewayName}:/tmp/test-origin.pem`);
+        docker("exec", "-u", "0", launch.gatewayName!, "python", "-c", "import certifi,sys; open(certifi.where(),'a').write(open('/tmp/test-origin.pem').read()); open('/etc/hosts','a').write('\\n'+sys.argv[1]+' upstream.example.test unrelated.example.test rewrite.example.test\\n')", ip);
+        const curl = (host: string, ...args: string[]) => docker("exec", launch.containerName, "curl", "--noproxy", "*", "--max-time", "10", "--resolve", `${host}:443:${ip}`, "-sS", ...args, `https://${host}/headers`);
+        expect(JSON.parse(curl("upstream.example.test")).authorization).toBe(value);
+        expect(JSON.parse(curl("upstream.example.test", "-H", "Authorization: caller-supplied")).authorization).toBe(value);
+        expect(JSON.parse(curl("upstream.example.test", "-H", "Host: unrelated.example.test")).authorization).toBeNull();
+        expect(JSON.parse(curl("unrelated.example.test")).authorization).toBeNull();
+        expect(JSON.parse(curl("unrelated.example.test", "-H", "Host: upstream.example.test")).authorization).toBeNull();
+        expect(JSON.parse(curl("rewrite.example.test")).authorization).toBeNull();
+        const config = JSON.parse(docker("inspect", launch.containerName))[0];
+        expect(JSON.stringify(config.Config.Env)).not.toContain(value);
+        expect(JSON.stringify(config.Mounts)).not.toContain("connections.json");
+        expect(JSON.stringify(config)).not.toContain(value);
+        expect(await readFile(join(directory, "session.json"), "utf8")).not.toContain(value);
+        const connectionFile = join(launch.credentialDir, "connections.json");
+        expect((await stat(connectionFile)).mode & 0o777).toBe(0o600);
+        const gatewayConfig = JSON.parse(docker("inspect", launch.gatewayName!))[0];
+        expect(gatewayConfig.Mounts).toContainEqual(expect.objectContaining({ Source: connectionFile, Destination: "/gateway/connections.json", RW: false }));
+        expect(JSON.stringify(gatewayConfig.Config.Env)).not.toContain(value);
+        await stopSession(directory);
+        absent(launch);
+        await expect(stat(connectionFile)).rejects.toMatchObject({ code: "ENOENT" });
+        for (const file of ["session.json", "status.json", "driver.log", "gateway.log"])
+          expect(await readFile(join(directory, file), "utf8")).not.toContain(value);
+      }, { gateway: { ...gateway, fixture: routed, digest: `sha256:${createHash("sha256").update(JSON.stringify(routed)).digest("hex")}` } }, connections);
+    } finally {
+      try { docker("rm", "-f", name); } finally { await rm(root, { recursive: true, force: true }); }
+    }
+  });
+  it.skipIf(!process.env.GAUGE_OLD_GATEWAY_IMAGE)("rejects a gateway image without credential support before starting the workload", { timeout: 60_000 }, () => session(async (directory, launch) => {
+    const status = await wait(directory, "failed");
+    expect(status.turn).toBe(0);
+    expect(status.detail).toContain("does not support local connections");
+    expect(status.cleanupPending).toBe(false);
+    absent(launch);
+    await expect(stat(join(launch.credentialDir, "connections.json"))).rejects.toMatchObject({ code: "ENOENT" });
+  }, { gateway: { ...gateway, image: process.env.GAUGE_OLD_GATEWAY_IMAGE! } }, [
+    { name: "example", origin: "https://upstream.example.test", header: "Authorization", value: "Bearer fixture-only" },
+  ]));
   it("does not remove gateway or workload when controller status is unavailable", { timeout: 60_000 }, () => session(async (directory, launch) => {
     const status = await wait(directory, "running");
     try {
