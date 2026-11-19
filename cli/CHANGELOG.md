@@ -18,6 +18,20 @@
   `--client-secret-env`; rerunning it resumes a completed sign-in without new
   consent.
 
+## 0.33.0 — 2026-11-18
+
+### Added
+
+- Hosted evals are grouped by agent journey: one goal that a coding agent has
+  with your product. `gauge eval journey list|get|create|edit|rm` manages
+  journeys. `gauge eval create --journey <journey>` places an eval,
+  `gauge eval edit --journey <journey>` moves it, and `--clear-journey`
+  unplaces it. `gauge eval list --journey <journey>` lists a journey's evals
+  (`none` lists unplaced evals). A journey is addressed by name or id; names
+  ignore case and punctuation, so `product-workflows` works.
+- `gauge eval list` and `gauge eval get` show each eval's journey, and
+  `gauge instructions eval` explains how to choose one.
+
 ## 0.32.0 — 2026-11-17
 
 ### Changed

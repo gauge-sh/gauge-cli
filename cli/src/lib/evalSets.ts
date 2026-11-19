@@ -42,6 +42,13 @@ function evalSetPath(org: string, id: string): string {
   return `${evalSetsPath(org)}/${encodeURIComponent(id)}`;
 }
 
+function journeysNeedHosted(): CliError {
+  return new CliError(
+    "usage",
+    "Agent journeys require hosted evals; pass --hosted",
+  );
+}
+
 function parseCriterion(raw: string): { name: string; rubric: string } {
   const idx = raw.indexOf(":");
   if (idx <= 0 || !raw.slice(idx + 1).trim()) {
@@ -97,6 +104,7 @@ export function evalSetRow(e: EvalSetListItem) {
   return {
     id: e.id,
     name: e.name,
+    journey: e.journey?.name ?? "-",
     repo: repoLabel(e),
     criteria: e.criteria.length,
     tags: e.tags.join(", "),
@@ -109,6 +117,7 @@ export function evalSetRow(e: EvalSetListItem) {
 function printDetail(e: EvalSet): void {
   console.log(`id:       ${e.id}`);
   console.log(`name:     ${e.name}`);
+  console.log(`journey:  ${e.journey?.name ?? "(no journey)"}`);
   console.log(`repo:     ${repoLabel(e)}`);
   console.log(`persona:  ${e.profile ? e.profile.name : "(default persona)"}`);
   console.log(`tags:     ${e.tags.join(", ") || "(none)"}`);
@@ -128,9 +137,10 @@ function printDetail(e: EvalSet): void {
 
 export async function listEvalSets(
   cmd: Command,
-  opts: { agents?: string; models?: string; since?: string },
+  opts: { agents?: string; models?: string; since?: string; journey?: string },
 ): Promise<EvalSetListItem[]> {
   if (isLocal(cmd)) {
+    if (opts.journey !== undefined) throw journeysNeedHosted();
     if (opts.agents || opts.models || opts.since)
       throw new CliError(
         "usage",
@@ -147,6 +157,7 @@ export async function listEvalSets(
           : parseAgents(opts.agents).join(","),
       models: opts.models,
       since: opts.since,
+      journey: opts.journey,
     },
   );
   return res.items;
@@ -167,6 +178,7 @@ export type EvalSetCreateOpts = OwnedConfigCreateOpts & {
   criterion: string[];
   criteriaFile?: string;
   tag: string[];
+  journey?: string;
 };
 
 export async function createEvalSet(
@@ -192,6 +204,13 @@ export async function createEvalSet(
     criteria,
     tags: opts.tag.length > 0 ? opts.tag : undefined,
   };
+  if (opts.journey !== undefined) {
+    if (isLocal(cmd)) throw journeysNeedHosted();
+    body.journey = opts.journey;
+  } else if (!isLocal(cmd))
+    console.error(
+      "note: no --journey — this eval set is in no agent journey. Use `gauge eval journey list`, then `gauge eval edit <id> --journey <journey>` to place it.",
+    );
   if (!isLocal(cmd) && opts.repo === undefined)
     console.error(
       "note: no --repo — this eval set will run against the default Gauge scaffold, NOT your repository. Use `gauge eval edit <id> --repo <url>` to retarget.",
@@ -214,6 +233,8 @@ export type EvalSetEditOpts = OwnedConfigEditOpts & {
   criteriaFile?: string;
   tag: string[];
   clearTags?: boolean;
+  journey?: string;
+  clearJourney?: boolean;
 };
 
 export async function editEvalSet(
@@ -249,6 +270,13 @@ export async function editEvalSet(
     throw new CliError("usage", "--tag and --clear-tags conflict");
   if (opts.clearTags) body.tags = [];
   else if (opts.tag.length > 0) body.tags = opts.tag;
+
+  if (opts.journey !== undefined && opts.clearJourney)
+    throw new CliError("usage", "--journey and --clear-journey conflict");
+  if (opts.journey !== undefined || opts.clearJourney) {
+    if (isLocal(cmd)) throw journeysNeedHosted();
+    body.journey = opts.clearJourney ? null : opts.journey;
+  }
 
   if (Object.keys(body).length === 0)
     throw new CliError("usage", "nothing to change");

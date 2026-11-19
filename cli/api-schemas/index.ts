@@ -23,6 +23,7 @@ export {
 export type * as connections from "./connections";
 export type * as dashboards from "./dashboards";
 export type * as evals from "./evals";
+export type * as journeys from "./journeys";
 export type * as executionTargets from "./executionTargets";
 export * as feedback from "./feedback";
 export type * as forks from "./forks";

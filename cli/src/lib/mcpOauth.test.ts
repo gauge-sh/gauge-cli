@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { mcp } from "@withgauge/api-schemas";
 import { CliError } from "./client";
-import { connectMcpOauth } from "./mcpOauth";
+import { connectMcpOauth, nonRefreshableWarning } from "./mcpOauth";
 
 const input = { name: "gauge", url: "https://app.withgauge.com/mcp" };
 const redirect: mcp.BeginMcpOauthResponse = {
@@ -46,6 +46,42 @@ function harness(
   return { client, deps, calls, opened, messages };
 }
 describe("MCP browser authorization", () => {
+  it("warns on stderr when the server issued a key it cannot renew", async () => {
+    const h = harness(redirect, [
+      {
+        status: "connected",
+        connectionId: "conn",
+        nonRefreshable: { expiresAt: "2026-11-25T18:00:00.000Z" },
+      },
+    ]);
+    assert.equal(
+      await connectMcpOauth(
+        h.client,
+        "org",
+        input,
+        { browser: false, timeoutSeconds: 600 },
+        h.deps,
+      ),
+      "conn",
+    );
+    const warning = h.messages.at(-1) ?? "";
+    assert.match(warning, /no refresh token/);
+    assert.match(warning, /2026-11-25T18:00:00\.000Z/);
+  });
+  it("says when a non-renewable key's expiry is unknown", () => {
+    assert.match(nonRefreshableWarning(null), /did not say when it expires/);
+  });
+  it("stays quiet for a renewable grant", async () => {
+    const h = harness();
+    await connectMcpOauth(
+      h.client,
+      "org",
+      input,
+      { browser: false, timeoutSeconds: 600 },
+      h.deps,
+    );
+    assert.ok(!h.messages.some((m) => /no refresh token/.test(m)));
+  });
   it("opens consent and polls before returning only the connection id", async () => {
     const h = harness(redirect, [
       { status: "pending", expiresAt: redirect.expiresAt },

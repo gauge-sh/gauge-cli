@@ -275,8 +275,11 @@ export type McpOauthStatus =
   | {
       status: "connected";
       connectionId: string;
-      /** Present when the server issued a key with no refresh token: its
-       * expiry (ISO), or null when the server did not say. */
+      /**
+       * Present when the server issued a key with no refresh token, so the
+       * connection stops working on its own: the key's expiry (ISO), or null
+       * when the server did not say.
+       */
       nonRefreshable?: { expiresAt: string | null };
     }
   | { status: "failed" | "expired"; message: string };

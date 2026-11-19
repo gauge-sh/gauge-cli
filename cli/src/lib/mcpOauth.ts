@@ -48,6 +48,15 @@ function mcpAuthorizationsPath(org: string): string {
   return `/api/v1/orgs/${encodeURIComponent(org)}/mcp-authorizations`;
 }
 
+/** The server issued a key it cannot renew, so the connection has an end. */
+export function nonRefreshableWarning(expiresAt: string | null): string {
+  const when = expiresAt ? Date.parse(expiresAt) : Number.NaN;
+  const lead = Number.isFinite(when)
+    ? `Note: this server issued a key with no refresh token. It expires at ${new Date(when).toISOString()}, and runs are refused when it is about to expire.`
+    : "Note: this server issued a key with no refresh token and did not say when it expires. Runs will fail to authenticate once it lapses.";
+  return `${lead} Authorize again to renew it.`;
+}
+
 /** Human consent stays in the browser; only a non-secret connection ID returns
  * to the caller. Progress goes to stderr so JSON output remains parseable. */
 export async function connectMcpOauth(
@@ -69,6 +78,11 @@ export async function connectMcpOauth(
     MCP_ADD_HINTS,
     overrides,
   );
+  // `connections reauthorize` words its own note; this one is for `mcp add`.
+  if (connected.nonRefreshable)
+    (overrides.report ?? console.error)(
+      nonRefreshableWarning(connected.nonRefreshable.expiresAt),
+    );
   return connected.connectionId;
 }
 
