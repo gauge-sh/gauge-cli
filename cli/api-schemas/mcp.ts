@@ -238,6 +238,27 @@ export const beginMcpOauthBodySchema = z
   .strict();
 export type BeginMcpOauthBody = z.infer<typeof beginMcpOauthBodySchema>;
 
+/** Renew an OAuth connection in place: a fresh consent replaces its credential
+ * while the connection keeps its id, so MCP versions bound to it keep working.
+ * Answers BeginMcpOauthResponse and is polled like a new MCP authorization. */
+export const reauthorizeConnectionBodySchema = z
+  .object({
+    url: z
+      .url()
+      .max(2048)
+      .refine(
+        (url) => url.startsWith("https://"),
+        "OAuth requires an HTTPS MCP URL",
+      )
+      .optional(),
+    clientId: z.string().min(1).max(2048).optional(),
+    clientSecret: z.string().min(1).max(8192).optional(),
+  })
+  .strict();
+export type ReauthorizeConnectionBody = z.infer<
+  typeof reauthorizeConnectionBodySchema
+>;
+
 export type BeginMcpOauthResponse =
   | {
       kind: "redirect";

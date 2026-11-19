@@ -699,13 +699,29 @@ gauge connections delete --hosted vendor --yes
 
 `--header-prefix "Token "` puts text before the value in the header, and
 `--auth query --query-param api_key` sends it as a query parameter. Connections
-authorized with OAuth cannot be rotated; delete and re-authorize them instead.
+authorized with OAuth cannot be rotated; renew them in place with
+`gauge connections reauthorize <handle-or-id> --hosted` instead (see below).
 
 If the server requires manual client registration, the command prints the
 callback URL. Retry with `--oauth-client-id <id>` and, if needed,
 `--oauth-client-secret-env <ENV_VAR_NAME>`. The variable's value goes only to
 Gauge's OAuth service, never into the saved MCP spec or command output.
 `--header Authorization` declares a name; it does not configure authentication.
+
+When a connection's sign-in expires or the server stops accepting its refresh
+token, renew it in place:
+
+```bash
+gauge connections reauthorize <handle-or-id> --hosted
+```
+
+This opens the same browser consent and waits the same way (`--no-browser`,
+`--timeout`). The connection keeps its ID and handle, so MCP versions and evals
+bound to it keep working; deleting it and adding a new one would not. `--url`
+overrides the MCP server Gauge recorded for it, and `--client-id` with
+`--client-secret-env` covers servers that need a registered client. If the
+sign-in completed but the command was interrupted, run it again: it finishes
+without asking for consent a second time.
 
 After setup, attach the version with `gauge eval edit <id> --hosted --mcp gauge@v1`
 or each case's `config.mcpRefs`. MCP execution is hosted-only. Keep tokens out of

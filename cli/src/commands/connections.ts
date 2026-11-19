@@ -4,6 +4,7 @@ import { CliError, createClient } from "../lib/client";
 import { confirmOrAbort } from "../lib/confirm";
 import { hostedOnly, resolveOrg, resolveOutput } from "../lib/context";
 import { printItems, printJson } from "../lib/output";
+import { registerReauthorize } from "./connectionsReauthorize";
 
 type ConnectionSummary = connections.ConnectionSummary;
 
@@ -73,7 +74,7 @@ async function readCredential(opts: {
 }
 
 /** Resolve a name or id to a live connection through the list endpoint. */
-async function findConnection(
+export async function findConnection(
   org: string,
   ref: string,
 ): Promise<ConnectionSummary> {
@@ -315,4 +316,6 @@ export function register(program: Command): void {
         printJson({ ...res, handle: current.handle });
       else console.log(`Deleted ${current.handle}`);
     });
+
+  registerReauthorize(group);
 }
