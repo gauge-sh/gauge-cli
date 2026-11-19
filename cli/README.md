@@ -764,8 +764,14 @@ gauge eval create --name "add a healthcheck" \
   --repo https://github.com/acme/api --ref main \
   --agent claude-code:claude-opus-4-8 --agent codex \
   --skill acme-cli@1.2.0 \
+  --journey implementation \
   --cadence weekly --samples 3
 ```
+
+`--journey` places a hosted eval in an agent journey: `onboarding`,
+`implementation`, `product-workflows`, `activation-cross-sell`, `maintenance`, or a custom
+journey. `gauge eval journey list` shows all of them. Without the flag the eval is in
+no journey.
 
 `gauge eval edit <id>` changes any of it later; omitted flags keep their
 stored value, and each `--clear-*` flag empties one field. To measure the same

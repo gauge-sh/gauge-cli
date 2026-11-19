@@ -29,6 +29,15 @@ function openBrowser(url: string): void {
   }
 }
 
+/** The server issued a key it cannot renew, so the connection has an end. */
+export function nonRefreshableWarning(expiresAt: string | null): string {
+  const when = expiresAt ? Date.parse(expiresAt) : Number.NaN;
+  const lead = Number.isFinite(when)
+    ? `Note: this server issued a key with no refresh token. It expires at ${new Date(when).toISOString()}, and runs are refused when it is about to expire.`
+    : "Note: this server issued a key with no refresh token and did not say when it expires. Runs will fail to authenticate once it lapses.";
+  return `${lead} Authorize again to renew it.`;
+}
+
 /** Human consent stays in the browser; only a non-secret connection ID returns
  * to the caller. Progress goes to stderr so JSON output remains parseable. */
 export async function connectMcpOauth(
@@ -97,7 +106,11 @@ export async function connectMcpOauth(
       if (signal.aborted) break;
       throw error;
     }
-    if (status.status === "connected") return status.connectionId;
+    if (status.status === "connected") {
+      if (status.nonRefreshable)
+        deps.report(nonRefreshableWarning(status.nonRefreshable.expiresAt));
+      return status.connectionId;
+    }
     if (status.status === "failed" || status.status === "expired")
       throw new CliError("invalid_request", status.message);
     await deps.sleep(Math.min(2000, Math.max(0, deadline - deps.now())));
