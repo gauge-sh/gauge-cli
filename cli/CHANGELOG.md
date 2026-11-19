@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.34.0 — 2026-11-19
+
 ### Added
 
 - `gauge connections add`, `gauge connections rotate`, and
@@ -17,6 +19,14 @@
   `--no-browser`, `--timeout`, `--url`, `--client-id`, and
   `--client-secret-env`; rerunning it resumes a completed sign-in without new
   consent.
+
+### Changed
+
+- When an MCP server answers `gauge mcp add --oauth` with a key and no refresh
+  token, the command prints a note on stderr with the key's expiry (or says
+  the server gave none), so you learn at connect time that the key must be
+  renewed. `gauge connections reauthorize` renews it in place. JSON output on
+  stdout is unchanged.
 
 ## 0.33.0 — 2026-11-18
 
