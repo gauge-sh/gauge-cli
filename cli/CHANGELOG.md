@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.33.0 — 2026-11-18
+
 ### Added
 
 - Hosted evals are grouped by agent journey: one goal that a coding agent has
