@@ -31,6 +31,7 @@ export const evalSetSchema = z
   .object({
     id: z.string(),
     suiteId: z.string().nullable(),
+    journey: z.object({ id: z.string(), name: z.string() }).nullable(),
     name: z.string(),
     promptText: z.string(),
     createdAt: z.string(),
@@ -89,6 +90,7 @@ export const createEvalSetBodySchema = z
     promptText: z.string().min(1),
     criteria: z.array(criterionInputSchema).min(1),
     tags: z.array(z.string()).optional(),
+    journey: z.string().min(1).nullable().optional(),
   })
   .extend(ownedConfigurationInputSchema.shape)
   .strict();
@@ -101,6 +103,7 @@ export const updateEvalSetBodySchema = z
     promptText: z.string().min(1).optional(),
     criteria: z.array(criterionInputSchema).min(1).optional(),
     tags: z.array(z.string()).optional(),
+    journey: z.string().min(1).nullable().optional(),
   })
   .extend(ownedConfigurationPatchShape)
   .strict();

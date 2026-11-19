@@ -268,6 +268,7 @@ export function localMeasurementView(row: LocalMeasurement): any {
   return {
     profile: null,
     suiteId: null,
+    journey: null,
     market: null,
     position: 0,
     runCount: 0,
