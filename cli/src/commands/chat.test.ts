@@ -338,7 +338,7 @@ describe("gauge chat", { concurrency: false }, () => {
     assert.equal(report.code, "unauthorized");
     assert.equal(
       report.hint,
-      "Run `gauge auth login`, or set GAUGE_API_TOKEN to an org API key (Settings → API Keys).",
+      "Run `gauge auth login`, or set GAUGE_API_TOKEN to an org API key (`gauge api-keys create`).",
     );
     assert.equal(seen.length, 0);
   });
@@ -745,7 +745,7 @@ describe("gauge chat", { concurrency: false }, () => {
     const keyed = await run("chat", "tags", "create", "x", "--org", ORG);
     assert.equal(
       errorReport(keyed.error, "chat tags create").hint,
-      "This API key has read-only access. Create a Read & write key in Settings → API Keys, then update GAUGE_API_TOKEN or import it with `gauge auth login --with-token`.",
+      "This API key has read-only access. Sign in and create a read & write key with `gauge api-keys create <name> --access write`, then update GAUGE_API_TOKEN or import it with `gauge auth login --with-token`.",
     );
 
     me = {
@@ -767,7 +767,7 @@ describe("gauge chat", { concurrency: false }, () => {
     const unknown = await run("chat", "tags", "create", "x", "--org", ORG);
     assert.equal(
       errorReport(unknown.error, "chat tags create").hint,
-      "Ask an organization admin for write access, or create a Read & write API key in Settings → API Keys.",
+      "Ask an organization admin for write access, or create a read & write API key with `gauge api-keys create <name> --access write`.",
       "falls back to the generic hint",
     );
   });

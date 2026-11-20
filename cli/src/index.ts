@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command, CommanderError, Help, Option } from "commander";
 import { fileURLToPath } from "node:url";
+import * as apiKeys from "./commands/apiKeys";
 import * as auth from "./commands/auth";
 import * as billing from "./commands/billing";
 import * as brands from "./commands/brands";
@@ -120,6 +121,7 @@ for (const group of [
   issues,
   dashboards,
   keys,
+  apiKeys,
   billing,
   usage,
   stats,

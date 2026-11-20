@@ -68,6 +68,7 @@ const GROUPS: [string, Record<string, string>][] = [
       repos: "Manage repositories",
       connections: "Stored credentials (no secrets)",
       keys: "Manage BYOK provider keys",
+      "api-keys": "Create and revoke org API keys for CI",
       brands: "Manage org brands",
       tags: "Manage org tags",
       billing: "Billing and credits",
@@ -77,7 +78,7 @@ const GROUPS: [string, Record<string, string>][] = [
   [
     "Account",
     {
-      auth: "Sign in, sign out, and tokens",
+      auth: "Sign in, sign out, and check your login",
       whoami: "Show the signed-in user",
     },
   ],
