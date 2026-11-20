@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added
+
+- `gauge api-keys list`, `gauge api-keys create`, and `gauge api-keys revoke`
+  manage organization API keys (`gauge_sk_…`) for scripts, CI, and
+  connections without the web app. `create <name>` takes
+  `--access read|write` and `--expires-in 30d|90d|365d|never`, uses `--org` or
+  your selected organization, and prints the key once. `revoke` confirms on a
+  terminal and otherwise requires `--yes`. Managing keys requires signing in
+  with `gauge auth login`; API keys cannot manage keys.
+
 ### Changed
 
 - `gauge connections add <name> --host <host>` names a connection by the
@@ -21,6 +31,9 @@
 - `gauge connections list` shows each connection's name, hosts, environment
   variable, kind, and the last four characters of its key. JSON output is
   unchanged.
+- `gauge auth tokens create` now points to `gauge api-keys create` when you
+  are signed in, and refuses when the current credential is an API key.
+  `gauge auth tokens list` and `revoke` still manage older Agents tokens.
 
 ### Deprecated
 

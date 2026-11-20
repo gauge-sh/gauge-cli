@@ -284,8 +284,8 @@ export function register(program: Command): void {
       `
 Category-scoped commands take --category (slug or cat_ id; default: chatCategory
 config, else the org's only category). Authenticate with \`gauge auth login\`,
-or for scripts set GAUGE_API_TOKEN to an org API key (gauge_sk_…, created in
-Settings → API Keys); GAUGE_API_TOKEN takes precedence over a login. --org takes
+or for scripts set GAUGE_API_TOKEN to an org API key (gauge_sk_…, created with
+\`gauge api-keys create\` or in Settings → API Keys); GAUGE_API_TOKEN takes precedence over a login. --org takes
 a slug or id and selects the same organization as Agents commands (default:
 gauge.json orgId, then your saved default from \`gauge orgs use\`, else your only Chat org);
 an org API key implies its own org, and --org may pick one of an agency key's

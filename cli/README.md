@@ -65,6 +65,23 @@ For scripts, add `-o json`: `whoami` returns `user`, `apiKey`, and `orgs`;
 `credential` (`kind`, `scopes`, `expiresAt`). Older Agents tokens do not report
 organizations, permissions, or expiry.
 
+### Organization API keys
+
+Scripts and CI authenticate with an organization API key (`gauge_sk_…`) in
+`GAUGE_API_TOKEN`. While signed in with `gauge auth login`, manage keys for
+your [selected organization](#organizations) or the one given by `--org`:
+
+```sh
+gauge api-keys create ci --access write --expires-in 90d   # prints the key once
+gauge api-keys list                                         # never shows secrets
+gauge api-keys revoke 42                                    # asks first; --yes in scripts
+```
+
+`--access` is `read` (default) or `write`; `--expires-in` is `30d`, `90d`,
+`365d`, or `never` (default). An API key cannot list, create, or revoke keys.
+`gauge auth tokens list` and `revoke` still manage tokens from older Agents
+versions; create new credentials with `gauge api-keys create`.
+
 ## Workspace and local storage
 
 `gauge init --local` works without Git. It writes a minimal shared manifest:
@@ -538,7 +555,9 @@ gauge --org my-org run wait "$(jq -er '.runRequestId' request.json)" --check -o 
 `--check` fails the job unless the verdict is `PASSED` or `MEASURED`. Without
 it, `run wait` exits 0 once the request settles, whatever the verdict.
 
-Set `GAUGE_API_TOKEN` as a CI secret and replace `my-org` with your workspace slug.
+Set `GAUGE_API_TOKEN` as a CI secret (create a key with
+`gauge api-keys create ci --access write --org my-org`) and replace `my-org`
+with your workspace slug.
 This can run immediately after your build in the same CI job.
 
 Repeat `--input name=path` for each input. The path replaces the input's

@@ -16,8 +16,20 @@ Local runs do not require a Gauge account.
 
 ## API keys for scripts and CI
 
-Create an organization API key in Chat's Settings → API Keys, choosing Read or
-Read & write permissions. Supply it through `GAUGE_API_TOKEN` in your shell or
+While signed in, create an organization API key with `gauge api-keys create`,
+or in Chat's Settings → API Keys:
+
+```sh
+gauge api-keys create ci --access write --expires-in 90d --org acme
+```
+
+`--access` is `read` (the default) or `write` (read & write). `--expires-in` is
+`30d`, `90d`, `365d`, or `never` (the default). The key is printed once; store
+it right away. `gauge api-keys list` shows each key's prefix, access, expiry,
+and last use, and `gauge api-keys revoke <id>` revokes one. Only a signed-in
+person can manage keys: an API key cannot list, create, or revoke keys.
+
+Supply the key through `GAUGE_API_TOKEN` in your shell or
 CI secret settings. This overrides your saved login; unset the variable to
 return to that login. Logout does not remove or revoke an environment API key.
 

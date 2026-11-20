@@ -64,7 +64,7 @@ function isChatErrorBody(value: unknown): value is ChatErrorBody {
 function loginHint(): string {
   return process.env.GAUGE_API_TOKEN?.trim()
     ? "Replace GAUGE_API_TOKEN with a valid key, or unset it and run `gauge auth login`."
-    : "Run `gauge auth login`, or set GAUGE_API_TOKEN to an org API key (Settings → API Keys).";
+    : "Run `gauge auth login`, or set GAUGE_API_TOKEN to an org API key (`gauge api-keys create`).";
 }
 
 function hintFor(
@@ -83,7 +83,7 @@ function hintFor(
     case "insufficient_scope":
       return extra.requiredScope && extra.requiredScope !== "write"
         ? `Ask an organization admin for '${String(extra.requiredScope)}' permission.`
-        : "Ask an organization admin for write access, or create a Read & write API key in Settings → API Keys.";
+        : "Ask an organization admin for write access, or create a read & write API key with `gauge api-keys create <name> --access write`.";
     case "limit_exceeded":
       return typeof extra.remaining === "number"
         ? `Your plan allows ${extra.remaining} more prompt(s); nothing was created.`
@@ -149,7 +149,7 @@ export class ChatApiClient extends ApiClient {
       const needs = String(required ?? "write");
       const access = token.scopes.length ? `${describeScopes(token.scopes)} access` : "no permissions";
       if (token.kind === "api_key")
-        return `This API key has ${access}.${needs === "write" ? " Create a Read & write key in Settings → API Keys, then update GAUGE_API_TOKEN or import it with `gauge auth login --with-token`." : ` Use a key with '${needs}' permission.`}`;
+        return `This API key has ${access}.${needs === "write" ? " Sign in and create a read & write key with `gauge api-keys create <name> --access write`, then update GAUGE_API_TOKEN or import it with `gauge auth login --with-token`." : ` Use a key with '${needs}' permission.`}`;
       if (token.kind === "session")
         return `Your login has ${access}. Ask an organization admin for ${needs === "write" ? "write access" : `'${needs}' permission`}.`;
       return undefined;

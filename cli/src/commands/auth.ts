@@ -660,7 +660,9 @@ export function register(program: Command): void {
 
   const tokens = auth
     .command("tokens")
-    .description("Manage tokens created by older versions of Gauge Agents");
+    .description(
+      "Older Gauge Agents tokens (for org API keys, use `gauge api-keys`)",
+    );
 
   tokens
     .command("list")
@@ -677,16 +679,29 @@ export function register(program: Command): void {
 
   tokens
     .command("create <name>")
-    .description("Create an API token (the secret is shown exactly once)")
+    .description(
+      "Create an older Agents token; use `gauge api-keys create` for org API keys",
+    )
     .option("--expires-in <duration>", "e.g. 90d, 12h, or never", "never")
     .action(
       async (name: string, opts: { expiresIn: string }, command: Command) => {
         const output = resolveOutput(command);
-        if (resolveToken()?.startsWith("gauge_cli_"))
+        const kind = credentialKind();
+        if (kind === "session")
           throw new CliError(
             "forbidden",
-            "You can't create this older type of Agents token with your current login.",
-            { hint: "For scripts and CI, create an organization API key in Settings → API Keys and set GAUGE_API_TOKEN." },
+            "`gauge auth tokens create` makes an older type of Agents token that your login can't create.",
+            {
+              hint: `For scripts and CI, create an organization API key instead: gauge api-keys create ${JSON.stringify(name)} --access write. Then set it as GAUGE_API_TOKEN.`,
+            },
+          );
+        if (kind === "api_key")
+          throw new CliError(
+            "forbidden",
+            "API keys can't create tokens or other API keys.",
+            {
+              hint: "Sign in as a person with `gauge auth login` (unset GAUGE_API_TOKEN first if it holds this key), then run `gauge api-keys create`.",
+            },
           );
         const expiresAt = parseExpiresIn(opts.expiresIn);
         const created = await createClient().post<CreateTokenResponse>(
