@@ -24,7 +24,12 @@ const summary = (overrides: Record<string, unknown> = {}) => ({
 
 function useApi(
   t: TestContext,
-  options: { items?: unknown[]; secret?: string | null } = {},
+  options: {
+    items?: unknown[];
+    secret?: string | null;
+    /** The status the preview endpoint answers with (default 200). */
+    previewStatus?: number;
+  } = {},
 ) {
   const saved = {
     token: process.env.GAUGE_API_TOKEN,
@@ -58,6 +63,17 @@ function useApi(
       const method = init?.method ?? "GET";
       const body = init?.body ? JSON.parse(String(init.body)) : undefined;
       calls.push({ method, path, body });
+      if (path.endsWith("/preview")) {
+        if (options.previewStatus && options.previewStatus !== 200)
+          return new Response("", { status: options.previewStatus });
+        return Response.json({
+          handle: body.handle,
+          builtIn: null,
+          allowedHosts: [body.host, ...(body.additionalHosts ?? [])],
+          credentialKey: body.credentialKey ?? "API_VENDOR_EXAMPLE_API_KEY",
+          basicPasswordKey: body.paired ? "API_VENDOR_EXAMPLE_API_KEY_PASSWORD" : null,
+        });
+      }
       if (method === "GET")
         return Response.json({ items: options.items ?? [summary()] });
       if (method === "DELETE")
@@ -144,36 +160,127 @@ describe("gauge connections rotate", () => {
   });
 });
 
+const created = (api: { calls: Call[] }) =>
+  api.calls.filter((c) => c.method === "POST" && c.path === base);
+
 describe("gauge connections add", () => {
-  it("adds a built-in profile connection", async (t) => {
+  it("previews the hosts and environment variable, then sends the key", async (t) => {
     const api = useApi(t);
-    await gauge(["add", "--handle", "gh", "--profile", "github"]);
-    assert.deepEqual(api.calls[0], {
-      method: "POST",
-      path: base,
-      body: { handle: "gh", profileSlug: "github", credential: SECRET },
-    });
+    await gauge(["add", "vendor", "--host", "api.vendor.example"]);
+    assert.deepEqual(api.calls, [
+      {
+        method: "POST",
+        path: `${base}/preview`,
+        body: { handle: "vendor", host: "api.vendor.example" },
+      },
+      {
+        method: "POST",
+        path: base,
+        body: {
+          handle: "vendor",
+          host: "api.vendor.example",
+          credential: SECRET,
+        },
+      },
+    ]);
+    // The preview never carries the value.
+    assert.ok(!JSON.stringify(api.calls[0].body).includes(SECRET));
   });
 
-  it("adds a Basic built-in profile connection with --username", async (t) => {
+  it("sends several exact hosts and a chosen environment variable", async (t) => {
     const api = useApi(t);
     await gauge([
       "add",
-      "--handle",
-      "x",
-      "--profile",
-      "vendor",
-      "--username",
-      "me",
+      "gauge",
+      "--host",
+      "agents.example.com",
+      "--host",
+      "app.example.com",
+      "--env",
+      "GAUGE_API_TOKEN",
     ]);
-    assert.deepEqual(api.calls[0].body.credential, {
-      username: "me",
-      password: SECRET,
+    assert.deepEqual(created(api)[0].body, {
+      handle: "gauge",
+      host: "agents.example.com",
+      additionalHosts: ["app.example.com"],
+      credentialKey: "GAUGE_API_TOKEN",
+      credential: SECRET,
     });
   });
 
+  it("leaves a known vendor's host to Gauge to recognize", async (t) => {
+    const api = useApi(t);
+    await gauge(["add", "gh", "--host", "api.github.com"]);
+    assert.deepEqual(created(api)[0].body, {
+      handle: "gh",
+      host: "api.github.com",
+      credential: SECRET,
+    });
+  });
+
+  it("sends a Basic username and password pair", async (t) => {
+    const api = useApi(t, { secret: " pass word " });
+    await gauge([
+      "add",
+      "mux",
+      "--host",
+      "api.vendor.example",
+      "--username",
+      "me",
+    ]);
+    assert.equal(api.calls[0].body.paired, true);
+    assert.deepEqual(created(api)[0].body, {
+      handle: "mux",
+      host: "api.vendor.example",
+      credential: { username: "me", password: " pass word " },
+    });
+  });
+
+  it("still adds when the server has no preview", async (t) => {
+    for (const previewStatus of [404, 405]) {
+      const api = useApi(t, { previewStatus });
+      await gauge(["add", "vendor", "--host", "api.vendor.example"]);
+      assert.equal(created(api).length, 1);
+    }
+  });
+
+  it("stops before reading the key when the preview refuses", async (t) => {
+    const api = useApi(t, { previewStatus: 400 });
+    await assert.rejects(
+      gauge(["add", "vendor", "--host", "api.vendor.example"]),
+    );
+    assert.equal(created(api).length, 0);
+  });
+
+  it("accepts the deprecated --handle in place of the name", async (t) => {
+    const api = useApi(t);
+    await gauge(["add", "--handle", "vendor", "--host", "api.vendor.example"]);
+    assert.equal(created(api)[0].body.handle, "vendor");
+  });
+
+  it("keeps the deprecated --profile for one release, with a warning", async (t) => {
+    const api = useApi(t);
+    const warnings: string[] = [];
+    t.mock.method(process.stderr, "write", (chunk: unknown) => {
+      warnings.push(String(chunk));
+      return true;
+    });
+    await gauge(["add", "gh", "--profile", "github"]);
+    assert.deepEqual(api.calls, [
+      {
+        method: "POST",
+        path: base,
+        body: { handle: "gh", profileSlug: "github", credential: SECRET },
+      },
+    ]);
+    assert.match(warnings.join(""), /--profile is deprecated/);
+  });
+
   for (const [args, auth] of [
-    [[], { style: "bearer" }],
+    [
+      ["--auth", "bearer"],
+      { style: "bearer" },
+    ],
     [
       ["--auth", "header", "--header-name", "X-Api-Key"],
       { style: "header", headerName: "X-Api-Key" },
@@ -194,17 +301,10 @@ describe("gauge connections add", () => {
       { style: "query", queryParam: "api_key" },
     ],
   ] as const) {
-    it(`adds a custom host with ${auth.style} auth`, async (t) => {
+    it(`adds a host with ${auth.style} auth`, async (t) => {
       const api = useApi(t);
-      await gauge([
-        "add",
-        "--handle",
-        "vendor",
-        "--host",
-        "api.vendor.example",
-        ...args,
-      ]);
-      assert.deepEqual(api.calls[0].body, {
+      await gauge(["add", "vendor", "--host", "api.vendor.example", ...args]);
+      assert.deepEqual(created(api)[0].body, {
         handle: "vendor",
         host: "api.vendor.example",
         auth,
@@ -214,52 +314,106 @@ describe("gauge connections add", () => {
   }
 
   for (const [label, args, message] of [
-    ["neither --profile nor --host", [], /exactly one/],
+    ["no name", ["--host", "api.vendor.example"], /Name the connection/],
     [
-      "both --profile and --host",
-      ["--profile", "github", "--host", "api.vendor.example"],
-      /exactly one/,
+      "two different names",
+      ["vendor", "--handle", "other", "--host", "api.vendor.example"],
+      /Name the connection once/,
+    ],
+    ["no host", ["vendor"], /--host/],
+    [
+      "an invalid environment variable",
+      ["vendor", "--host", "api.vendor.example", "--env", "lower-case"],
+      /--env/,
     ],
     [
       "an unsupported auth style",
-      ["--host", "api.vendor.example", "--auth", "path"],
+      ["vendor", "--host", "api.vendor.example", "--auth", "path"],
       /Unknown --auth/,
     ],
     [
       "header auth without a header name",
-      ["--host", "api.vendor.example", "--auth", "header"],
+      ["vendor", "--host", "api.vendor.example", "--auth", "header"],
       /--header-name/,
     ],
     [
       "a header name without header auth",
-      ["--host", "api.vendor.example", "--header-name", "X-Key"],
+      ["vendor", "--host", "api.vendor.example", "--header-name", "X-Key"],
       /requires --auth header/,
     ],
     [
       "query auth without a parameter",
-      ["--host", "api.vendor.example", "--auth", "query"],
+      ["vendor", "--host", "api.vendor.example", "--auth", "query"],
       /--query-param/,
     ],
     [
-      "host options with --profile",
-      ["--profile", "github", "--auth", "header"],
-      /apply only to --host/,
+      "--username with a non-Basic style",
+      [
+        "vendor",
+        "--host",
+        "api.vendor.example",
+        "--auth",
+        "bearer",
+        "--username",
+        "me",
+      ],
+      /HTTP Basic/,
     ],
     [
-      "--username with --host",
-      ["--host", "api.vendor.example", "--username", "me"],
-      /only to --profile/,
+      "--auth basic without --username",
+      ["vendor", "--host", "api.vendor.example", "--auth", "basic"],
+      /requires --username/,
+    ],
+    [
+      "--profile with --host",
+      ["vendor", "--profile", "github", "--host", "api.vendor.example"],
+      /deprecated/,
     ],
   ] as const) {
     it(`rejects ${label} without a request`, async (t) => {
       const api = useApi(t);
-      await assert.rejects(
-        gauge(["add", "--handle", "vendor", ...args]),
-        message,
-      );
+      await assert.rejects(gauge(["add", ...args]), message);
       assert.equal(api.calls.length, 0);
     });
   }
+
+  it("never says profile in its help", () => {
+    const root = new Command();
+    register(root);
+    const add = root.commands
+      .find((c) => c.name() === "connections")
+      ?.commands.find((c) => c.name() === "add");
+    assert.ok(add);
+    assert.doesNotMatch(add.helpInformation(), /profile|--handle/i);
+  });
+});
+
+describe("gauge connections list", () => {
+  it("shows name, hosts, environment variable, kind, and last four", async (t) => {
+    const api = useApi(t);
+    const root = new Command()
+      .option("--org <org>")
+      .option("--hosted")
+      .option("--local")
+      .option("-o, --output <format>")
+      .exitOverride();
+    register(root);
+    await root.parseAsync(
+      ["--org", ORG_ID, "--hosted", "-o", "table", "connections", "list"],
+      { from: "user" },
+    );
+    const table = api.output.join("\n");
+    for (const text of [
+      "vendor",
+      "api.vendor.example",
+      "VENDOR_API_KEY",
+      "static",
+      "····1234",
+    ])
+      assert.ok(table.includes(text), `${text} in\n${table}`);
+    // The old vendor/profile column (profileLabel "Vendor") is gone.
+    assert.doesNotMatch(table, /\bVendor\b|profile/);
+  });
 });
 
 describe("gauge connections delete", () => {

@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### Changed
+
+- `gauge connections add <name> --host <host>` names a connection by the
+  exact hosts its key may be sent to. Repeat `--host` for a key that more
+  than one host accepts. `--env <VAR>` sets the environment variable agents
+  see. Otherwise one is derived from the host, and `add` prints the hosts and
+  the variable before it asks for the key. Built-in vendors such as GitHub
+  are recognized from the host. `--username` now works with `--host`
+  (HTTP Basic), with the password variable shown in the preview.
+- On a terminal, `add` and `rotate` read the key or password at a hidden
+  prompt that finishes on Enter. Nothing typed or pasted is echoed. Piped
+  stdin and `GAUGE_CONNECTION_SECRET` work as before.
+- `gauge connections list` shows each connection's name, hosts, environment
+  variable, kind, and the last four characters of its key. JSON output is
+  unchanged.
+
+### Deprecated
+
+- `gauge connections add --profile <slug>` and `--handle <name>` still work
+  for this release but are hidden from help. Pass the vendor's host with
+  `--host` and the name as an argument instead.
+
 ## 0.34.0 — 2026-11-19
 
 ### Added
