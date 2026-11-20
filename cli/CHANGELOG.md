@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- `gauge run archive <ids...>` archives finished runs, and
+  `gauge run unarchive <ids...>` restores them. Archived runs are hidden from
+  run lists and excluded from analytics. Archiving more than one run asks for
+  confirmation; pass `--yes` to skip it.
+- `gauge run list --include-archived` includes archived runs and marks them
+  `(archived)`. `gauge run get` shows when a run was archived.
+
 ### Changed
 
 - `gauge connections add <name> --host <host>` names a connection by the
