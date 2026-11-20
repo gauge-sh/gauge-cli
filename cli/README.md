@@ -677,18 +677,25 @@ part of the saved version: include it when appending an authenticated version.
 
 ### Managing connections
 
-A connection is a stored credential that hosted sessions use to call a vendor
-API or MCP server. Values are write-only: commands read them from stdin or the
-`GAUGE_CONNECTION_SECRET` environment variable, never from an argument, and
-responses show only the last four characters.
+A connection is a stored key plus the exact hosts it may be sent to. Hosted
+sessions use it to call a vendor API or MCP server, and agents only ever see
+a placeholder in an environment variable. Values are write-only. On a
+terminal, commands read them at a hidden prompt that finishes on Enter.
+Otherwise they read stdin or the `GAUGE_CONNECTION_SECRET` environment
+variable, never an argument. Responses show only the last four characters.
 
 ```sh
-# A built-in vendor profile
-gauge connections add --hosted --handle gh --profile github < token.txt
+# Any HTTPS host; the default bearer presentation fits most APIs
+gauge connections add vendor --host api.example.com
 
-# Any other HTTPS host: bearer (default), a named header, or a query parameter
-gauge connections add --hosted --handle vendor --host api.example.com \
+# A key more than one host accepts, with the variable agents see
+gauge connections add gauge --host agents.example.com --host app.example.com \
+  --env GAUGE_API_TOKEN
+
+# A named header, a query parameter, or HTTP Basic (password read like a key)
+gauge connections add vendor --host api.example.com \
   --auth header --header-name X-Api-Key < key.txt
+gauge connections add mux --host api.mux.com --username "$TOKEN_ID"
 
 # Replace the stored value (name or id); HTTP Basic takes --username
 gauge connections rotate --hosted vendor < new-key.txt
@@ -697,10 +704,27 @@ gauge connections rotate --hosted vendor < new-key.txt
 gauge connections delete --hosted vendor --yes
 ```
 
-`--header-prefix "Token "` puts text before the value in the header, and
-`--auth query --query-param api_key` sends it as a query parameter. Connections
-authorized with OAuth cannot be rotated; renew them in place with
-`gauge connections reauthorize <handle-or-id> --hosted` instead (see below).
+A coding agent's shell has no terminal, so it cannot reach the hidden prompt.
+An agent should give the user the exact `gauge connections add ...` or
+`rotate` command to run in a separate terminal of their own, not ask for the
+key. Avoid running it through the agent's own shell, even with a passthrough
+such as a `!` prefix, because that output lands in the conversation. Without
+a terminal and with nothing on stdin, `add` and `rotate` stop with an error
+and save nothing.
+
+`add` prints the hosts and the environment variable before it reads the key.
+Without `--env`, the variable is derived from the host. The hosts you pass
+are the hosts stored: Gauge never adds a host you did not name. When they are
+exactly a built-in vendor's hosts, for example GitHub's
+`--host api.github.com --host github.com`, the built-in vendor backs the
+connection and agents see its variable (`GITHUB_TOKEN`); the preview says so.
+`--env` with a different variable stores a separate key instead, for example
+a second GitHub token. A run cannot attach two connections that share an environment
+variable. `--header-prefix "Token "` puts text before the value in the
+header, and `--auth query --query-param api_key` sends it as a query
+parameter. Connections authorized with OAuth cannot be rotated; renew them in
+place with `gauge connections reauthorize <handle-or-id> --hosted` instead (see
+below).
 
 If the server requires manual client registration, the command prints the
 callback URL. Retry with `--oauth-client-id <id>` and, if needed,
