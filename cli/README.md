@@ -704,12 +704,22 @@ gauge connections rotate --hosted vendor < new-key.txt
 gauge connections delete --hosted vendor --yes
 ```
 
+A coding agent's shell has no terminal, so it cannot reach the hidden prompt.
+An agent should give the user the exact `gauge connections add ...` or
+`rotate` command to run in a separate terminal of their own, not ask for the
+key. Avoid running it through the agent's own shell, even with a passthrough
+such as a `!` prefix, because that output lands in the conversation. Without
+a terminal and with nothing on stdin, `add` and `rotate` stop with an error
+and save nothing.
+
 `add` prints the hosts and the environment variable before it reads the key.
-Without `--env`, the variable is derived from the host. Built-in vendors
-such as GitHub (`--host api.github.com`) are recognized from the host and use
-their reviewed hosts and variable (`GITHUB_TOKEN`). Passing `--env` or `--auth`
-for such a host stores a separate key instead, for example a second GitHub
-token. A run cannot attach two connections that share an environment
+Without `--env`, the variable is derived from the host. The hosts you pass
+are the hosts stored: Gauge never adds a host you did not name. When they are
+exactly a built-in vendor's hosts, for example GitHub's
+`--host api.github.com --host github.com`, the built-in vendor backs the
+connection and agents see its variable (`GITHUB_TOKEN`); the preview says so.
+`--env` with a different variable stores a separate key instead, for example
+a second GitHub token. A run cannot attach two connections that share an environment
 variable. `--header-prefix "Token "` puts text before the value in the
 header, and `--auth query --query-param api_key` sends it as a query
 parameter. Connections authorized with OAuth cannot be rotated; renew them in

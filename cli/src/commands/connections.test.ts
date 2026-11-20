@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { Readable } from "node:stream";
 import { describe, it, type TestContext } from "node:test";
 import { Command } from "commander";
 import { CONNECTION_SECRET_ENV, register } from "./connections";
@@ -29,6 +30,8 @@ function useApi(
     secret?: string | null;
     /** The status the preview endpoint answers with (default 200). */
     previewStatus?: number;
+    /** Overrides for the preview answer. */
+    preview?: Record<string, unknown>;
   } = {},
 ) {
   const saved = {
@@ -72,6 +75,7 @@ function useApi(
           allowedHosts: [body.host, ...(body.additionalHosts ?? [])],
           credentialKey: body.credentialKey ?? "API_VENDOR_EXAMPLE_API_KEY",
           basicPasswordKey: body.paired ? "API_VENDOR_EXAMPLE_API_KEY_PASSWORD" : null,
+          ...options.preview,
         });
       }
       if (method === "GET")
@@ -86,7 +90,7 @@ function useApi(
   return { calls, output };
 }
 
-async function gauge(args: string[]) {
+async function gauge(args: string[], output = "json") {
   const root = new Command()
     .option("--org <org>")
     .option("--hosted")
@@ -95,12 +99,33 @@ async function gauge(args: string[]) {
     .exitOverride();
   register(root);
   await root.parseAsync(
-    ["--org", ORG_ID, "--hosted", "-o", "json", "connections", ...args],
+    ["--org", ORG_ID, "--hosted", "-o", output, "connections", ...args],
     { from: "user" },
   );
 }
 
 const base = `/api/v1/orgs/${ORG_ID}/connections`;
+
+/** Replace stdin with a non-terminal stream holding `chunks`. */
+function pipeStdin(t: TestContext, chunks: string[]) {
+  const saved = Object.getOwnPropertyDescriptor(process, "stdin");
+  Object.defineProperty(process, "stdin", {
+    configurable: true,
+    value: Readable.from(chunks),
+  });
+  t.after(() => {
+    if (saved) Object.defineProperty(process, "stdin", saved);
+  });
+}
+
+function captureStderr(t: TestContext): string[] {
+  const lines: string[] = [];
+  t.mock.method(process.stderr, "write", (chunk: unknown) => {
+    lines.push(String(chunk));
+    return true;
+  });
+  return lines;
+}
 
 describe("gauge connections rotate", () => {
   it("resolves a name through the list and sends the value from the environment", async (t) => {
@@ -234,6 +259,63 @@ describe("gauge connections add", () => {
       host: "api.vendor.example",
       credential: { username: "me", password: " pass word " },
     });
+  });
+
+  it("fails fast with no terminal and nothing on stdin, saving nothing", async (t) => {
+    const api = useApi(t, { secret: null });
+    pipeStdin(t, []);
+    const stderr = captureStderr(t);
+    await assert.rejects(
+      gauge(["add", "vendor", "--host", "api.vendor.example"]),
+      (error: { message: string; hint?: string }) => {
+        assert.match(error.message, /No key on stdin, and stdin is not a terminal/);
+        assert.match(error.message, /Nothing was saved/);
+        assert.match(error.hint ?? "", /your own terminal/);
+        return true;
+      },
+    );
+    assert.deepEqual(created(api), []);
+    assert.match(stderr.join(""), /Reading the key for vendor from stdin/);
+  });
+
+  it("reads a key piped on stdin when there is no terminal", async (t) => {
+    const api = useApi(t, { secret: null });
+    pipeStdin(t, [`${SECRET}\n`]);
+    const stderr = captureStderr(t);
+    await gauge(["add", "vendor", "--host", "api.vendor.example"]);
+    assert.equal(created(api)[0].body.credential, SECRET);
+    assert.ok(!stderr.join("").includes(SECRET));
+  });
+
+  it("rejects a whitespace-only password with no terminal", async (t) => {
+    const api = useApi(t, { secret: null });
+    pipeStdin(t, ["  \n"]);
+    captureStderr(t);
+    await assert.rejects(
+      gauge(["add", "mux", "--host", "api.vendor.example", "--username", "me"]),
+      /No password on stdin/,
+    );
+    assert.deepEqual(created(api), []);
+  });
+
+  it("says when a built-in vendor backs the connection", async (t) => {
+    useApi(t, {
+      preview: {
+        builtIn: "GitHub",
+        allowedHosts: ["api.github.com", "github.com"],
+        credentialKey: "GITHUB_TOKEN",
+      },
+    });
+    const stderr = captureStderr(t);
+    await gauge(
+      ["add", "gh", "--host", "api.github.com", "--host", "github.com"],
+      "table",
+    );
+    const text = stderr.join("");
+    assert.match(text, /Uses Gauge's built-in GitHub vendor/);
+    assert.match(text, /Sent only to: api\.github\.com, github\.com/);
+    assert.match(text, /Agents see: +GITHUB_TOKEN/);
+    assert.ok(!text.includes(SECRET));
   });
 
   it("still adds when the server has no preview", async (t) => {

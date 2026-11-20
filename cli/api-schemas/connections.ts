@@ -103,9 +103,8 @@ const hostConnectionShape = {
   /** Defaults to the host. */
   displayName: z.string().min(1).max(60).optional(),
   /**
-   * How the host receives the credential. Omitted means "recognize a built-in
-   * vendor from the hosts, otherwise bearer" (or Basic for a username/password
-   * pair).
+   * How the host receives the credential. Omitted means bearer (or Basic for
+   * a username/password pair).
    */
   auth: connectionHostAuthSchema.optional(),
   /** The environment variable agents see. Omitted means derived. */
@@ -117,7 +116,10 @@ const hostConnectionShape = {
 /**
  * POST /api/v1/orgs/{org}/connections. A custom host (`host`, plus how it
  * takes the credential), or the deprecated `profileSlug` for a built-in vendor.
- * A host that belongs to a built-in vendor is recognized from the host.
+ * When the request names exactly a built-in vendor's hosts and nothing that
+ * disagrees with it, that built-in backs the connection; otherwise the
+ * requested hosts and environment variable are stored as given. The response's
+ * profileLabel, and the preview's builtIn, say which.
  */
 export const createConnectionBodySchema = z.union([
   z
@@ -153,7 +155,7 @@ export type PreviewConnectionBody = z.infer<typeof previewConnectionBodySchema>;
 export const connectionPreviewSchema = z
   .object({
     handle: z.string(),
-    /** The built-in vendor recognized from the hosts, or null. */
+    /** The built-in vendor that would back this connection, or null. */
     builtIn: z.string().nullable(),
     allowedHosts: z.array(z.string()),
     credentialKey: z.string(),

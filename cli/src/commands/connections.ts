@@ -44,12 +44,16 @@ async function readSecret(
     const env = process.env[CONNECTION_SECRET_ENV];
     if (env?.trim()) return what === "key" ? env.trim() : env;
   }
+  const prompt = Boolean(process.stdin.isTTY);
   let data: string;
-  if (process.stdin.isTTY) {
+  if (prompt) {
     data = await readHiddenLine(
       `${what === "key" ? "Key" : "Password"} for ${name} (hidden, press Enter): `,
     );
   } else {
+    // Say what is being waited on, so a caller whose stdin is an open pipe
+    // nobody writes to sees why the command has not finished.
+    process.stderr.write(`Reading the ${what} for ${name} from stdin.\n`);
     process.stdin.setEncoding("utf8");
     data = "";
     for await (const chunk of process.stdin) data += chunk;
@@ -60,7 +64,14 @@ async function readSecret(
   if (!secret.trim()) {
     throw new CliError(
       "usage",
-      `No ${what} provided. Enter it at the prompt, pipe it to stdin (e.g. \`gauge connections rotate <name> < secret.txt\`), or set ${CONNECTION_SECRET_ENV}.`,
+      prompt
+        ? `No ${what} entered. Nothing was saved.`
+        : `No ${what} on stdin, and stdin is not a terminal, so there is no prompt to type it at. Nothing was saved.`,
+      {
+        hint: prompt
+          ? `Run the command again and type or paste the ${what} at the prompt, or pipe it to stdin, or set ${CONNECTION_SECRET_ENV}.`
+          : `Run this command in your own terminal to enter the ${what} at a hidden prompt, or pipe it in from a file or secret manager with --stdin. An agent should ask the user to run it, not ask for the ${what}.`,
+      },
     );
   }
   return secret;
@@ -256,7 +267,10 @@ function describePreview(preview: connections.ConnectionPreview): string {
     ? `${preview.credentialKey} (username) and ${preview.basicPasswordKey} (password)`
     : preview.credentialKey;
   return [
-    `Adding "${preview.handle}"${preview.builtIn ? ` (${preview.builtIn})` : ""}.`,
+    `Adding "${preview.handle}".`,
+    ...(preview.builtIn
+      ? [`  Uses Gauge's built-in ${preview.builtIn} vendor.`]
+      : []),
     `  Sent only to: ${preview.allowedHosts.join(", ")}`,
     `  Agents see:   ${env}${preview.builtIn ? "" : "  (set --env to change)"}`,
   ].join("\n");
@@ -329,7 +343,7 @@ export function register(program: Command): void {
     )
     .option(
       "--auth <style>",
-      `how the host receives the key: ${AUTH_STYLES.join("|")} (default bearer; known vendors such as GitHub are recognized from the host)`,
+      `how the host receives the key: ${AUTH_STYLES.join("|")} (default bearer)`,
     )
     .option("--header-name <name>", "header to send (with --auth header)")
     .option(
