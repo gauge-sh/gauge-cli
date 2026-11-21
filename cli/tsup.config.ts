@@ -1,4 +1,4 @@
-import { cpSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { defineConfig } from "tsup";
 
@@ -20,7 +20,7 @@ function packageDir(from: string, name: string): string {
 // Third-party packages are bundled into dist (they are devDependencies, which
 // tsup does not externalize), so the published package has no dependencies
 // and installs without resolving any. The license notices of every bundled
-// package, and of the packages those bundle in turn, ship alongside.
+// package, and of the packages those depend on, ship alongside.
 const bundledLicenses = {
   name: "bundled-licenses",
   setup(build: {
@@ -53,6 +53,7 @@ const bundledLicenses = {
           if (!file) throw new Error(`No license file for bundled ${name}`);
           return `${name}@${version} (${license ?? "see below"})\n\n${readFileSync(join(dir, file), "utf8").trim()}\n`;
         });
+      mkdirSync("dist", { recursive: true });
       writeFileSync(
         "dist/THIRD_PARTY_LICENSES.txt",
         `Third-party packages bundled into this distribution.\n\n${notices.join(`\n${"-".repeat(72)}\n\n`)}`,

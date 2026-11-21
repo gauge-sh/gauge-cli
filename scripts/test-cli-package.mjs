@@ -59,7 +59,7 @@ try {
   for (const { path } of archive.files) {
     assert.match(path, /^(?:package\.json|README\.md|LICENSE|dist\/THIRD_PARTY_LICENSES\.txt|dist\/[\w.-]+\.js|dist\/watch\/[\w.-]+\.(?:html|css|js|svg|png))$/, `Unexpected CLI artifact: ${path}`);
     const content = await readFile(join(installed, path), "utf8");
-    // URL-64 is a locale string in a bundled third-party package.
+    // "URL-64" appears in zod's bundled Esperanto locale messages.
     assert.doesNotMatch(content,
       /github\.com\/gauge-sh\/(?!gauge-cli(?:[\/."\s]|$)|gauge-skills(?:[\/."\s]|$))[\w.-]+|@[\w-]+\/api-schemas|\b(?!URL-64\b)[A-Z]{2,}-\d{2,}\b|\/api\/(?:v1\/)?admin(?:\/|\b)|\/(?:home|Users)\/(?!node\/)[A-Za-z0-9_][\w.-]*\//,
       `Private or staff-only reference in public CLI artifact: ${path}`);
