@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,6 +22,24 @@ try {
   assert.ok(
     archive.files.some(({ path }) => path === "dist/telemetryWorker.js"),
   );
+  // Runtime packages are bundled into dist: the tarball alone is the CLI.
+  const unpacked = join(temporary, "unpacked");
+  await mkdir(unpacked);
+  await exec("tar", ["-xzf", join(temporary, archive.filename), "-C", unpacked]);
+  const manifest = JSON.parse(
+    await readFile(join(unpacked, "package/package.json"), "utf8"),
+  );
+  for (const field of ["dependencies", "optionalDependencies", "peerDependencies"])
+    assert.deepEqual(manifest[field] ?? {}, {}, `CLI package declares ${field}`);
+  const standalone = await exec(
+    process.execPath,
+    [join(unpacked, "package/dist/index.js"), "--version"],
+    {
+      cwd: unpacked,
+      env: { PATH: process.env.PATH, HOME: unpacked, GAUGE_TELEMETRY_DISABLED: "1" },
+    },
+  );
+  assert.equal(standalone.stdout.trim(), manifest.version);
   await writeFile(
     join(temporary, "package.json"),
     '{"private":true,"type":"module"}',
@@ -39,10 +57,11 @@ try {
   );
   const installed = join(temporary, "node_modules/@withgauge/cli");
   for (const { path } of archive.files) {
-    assert.match(path, /^(?:package\.json|README\.md|LICENSE|dist\/[\w.-]+\.js|dist\/watch\/[\w.-]+\.(?:html|css|js|svg|png))$/, `Unexpected CLI artifact: ${path}`);
+    assert.match(path, /^(?:package\.json|README\.md|LICENSE|dist\/THIRD_PARTY_LICENSES\.txt|dist\/[\w.-]+\.js|dist\/watch\/[\w.-]+\.(?:html|css|js|svg|png))$/, `Unexpected CLI artifact: ${path}`);
     const content = await readFile(join(installed, path), "utf8");
+    // URL-64 is a locale string in a bundled third-party package.
     assert.doesNotMatch(content,
-      /github\.com\/gauge-sh\/(?!gauge-cli(?:[\/."\s]|$)|gauge-skills(?:[\/."\s]|$))[\w.-]+|@[\w-]+\/api-schemas|\b[A-Z]{2,}-\d{2,}\b|\/api\/(?:v1\/)?admin(?:\/|\b)|\/(?:home|Users)\/(?!node\/)[A-Za-z0-9_][\w.-]*\//,
+      /github\.com\/gauge-sh\/(?!gauge-cli(?:[\/."\s]|$)|gauge-skills(?:[\/."\s]|$))[\w.-]+|@[\w-]+\/api-schemas|\b(?!URL-64\b)[A-Z]{2,}-\d{2,}\b|\/api\/(?:v1\/)?admin(?:\/|\b)|\/(?:home|Users)\/(?!node\/)[A-Za-z0-9_][\w.-]*\//,
       `Private or staff-only reference in public CLI artifact: ${path}`);
     if (path.endsWith(".js"))
       assert.doesNotMatch(content, /^\s*\/\/\s*(?:src\/|api-schemas\/|\.\.\/packages\/)/m,
