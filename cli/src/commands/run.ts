@@ -19,7 +19,9 @@ import {
 } from "../lib/localLifecycle";
 import { join, relative } from "node:path";
 import {
+  type ArchiveRunsResponse,
   type CancelRunResponse,
+  MAX_ARCHIVE_RUNS,
   type InsightPass,
   type RegradeRunResponse,
   type RunCompareResponse,
@@ -136,7 +138,7 @@ function toRow(run: RunListItem) {
   const observed = run.observedProvider?.slug;
   return {
     id: run.id,
-    status: run.status,
+    status: run.archivedAt ? `${run.status} (archived)` : run.status,
     agent: run.agent,
     model: run.modelDisplayName ?? run.resolvedModel ?? run.model,
     provider:
@@ -256,7 +258,45 @@ function detailLines(run: RunDetail): [string, string][] {
     ["Created", run.createdAt],
     ["Started", run.startedAt ?? "—"],
     ["Finished", run.finishedAt ?? "—"],
+    ...(run.archivedAt
+      ? ([["Archived", run.archivedAt]] as [string, string][])
+      : []),
   ];
+}
+
+async function setRunsArchived(
+  command: Command,
+  ids: string[],
+  archived: boolean,
+  yes: boolean | undefined,
+): Promise<void> {
+  const runIds = [...new Set(ids)];
+  if (archived && runIds.length > 1)
+    await confirmOrAbort(`Archive ${runIds.length} runs?`, yes);
+  const org = await resolveOrg(command);
+  const client = createClient();
+  const runs: ArchiveRunsResponse["runs"] = [];
+  for (let i = 0; i < runIds.length; i += MAX_ARCHIVE_RUNS) {
+    const result = await client.post<ArchiveRunsResponse>(
+      `/api/v1/orgs/${encodeURIComponent(org)}/runs/archive`,
+      { runIds: runIds.slice(i, i + MAX_ARCHIVE_RUNS), archived },
+    );
+    runs.push(...result.runs);
+  }
+  if (resolveOutput(command) === "json") {
+    printJson({ runs });
+    return;
+  }
+  for (const run of runs)
+    console.log(
+      run.archivedAt
+        ? `Run ${run.id}: archived at ${run.archivedAt}`
+        : `Run ${run.id}: unarchived`,
+    );
+  if (archived)
+    console.log(
+      "Archived runs are hidden from `gauge run list` (pass --include-archived) and from analytics.",
+    );
 }
 
 function passLine(label: string, pass: InsightPass): string {
@@ -1321,7 +1361,11 @@ export function register(program: Command): void {
   run.hook("preAction", (parent, action) => {
     if (action === parent) return;
     const allowed =
-      action.name() === "list" ? ["eval", "preference", "agent"] : [];
+      action.name() === "list"
+        ? ["eval", "preference", "agent"]
+        : action.name() === "archive"
+          ? ["yes"]
+          : [];
     const stray = Object.entries(parent.opts())
       .filter(
         ([key, value]) =>
@@ -1357,6 +1401,7 @@ export function register(program: Command): void {
     .option("--prompt <id>", "filter by prompt")
     .option("--experiment <experiment>", "filter by experiment label")
     .option("--since <window>", "e.g. 24h, 7d, or an ISO date")
+    .option("--include-archived", "include archived runs")
     .option("--agent <agent>", "filter by agent (local only)")
     .option("--model <model>", "filter by model (local only)")
     .option(
@@ -1374,6 +1419,7 @@ export function register(program: Command): void {
         prompt?: string;
         experiment?: string;
         since?: string;
+        includeArchived?: boolean;
         agent?: string | string[];
         model?: string;
         unanalyzed?: boolean;
@@ -1387,10 +1433,15 @@ export function register(program: Command): void {
       const output = resolveOutput(command);
       const state = gaugeState(command);
       if (state.mode === "local") {
-        if (opts.prompt || opts.experiment || opts.cursor)
+        if (
+          opts.prompt ||
+          opts.experiment ||
+          opts.cursor ||
+          opts.includeArchived
+        )
           throw new CliError(
             "usage",
-            "Local run list does not support --prompt, --experiment, or --cursor. Use --eval or --preference to select a saved measurement.",
+            "Local run list does not support --prompt, --experiment, --cursor, or --include-archived. Use --eval or --preference to select a saved measurement.",
           );
         const items = state.root
           ? listLocalRuns(join(state.root, ".gauge"), {
@@ -1426,6 +1477,7 @@ export function register(program: Command): void {
           opts.prompt !== undefined && "--prompt",
           opts.experiment !== undefined && "--experiment",
           opts.since !== undefined && "--since",
+          opts.includeArchived && "--include-archived",
         ].filter(Boolean);
         if (filters.length > 0)
           throw new CliError(
@@ -1445,6 +1497,7 @@ export function register(program: Command): void {
           experiment: opts.experiment,
           evalSet: opts.eval,
           since: opts.since,
+          includeArchived: opts.includeArchived ? "true" : undefined,
           limit: opts.limit,
           cursor: opts.cursor,
         },
@@ -1631,6 +1684,27 @@ export function register(program: Command): void {
       );
       console.log("Verdicts land on the run; `gauge run get <id>` to check.");
     });
+
+  hostedOnly(run.command("archive <ids...>"))
+    .description(
+      "Archive finished runs: hidden from run lists and excluded from analytics",
+    )
+    .option("--yes", "skip the confirmation")
+    .action(async (ids: string[], _opts: unknown, command: Command) =>
+      // `run` also defines --yes, so the parent may consume it.
+      setRunsArchived(
+        command,
+        ids,
+        true,
+        command.optsWithGlobals<{ yes?: boolean }>().yes,
+      ),
+    );
+
+  hostedOnly(run.command("unarchive <ids...>"))
+    .description("Restore archived runs to run lists and analytics")
+    .action(async (ids: string[], _opts: unknown, command: Command) =>
+      setRunsArchived(command, ids, false, true),
+    );
 
   registerRunFork(run);
 

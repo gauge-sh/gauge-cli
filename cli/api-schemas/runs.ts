@@ -94,6 +94,7 @@ export const runListQuerySchema = listQuerySchema.extend({
   experiment: z.string().optional(),
   evalSet: z.string().optional(),
   since: z.string().optional(),
+  includeArchived: z.stringbool().optional(),
 });
 export type RunListQuery = z.infer<typeof runListQuerySchema>;
 
@@ -124,6 +125,7 @@ export const runListItemSchema = z.object({
   finishedAt: z.string().nullable(),
   parentRunId: z.string().nullable(),
   fetchForkPlanId: z.string().nullable(),
+  archivedAt: z.string().nullable().optional(),
 });
 export type RunListItem = z.infer<typeof runListItemSchema>;
 
@@ -202,6 +204,21 @@ export const regradeRunResponseSchema = z.object({
   criteria: z.number().int(),
 });
 export type RegradeRunResponse = z.infer<typeof regradeRunResponseSchema>;
+
+export const MAX_ARCHIVE_RUNS = 200;
+
+export const archiveRunsRequestSchema = z.object({
+  runIds: z.array(z.string().min(1)).min(1).max(MAX_ARCHIVE_RUNS),
+  archived: z.boolean(),
+});
+export type ArchiveRunsRequest = z.infer<typeof archiveRunsRequestSchema>;
+
+export const archiveRunsResponseSchema = z.object({
+  runs: z.array(
+    z.object({ id: z.string(), archivedAt: z.string().nullable() }),
+  ),
+});
+export type ArchiveRunsResponse = z.infer<typeof archiveRunsResponseSchema>;
 
 export const RUN_INSIGHT_STATUSES = [
   "PENDING",
