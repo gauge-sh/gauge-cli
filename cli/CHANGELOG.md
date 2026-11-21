@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.35.0 — 2026-11-20
+
 ### Added
 
 - `gauge run archive <ids...>` archives finished runs, and
