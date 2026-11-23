@@ -1,7 +1,10 @@
 import { readCliRules } from "../lib/cliRules";
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { z } from "zod";
-import { analysisSubmissionSchema } from "@withgauge/api-schemas/sessionAnalysis";
+import {
+  analysisSubmissionSchema,
+  type SessionOutlineSection,
+} from "@withgauge/api-schemas/sessionAnalysis";
 import {
   localDirectory,
   localMeasurementSpec,
@@ -324,6 +327,16 @@ const INSTALLED: Record<string, string> = {
 
 const check = (value: boolean) => (value ? "yes" : "");
 
+export function outlineLines(sections: SessionOutlineSection[]): string[] {
+  const ranges = sections.map((s) =>
+    s.seqStart === s.seqEnd ? `${s.seqStart}` : `${s.seqStart}-${s.seqEnd}`,
+  );
+  const width = Math.max(...ranges.map((r) => r.length));
+  return sections.map(
+    (s, i) => `  seq ${ranges[i].padEnd(width)}  ${s.title}`,
+  );
+}
+
 function printInsight(insight: RunInsightResponse, recorded = false): void {
   for (const pass of insight.passes) {
     console.log(passLine(PASS_LABELS[pass.kind] ?? pass.kind, pass));
@@ -339,6 +352,14 @@ function printInsight(insight: RunInsightResponse, recorded = false): void {
   }
   if (analysis.limitation)
     console.log(`\n${compact(analysis.limitation, 200)}`);
+
+  if (analysis.outline?.length) {
+    console.log("\nOutline");
+    for (const line of outlineLines(analysis.outline)) console.log(line);
+    console.log(
+      `  Read one part: gauge run trace ${insight.runId} --seq <first seq> --before 0 --after <count>`,
+    );
+  }
 
   console.log(`\nFindings (${analysis.observations.length})`);
   for (const finding of analysis.observations) {
