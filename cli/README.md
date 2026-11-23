@@ -102,6 +102,7 @@ Publication validates the versioned schema, criterion coverage, and evidence
 references, then saves findings, product choices, and criterion judgments in one
 transaction. Reanalysis creates a revision and updates the current analysis.
 `run insight` leads with Friction, Objections, and Opportunities in either backend.
+For a hosted run it first prints the outline: the parts of the session in order, each with its seq range.
 A Markdown file alone does not mark a session analyzed. Unknown future schema
 versions produce an upgrade error without altering saved data. Database schema
 migrations preserve analyses and never silently reinterpret old judgments.

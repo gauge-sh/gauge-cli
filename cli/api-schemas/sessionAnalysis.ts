@@ -74,6 +74,14 @@ export const sessionObservationSchema = z.object({
 });
 export type SessionObservation = z.infer<typeof sessionObservationSchema>;
 
+export const sessionOutlineSectionSchema = z.object({
+  title: z.string(),
+  seqStart: z.number().int(),
+  seqEnd: z.number().int(),
+  outcome: z.string().nullable(),
+});
+export type SessionOutlineSection = z.infer<typeof sessionOutlineSectionSchema>;
+
 export const sessionAnalysisSchema = z.object({
   schemaVersion: z.literal(ANALYSIS_SCHEMA_VERSION),
   instructionsVersion: z.string().min(1),
@@ -89,6 +97,8 @@ export const sessionAnalysisSchema = z.object({
   directed: z.boolean(),
   products: z.array(sessionProductSchema),
   observations: z.array(sessionObservationSchema),
+  // Absent from a server that predates outlines.
+  outline: z.array(sessionOutlineSectionSchema).nullable().optional(),
 });
 export type SessionAnalysis = z.infer<typeof sessionAnalysisSchema>;
 

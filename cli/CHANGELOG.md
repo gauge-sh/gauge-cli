@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+
+- `gauge run insight <id>` prints the session outline for a hosted run: the
+  parts of the session in order, each with its seq range. `--json` includes it
+  as `analysis.outline`. A run without an outline prints as before.
+
 ## 0.35.0 — 2026-11-20
 
 ### Added
