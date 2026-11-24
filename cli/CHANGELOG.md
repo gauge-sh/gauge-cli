@@ -21,6 +21,10 @@
 
 ### Changed
 
+- The published package bundles its runtime dependencies and declares none,
+  so installing it resolves no other packages and the unpacked tarball runs
+  as is. License notices for the bundled packages ship in
+  `dist/THIRD_PARTY_LICENSES.txt`.
 - `gauge connections add <name> --host <host>` names a connection by the
   exact hosts its key may be sent to. Repeat `--host` for a key that more
   than one host accepts. `--env <VAR>` sets the environment variable agents

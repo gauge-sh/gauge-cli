@@ -36,17 +36,15 @@
     "test": "tsx --test src/**/*.test.ts scripts/*.test.mjs",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {
+  "devDependencies": {
+    "@types/node": "^22",
     "commander": "^15.0.0",
     "minimatch": "^10.2.6",
     "tar": "^7.5.22",
-    "yaml": "^2.9.1",
-    "zod": "^4.4.3"
-  },
-  "devDependencies": {
-    "@types/node": "^22",
     "tsup": "^8.5.1",
     "tsx": "^4.22.4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "yaml": "^2.9.1",
+    "zod": "^4.4.3"
   }
 }
