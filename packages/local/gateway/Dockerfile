@@ -5,6 +5,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends iptables \
 COPY --chmod=0755 entrypoint.sh /gateway/entrypoint.sh
 COPY fixtures.py health.py /gateway/
 LABEL sh.gauge.contract="gateway-1"
+LABEL sh.gauge.connections="1"
 HEALTHCHECK --interval=1s --timeout=2s --start-period=2s --retries=3 CMD ["python", "/gateway/health.py"]
 ENTRYPOINT ["/gateway/entrypoint.sh"]
 CMD []

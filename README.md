@@ -94,7 +94,8 @@ Hillclimbing means making a change, measuring whether it helped, and repeating.
    and injects the working-tree version of your configured inputs.
    Each test agent sees the task and configured inputs within its sandbox.
    Local mode supports Skills, SDKs, CLIs, and files. Hosted compute adds support for
-   docs, authenticated MCPs, and authenticated APIs.
+   docs, authenticated MCPs, and managed connections. Local authenticated APIs
+   can use [gateway connections](cli/README.md#local-connection-credentials).
 3. **Find friction.** Gauge normalizes events from Claude Code, Codex, Pi, and
    OpenCode into consistent transcripts. In local mode, your agent reads the evidence,
    checks the outcome against the criteria, and identifies what slowed or

@@ -21,7 +21,7 @@ try {
   const modules = ["credentials", "docker", "driver", "fsAtomic", "gateway", "index", "scripts", "session", "types", "worker", "workspace"];
   assert.deepEqual(packed.files.map((f) => f.path).sort(), [
     "LICENSE", "README.md", "package.json", "image/Dockerfile", "image/gauge-path.sh",
-    ...["Dockerfile", "entrypoint.sh", "fixtures.py", "health.py", "test_fixtures.py"].map(name => `gateway/${name}`),
+    ...["Dockerfile", "entrypoint.sh", "fixtures.py", "health.py", "test_fixtures.py", "test_connections.py"].map(name => `gateway/${name}`),
     ...modules.flatMap((name) => [`dist/${name}.js`, `dist/${name}.d.ts`]),
   ].sort(), "Unexpected local-execution distribution contents");
   for (const { path } of packed.files) {

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import {
   chmod,
+  mkdir,
   mkdtemp,
   readFile,
   readdir,
@@ -42,6 +43,7 @@ async function fakeDocker(t: test.TestContext) {
     imageId: `sha256:${"a".repeat(64)}`,
     output: "GAUGE_RUNTIME_COMPATIBLE\n",
     error: "",
+    connections: "1",
   };
   const stateFile = join(root, "state.json");
   const log = join(root, "calls.jsonl");
@@ -54,7 +56,7 @@ const fs = require('node:fs');
 const args = process.argv.slice(2), state = JSON.parse(fs.readFileSync(${JSON.stringify(stateFile)}, 'utf8'));
 fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');
 if (args[0] === 'version') console.log(JSON.stringify({Os:'linux',Arch:'amd64'}));
-else if (args[0] === 'image') console.log(JSON.stringify([{Id:state.imageId,Os:'linux',Architecture:'amd64',Config:{Labels:{'sh.gauge.contract':'1'}}}]));
+else if (args[0] === 'image') console.log(JSON.stringify([{Id:state.imageId,Os:'linux',Architecture:'amd64',Config:{Labels:{'sh.gauge.contract':args.at(-1).startsWith('gateway:')?'gateway-1':'1','sh.gauge.connections':state.connections}}}]));
 else if (args[0] === 'run') { process.stdout.write(state.output); if(state.error) { process.stderr.write(state.error); process.exitCode = 1; } }
 else if (args[0] !== 'rm') process.exitCode = 1;
 `,
@@ -96,7 +98,6 @@ test("local cases reject hosted settings before credential or runtime preflight"
     ["persona", { name: "Evaluating developer", description: "Done once it reports." }],
     ["skillRefs", ["docs@latest"]],
     ["mcpRefs", ["tools@latest"]],
-    ["connectionIds", ["connection-1"]],
     ["addons", { browser: { session: "test", projectId: 1, region: "us" } }],
   ] as const) {
     const unsupported = {
@@ -398,3 +399,72 @@ test(
     assert.match(stdout, /^Python 3\./);
   },
 );
+
+test("prepared connection batches persist only registry metadata, never header values", async (t) => {
+  const f = await fakeDocker(t);
+  const gaugeDir = join(f.root, ".gauge");
+  await mkdir(gaugeDir, { recursive: true });
+  await writeFile(join(gaugeDir, "connections.yaml"), `version: 1
+connections:
+  - name: example
+    origin: https://api.example.test
+    header: Authorization
+    env: LOCAL_TEST_CONNECTION_SECRET
+`);
+  const prior = process.env.LOCAL_TEST_CONNECTION_SECRET;
+  process.env.LOCAL_TEST_CONNECTION_SECRET = "Bearer fixture-connection-never-persisted";
+  t.after(() => {
+    if (prior === undefined) delete process.env.LOCAL_TEST_CONNECTION_SECRET;
+    else process.env.LOCAL_TEST_CONNECTION_SECRET = prior;
+  });
+  const configured = { ...definition, cases: [{ ...definition.cases[0], config: { ...definition.cases[0].config, connectionIds: ["example"] } }] };
+  const options = { runtimeImage: "custom:test", gatewayImage: "gateway:test", connectionsFile: join(gaugeDir, "connections.yaml") };
+  const ready = await planLocal(configured, options);
+  assert.equal(ready.gateway?.ready, true);
+  assert.equal(ready.connections[0].ready, true);
+  f.state.connections = "";
+  await f.save();
+  const old = await planLocal(configured, options);
+  assert.equal(old.gateway?.ready, false);
+  assert.equal(old.gateway?.problem?.code, "connections_unsupported");
+  assert.equal(old.connections[0].ready, false);
+  await assert.rejects(prepareLocal(configured, [], gaugeDir, options), /does not support local connections/);
+  assert.ok((await f.calls()).every((args) => ["version", "image"].includes(args[0])));
+  f.state.connections = "1";
+  await f.save();
+  const batchId = await prepareLocal(configured, [], gaugeDir, options);
+  const directory = join(gaugeDir, "batches", batchId);
+  const saved = await readFile(join(directory, "gateway.json"), "utf8");
+  assert.deepEqual(JSON.parse(saved).connections["case.md"], [{ name: "example", origin: "https://api.example.test", header: "Authorization", env: "LOCAL_TEST_CONNECTION_SECRET" }]);
+  for (const name of await readdir(directory))
+    assert.equal((await readFile(join(directory, name), "utf8")).includes(process.env.LOCAL_TEST_CONNECTION_SECRET!), false);
+  assert.equal(JSON.stringify(await f.calls()).includes(process.env.LOCAL_TEST_CONNECTION_SECRET!), false);
+  const store = openLocalStore(gaugeDir);
+  try { assert.equal(JSON.stringify(store.getLaunch(batchId)).includes(process.env.LOCAL_TEST_CONNECTION_SECRET!), false); }
+  finally { store.close(); }
+});
+
+test("connection plans warn once for a shared gateway failure and retain credential problems", async (t) => {
+  const f = await fakeDocker(t);
+  f.state.connections = "";
+  await f.save();
+  const connectionsFile = join(f.root, "connections.yaml");
+  await writeFile(connectionsFile, JSON.stringify({ version: 1, connections: ["one", "two"].map((name) => ({
+    name, origin: `https://${name}.example.test`, header: "Authorization", env: "ANTHROPIC_API_KEY",
+  })) }));
+  const configured = { ...definition, cases: [{ ...definition.cases[0], config: {
+    ...definition.cases[0].config, connectionIds: ["one", "two"],
+  } }] };
+  const options = { runtimeImage: "custom:test", gatewayImage: "gateway:test", connectionsFile };
+  const plan = await planLocal(configured, options);
+  const problem = plan.gateway!.problem!;
+  assert.deepEqual(plan.connections.map((connection) => connection.ready), [false, false]);
+  assert.deepEqual(plan.warnings.filter((warning) => warning.includes(problem.message)), [
+    `${problem.message} ${problem.hint}`,
+  ]);
+  delete process.env.ANTHROPIC_API_KEY;
+  const missing = await planLocal(configured, options);
+  assert.equal(missing.warnings.filter((warning) => warning.includes(problem.message)).length, 1);
+  for (const name of ["one", "two"])
+    assert.ok(missing.warnings.includes(`Local connection ${name}: environment variable ANTHROPIC_API_KEY is missing or empty.`));
+});

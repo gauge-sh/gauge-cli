@@ -36,6 +36,7 @@ export function inspectLocalRuntime(
   image = RUNTIME_IMAGE,
   docker: DockerRead = dockerRead,
   manifest: ImageManifest = RUNTIME_MANIFEST,
+  requireConnections = false,
 ): RuntimeInspection {
   const result: RuntimeInspection = {
     reference: image,
@@ -79,12 +80,15 @@ export function inspectLocalRuntime(
   if (!manifest.platforms.includes(result.platform) || server.Os !== details.Os || server.Arch !== details.Architecture)
     return fail("platform_unsupported", `Runtime ${result.platform} is not supported on Docker ${server.Os}/${server.Arch}.`,
       `Supported native Docker platforms: ${manifest.platforms.join(", ")}. Emulation is not qualified.`);
+  if (requireConnections && details.Config?.Labels?.["sh.gauge.connections"] !== "1")
+    return fail("connections_unsupported", "Selected gateway image does not support local connections.",
+      "Build a current gateway image and select it with --gateway-image.");
   result.ready = true;
   return result;
 }
 
-export function requireLocalRuntime(image = RUNTIME_IMAGE, manifest?: ImageManifest): RuntimeInspection & { imageId: string } {
-  const result = inspectLocalRuntime(image, undefined, manifest);
+export function requireLocalRuntime(image = RUNTIME_IMAGE, manifest?: ImageManifest, requireConnections = false): RuntimeInspection & { imageId: string } {
+  const result = inspectLocalRuntime(image, undefined, manifest, requireConnections);
   if (!result.ready) {
     const problem = result.problem!;
     throw new CliError(problem.code === "image_missing" || problem.code === "docker_unavailable" ? "not_found" : "usage", problem.message, { hint: problem.hint });
@@ -100,8 +104,8 @@ export function runtimeProblem(): CliError | undefined {
   }
 }
 
-export const inspectLocalGateway = (image = GATEWAY_IMAGE, docker?: DockerRead) => inspectLocalRuntime(image, docker, gatewayManifest);
-export const requireLocalGateway = (image = GATEWAY_IMAGE) => requireLocalRuntime(image, gatewayManifest);
+export const inspectLocalGateway = (image = GATEWAY_IMAGE, docker?: DockerRead, connections = false) => inspectLocalRuntime(image, docker, gatewayManifest, connections);
+export const requireLocalGateway = (image = GATEWAY_IMAGE, connections = false) => requireLocalRuntime(image, gatewayManifest, connections);
 export const pullLocalGateway = () => pullLocalRuntime(GATEWAY_IMAGE, gatewayManifest);
 
 export async function pullLocalRuntime(image = RUNTIME_IMAGE, manifest: ImageManifest = RUNTIME_MANIFEST): Promise<RuntimeInspection> {

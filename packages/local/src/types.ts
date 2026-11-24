@@ -57,6 +57,7 @@ export interface LaunchRecord {
   credentialExpiresAt?: string;
   workload?: ContainerSpec;
   gatewayName?: string;
+  hasGatewayConnections?: boolean;
   trustContainerName?: string;
 }
 export const terminal = (state: SessionStatus["state"]): boolean =>
