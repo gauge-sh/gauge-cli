@@ -438,6 +438,7 @@ function renderDiff(body) {
 }
 
 function renderView() {
+  if (state.page === "repositories") return;
   var view = document.getElementById("view");
   var old = view.querySelector(".body");
   var atBottom = !old || old.scrollHeight - old.scrollTop - old.clientHeight < 40;
@@ -506,9 +507,170 @@ async function select(id) {
   if (body && state.detail.live) body.scrollTop = body.scrollHeight;
 }
 
+var repositoryToken = 0;
+
+function repositoryTable(headers, rows) {
+  var table = h("table", { class: "repo-table" });
+  var head = h("tr");
+  headers.forEach(function (label) { head.appendChild(h("th", { scope: "col" }, label)); });
+  table.appendChild(h("thead", null, head));
+  var body = h("tbody");
+  rows.forEach(function (cells) {
+    var row = h("tr");
+    cells.forEach(function (cell) { row.appendChild(h("td", null, cell)); });
+    body.appendChild(row);
+  });
+  table.appendChild(body);
+  return h("div", { class: "repo-table-scroll" }, table);
+}
+
+function repositoryLink(url, name) {
+  try {
+    var parsed = new URL(url);
+    if (parsed.protocol === "https:" || parsed.protocol === "http:")
+      return h("a", { href: url, target: "_blank", rel: "noopener noreferrer" }, name || parsed.pathname.replace(/^\//, "").replace(/\.git$/, ""));
+  } catch (e) {}
+  return h("span", null, name || url);
+}
+
+async function repositorySection(element, endpoint, render) {
+  element.textContent = "Loading…";
+  try {
+    var data = await get("/api/repositories/" + endpoint);
+    if (!element.isConnected) return;
+    element.textContent = "";
+    render(element, data);
+  } catch (e) {
+    if (!element.isConnected) return;
+    element.textContent = "Could not load repository data. ";
+    element.appendChild(h("button", { onclick: function () { repositorySection(element, endpoint, render); } }, "Retry"));
+  }
+}
+
+function renderLanguagePie(element, data, bytes) {
+  var sum = data.languages.reduce(function (total, language) { return total + language.value; }, 0);
+  element.appendChild(h("p", { class: "repo-note" }, data.recorded + " of " + data.total + " repositories have recorded " + (bytes ? "language bytes." : "languages. Slice percentages show the share of language occurrences.")));
+  if (!sum) { element.appendChild(h("p", null, "No language data available.")); return; }
+  var stops = [], offset = 0;
+  var legend = h("ul", { class: "pie-legend" });
+  data.languages.forEach(function (language) {
+    var hash = 0;
+    for (var i = 0; i < language.name.length; i++) hash = (hash * 31 + language.name.charCodeAt(i)) | 0;
+    var color = "hsl(" + ((hash >>> 0) % 360) + " 60% 52%)";
+    var end = offset + language.value / sum * 100;
+    stops.push(color + " " + offset + "% " + end + "%");
+    offset = end;
+    var label = language.name + " — " + language.value.toLocaleString() + (bytes ? " bytes" : " repos") + " (" + (language.value / sum * 100).toFixed(1) + "% of chart)";
+    if (!bytes && data.total) label += ", " + (language.value / data.total * 100).toFixed(1) + "% of tracked repos";
+    legend.appendChild(h("li", null, h("span", { class: "pie-key", style: "background:" + color }), label));
+  });
+  element.appendChild(h("div", { class: "pie-layout" }, h("div", { class: "repo-pie", role: "img", "aria-label": bytes ? "Language bytes distribution, values in accompanying legend" : "Language occurrence distribution, values in accompanying legend", style: "background:conic-gradient(" + stops.join(",") + ")" }), legend));
+}
+
+function discoveryDiagram() {
+  function box(kind, title, description) {
+    return h("details", { class: "discovery-box discovery-" + kind },
+      h("summary", null, title), h("p", null, description));
+  }
+  function arrow(direction) {
+    return h("span", { class: "discovery-arrow discovery-arrow-" + (direction === "↓" ? "down" : direction === "←" ? "left" : "right"), "aria-hidden": "true" });
+  }
+  function row(left, phase, right, last, input) {
+    var center = h("div", { class: "discovery-center" }, phase);
+    if (!last) center.appendChild(arrow("↓"));
+    return h("div", { class: "discovery-row" },
+      h("div", { class: "discovery-left" }, left, arrow(input ? "→" : "←")),
+      center,
+      h("div", { class: "discovery-right" }, arrow("→"), right));
+  }
+  var workers = h("div", { class: "discovery-workers" });
+  ["1", "2", "…"].forEach(function (number) {
+    workers.appendChild(h("div", { class: "discovery-worker" },
+      box("phase", "Subagent " + number, "Receive one full README, the run ID, repository URL, README hash, and assigned output path. Write a structured summary of purpose, objectives, intended use, audience, and application type."),
+      arrow("→"),
+      box("file", "Summary JSON", "summaries/<hash-of-lowercase-repo-url>.json — One file per repository. Validate its schema, run ID, URL, and README hash before using it for grouping.")));
+  });
+  var flow = h("div", { class: "discovery-flow", "aria-label": "Canonical repository discovery workflow" },
+    row(
+      box("file", "examples.jsonl", "Collected READMEs and repository metadata. Deduplicate by repository URL and freeze the sample. Pass each README to a subagent, and pass this file to publication to preserve source metadata."),
+      box("phase", "Collect repositories from GitHub using the GitHub API", "Start with the technology definition, qualifying usage, and sample target. Plan a finite search budget, search and enrich pages, and freeze the eligible sample. Eligible repositories are public, have a nonempty README, and have at least 20 commits."),
+      h("div", { class: "discovery-commands" },
+        box("command", "gauge canonical-repos searchGithubExampleCandidates", 'Search one page using a concrete usage signature. Command: gauge canonical-repos searchGithubExampleCandidates --query "<usage signature and qualifiers>" --page 1'),
+        box("command", "gauge canonical-repos getGithubExamples", "Enrich candidate names with README and repository metadata. Command: gauge canonical-repos getGithubExamples --file names.json --output-file examples.jsonl"))),
+    row(
+      box("file", "examples.jsonl", "Input to the parallel subagents. Give each worker one frozen repository's full README and the same summary instructions."),
+      box("phase", "Use parallel subagents to turn READMEs into a comparable structure", "Run as many ephemeral subagents in parallel as the environment allows, one README per assignment. Describe purpose and use in technology-neutral terms. Reuse validated summaries and replace missing or stale ones."),
+      workers, false, true),
+    row(
+      box("file", "canonicals.json", "The group definitions passed to publication. Save the full list after each revision, initially with Readme set to null. Every frozen repository must have exactly one group assignment."),
+      box("phase", "Define groups of repositories based on common intent", "Use the summaries to group shared user tasks and desired outcomes into 5–10 nonempty groups. Present the membership and sample shares for review. Obtain explicit user approval before drafting READMEs or publishing. A list-only request ends here."),
+      h("div", { class: "discovery-approval" }, "User approval before publication")),
+    row(
+      box("file", ".gauge/gauge.sqlite", "The permanent local catalog. Successful publication saves canonical names, URLs and descriptions, shared source metadata, and associations in canonical_repos, source_repos, and canonical_repo_sources."),
+      box("phase", "Create GitHub repositories for each defined group and save them in the local store", "Draft an original README for each approved group, describing its users, objectives, and representative workflow. Apply publication review, publish one group at a time, report the URLs, and remove the completed run's temporary directory."),
+      box("command", "gauge canonical-repos flush-canonical-repos", 'Publish one approved group and save it locally. Command: gauge canonical-repos flush-canonical-repos --file canonicals.json --name "<one approved group name>" --examples-file examples.jsonl'), true));
+  return h("div", { class: "discovery-section" },
+    h("hr"), h("h2", null, "Canonical Repository Workflow"),
+    h("p", { class: "repo-note" }, "Run ", h("code", null, "gauge instructions canonical-repo-discovery"), " to teach your agent how to run this workflow."),
+    h("div", { class: "discovery-legend" }, h("span", { class: "discovery-phase" }, "Phases and subagents"), h("span", { class: "discovery-command" }, "Commands"), h("span", { class: "discovery-file" }, "Files")),
+    h("div", { class: "discovery-scroll", tabindex: "0", role: "region", "aria-label": "Scrollable discovery diagram" }, flow));
+}
+
+function showRepositories(page) {
+  var view = document.getElementById("view");
+  var token = ++repositoryToken;
+  view.textContent = "";
+  var canonical = h("div"), counts = h("div"), bytes = h("div", null, "Waiting for language counts…"), sources = h("div");
+  view.appendChild(h("div", { class: "repositories-page" },
+    h("h1", null, "Canonical repositories"),
+    h("p", { class: "repo-note" }, "Explore canonical repositories and the tracked repositories associated with each one. Share of voice is the percentage of all tracked repositories associated with a canonical repository, higher share of voice means signals more important or common. A tracked repository can be associated with more than one canonical repository."),
+    canonical,
+    h("div", { class: "language-charts" },
+      h("div", null, h("h2", null, "Repositories by language"), counts),
+      h("div", null, h("h2", null, "Code bytes by language"), bytes)), sources, discoveryDiagram()));
+  repositorySection(canonical, "canonical", function (element, data) {
+    if (!data.repositories.length) { element.textContent = "No canonical repositories recorded."; return; }
+    element.appendChild(repositoryTable(["Name", "Description", "Associated repositories", "Share of voice"], data.repositories.map(function (repo) {
+      return [repositoryLink(repo.url, repo.name), repo.description, String(repo.count), repo.share.toFixed(1) + "%"];
+    })));
+  });
+  repositorySection(counts, "language-counts", function (element, data) { renderLanguagePie(element, data, false); }).then(function () {
+    // Give the first chart a paint before starting the heavier byte aggregation.
+    requestAnimationFrame(function () { setTimeout(function () {
+      if (token === repositoryToken && state.page === "repositories")
+        repositorySection(bytes, "language-bytes", function (element, data) { renderLanguagePie(element, data, true); });
+    }, 0); });
+  });
+  repositorySection(sources, "sources?page=" + page, function (element, data) {
+    element.appendChild(h("h2", null, h("strong", null, data.total.toLocaleString() + " total repos tracked")));
+    element.appendChild(h("p", { class: "repo-note" }, "Real-life, publicly available repositories that this study is based on."));
+    element.appendChild(repositoryTable(["Name", "Commits", "Language bytes"], data.repositories.map(function (repo) {
+      return [repositoryLink(repo.url), repo.commits == null ? "Unknown" : String(repo.commits), h("code", { class: "language-json" }, repo.languageBytes == null ? "Unknown" : repo.languageBytes)];
+    })));
+    var pages = Math.max(1, Math.ceil(data.total / data.pageSize));
+    var pagination = h("div", { class: "repo-pagination" });
+    if (data.page > 1) pagination.appendChild(h("a", { href: "#/canonical-repositories?page=" + (data.page - 1) }, "Previous"));
+    pagination.appendChild(h("span", null, "Page " + data.page + " of " + pages));
+    if (data.page < pages) pagination.appendChild(h("a", { href: "#/canonical-repositories?page=" + (data.page + 1) }, "Next"));
+    element.appendChild(pagination);
+  });
+}
+
 function route() {
   var parts = location.hash.split("?");
   var p = new URLSearchParams(parts[1] || "");
+  state.page = parts[0] === "#/canonical-repositories" ? "repositories" : "sessions";
+  document.body.classList.toggle("show-repositories", state.page === "repositories");
+  document.getElementById("sessions-nav").setAttribute("aria-current", state.page === "sessions" ? "page" : "false");
+  document.getElementById("repositories-nav").setAttribute("aria-current", state.page === "repositories" ? "page" : "false");
+  if (state.page === "repositories") {
+    state.selected = null; state.detail = null; state.traceToken++;
+    stale = false; listStale = false;
+    var page = Number(p.get("page") || 1);
+    showRepositories(Number.isSafeInteger(page) && page > 0 ? page : 1);
+    return;
+  }
+  repositoryToken++;
   var status = p.get("status");
   state.filter = STATUSES.some(function (f) { return f[0] === status; }) ? status : "all";
   state.query = p.get("q") || "";
@@ -531,7 +693,7 @@ async function tick() {
       renderFilters();
       listStale = true;
     }
-    if (state.detail) {
+    if (state.page === "sessions" && state.detail) {
       var row = state.sessions.find(function (s) { return s.id === state.selected; });
       var wasLive = state.detail.live;
       var id = state.selected;
@@ -556,7 +718,7 @@ async function tick() {
 }
 
 function flush() {
-  if (pressing) return;
+  if (pressing || state.page === "repositories") return;
   if (listStale) { listStale = false; renderList(); }
   if (stale) { stale = false; renderView(); }
 }

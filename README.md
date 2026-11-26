@@ -113,6 +113,46 @@ artifacts in the test sessions, so you can validate a fix before publishing it.
 The CLI handles execution and evidence collection. In local mode, your coding agent authors
 the changes and analyzes the local results.
 
+## Canonical repositories
+
+Canonical repositories describe representative applications and workflows drawn
+from real projects using a technology. Each canonical contains a technology-neutral
+README with the application's users, objectives, and representative workflow.
+These descriptions can guide later evals or preference tasks.
+
+Ask your coding agent to discover canonical repositories for a technology and
+load the workflow instructions:
+
+```sh
+gauge instructions canonical-repo-discovery
+```
+
+The workflow searches GitHub for usage examples, collects public repositories
+with a nonempty README and at least 20 commits, summarizes their purpose, and
+groups them by shared use. It targets 200 eligible repositories by default and
+keeps resumable progress under `.gauge/canonical-repo-discovery/`.
+You review the proposed groups before approving README drafting and publication.
+You can also request just the group proposal.
+
+The underlying commands run locally and use `GAUGE_GITHUB_TOKEN` or the credential
+saved by `gauge auth provide-gh-token`:
+
+```sh
+gauge canonical-repos searchGithubExampleCandidates --query "<GitHub code search query>" --page 1 > names.json
+gauge canonical-repos getGithubExamples --file names.json --output-file examples.jsonl
+```
+
+Search returns one page of repository names as JSON. Enrichment appends eligible
+examples to a JSONL file. After your agent prepares `canonicals.json` using the
+workflow's schema and you approve the groups, publish each selected group:
+
+```sh
+gauge canonical-repos flush-canonical-repos --file canonicals.json --name "<approved group name>" --examples-file examples.jsonl
+```
+
+Publication creates a public README-only repository under the authenticated
+GitHub account and records its source associations in the local Gauge catalog.
+
 ## A closer look at an eval
 
 Saved evals and preference prompts live in `.gauge/gauge.sqlite` locally or in

@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Repository README summary",
+  "description": "Write one JSON object per assigned repository. Base every descriptive field on the supplied README. Use plain language about the project's purpose and users. Omit specific technologies, programming languages, frameworks, libraries and vendors from all descriptive fields. Copy the source identifiers exactly as supplied. Use null for an unknown scalar and [] for an unknown list.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "runId", "repoUrl", "readmeSha256", "about", "objectives", "intendedUse", "audience", "applicationType"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1,
+      "description": "Write 1 to identify this summary format."
+    },
+    "runId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Copy the discovery run ID from the assignment so the main agent can collect summaries from the same run."
+    },
+    "repoUrl": {
+      "type": "string",
+      "pattern": "^https://github\\.com/[A-Za-z0-9-]+/[A-Za-z0-9_.-]+$",
+      "description": "Copy the source repository URL from the assigned example. Preserve its name even when it contains a technology name."
+    },
+    "readmeSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Copy the supplied SHA-256 digest of the source README. It identifies the exact text summarized."
+    },
+    "about": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "description": "Describe in one sentence what the project does and the problem it addresses. Use null if the README does not establish this."
+    },
+    "objectives": {
+      "$ref": "#/$defs/list",
+      "description": "List the outcomes the project aims to achieve. Each item should answer why someone would use it."
+    },
+    "intendedUse": {
+      "$ref": "#/$defs/list",
+      "description": "List the concrete tasks someone can perform with the project. Start each item with a verb."
+    },
+    "audience": {
+      "$ref": "#/$defs/list",
+      "description": "List the user roles, teams or organizations the README identifies as intended users."
+    },
+    "applicationType": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "description": "Give one short product category that captures how the application is used, such as scheduling tool or reporting dashboard. Use null when the category is unclear."
+    }
+  },
+  "$defs": {
+    "list": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "examples": [
+    {
+      "schemaVersion": 1,
+      "runId": "b4b493b7-6438-448e-95fd-729041281c1d",
+      "repoUrl": "https://github.com/example/shift-board",
+      "readmeSha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "about": "The project helps volunteer coordinators fill open shifts at community events.",
+      "objectives": ["Reduce unstaffed shifts at events."],
+      "intendedUse": ["Post open shifts.", "Sign up for a shift.", "Review the staffing schedule."],
+      "audience": ["Volunteer coordinators", "Event volunteers"],
+      "applicationType": "Scheduling tool"
+    }
+  ]
+}

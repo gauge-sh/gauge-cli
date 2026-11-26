@@ -13,6 +13,77 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { openLocalStore } from "./localStore";
 
+test("version 4 removes source READMEs while preserving metadata and associations", () => {
+  const root = mkdtempSync(join(tmpdir(), "gauge-source-readme-"));
+  let store = openLocalStore(root);
+  try {
+    assert.equal(store.db.prepare("PRAGMA table_info(source_repos)").all()
+      .some(column => column.name === "readme"), false);
+    store.db.exec(`
+      ALTER TABLE source_repos ADD COLUMN readme TEXT;
+      PRAGMA user_version = 3;
+      INSERT INTO canonical_repos VALUES ('canonical-a', 'A', 'First');
+      INSERT INTO canonical_repos VALUES ('canonical-b', 'B', 'Second');
+      INSERT INTO source_repos (url,languages,commit_count,language_bytes,default_branch,head_sha,readme)
+        VALUES ('source', '["TypeScript"]', 25, '{"TypeScript":100}', 'main', 'revision', 'Large README');
+      INSERT INTO canonical_repo_sources VALUES ('canonical-a', 'source');
+      INSERT INTO canonical_repo_sources VALUES ('canonical-b', 'source');
+    `);
+    const { readme, ...expected } = store.db.prepare("SELECT * FROM source_repos").get()!;
+    const links = store.db.prepare("SELECT * FROM canonical_repo_sources ORDER BY canonical_url").all();
+    store.close();
+    store = openLocalStore(root);
+    assert.equal(store.db.prepare("PRAGMA user_version").get()!.user_version, 4);
+    assert.equal(store.db.prepare("PRAGMA table_info(source_repos)").all()
+      .some(column => column.name === "readme"), false);
+    assert.deepEqual({ ...store.db.prepare("SELECT * FROM source_repos").get() }, expected);
+    assert.deepEqual(store.db.prepare("SELECT * FROM canonical_repo_sources ORDER BY canonical_url").all(), links);
+    assert.deepEqual(store.db.prepare("PRAGMA foreign_key_check").all(), []);
+  } finally {
+    store.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("canonical source migration deduplicates repositories and preserves many-to-many links", () => {
+  const root = mkdtempSync(join(tmpdir(), "gauge-canonical-migration-"));
+  let store = openLocalStore(root);
+  try {
+    store.db.exec(`
+      DROP TABLE canonical_repo_sources;
+      DROP TABLE source_repos;
+      ALTER TABLE canonical_repos ADD COLUMN "source-repos" TEXT NOT NULL DEFAULT '[]';
+      PRAGMA user_version = 2;
+    `);
+    const insert = store.db.prepare('INSERT INTO canonical_repos VALUES (?,?,?,?)');
+    insert.run("https://github.com/example/canonical-a", "A", "First",
+      JSON.stringify(["https://github.com/example/shared", "https://github.com/example/other"]));
+    insert.run("https://github.com/example/canonical-b", "B", "Second",
+      JSON.stringify(["https://github.com/EXAMPLE/SHARED"]));
+    store.close();
+    store = openLocalStore(root);
+    assert.equal(store.db.prepare("SELECT count(*) AS n FROM source_repos").get()!.n, 2);
+    assert.equal(store.db.prepare("SELECT count(*) AS n FROM canonical_repo_sources").get()!.n, 3);
+    assert.equal(store.db.prepare("SELECT count(*) AS n FROM source_repos WHERE languages IS NULL").get()!.n, 2);
+    assert.equal(store.db.prepare("PRAGMA table_info(canonical_repos)").all()
+      .some(column => column.name === "source-repos"), false);
+    assert.deepEqual(store.db.prepare("PRAGMA foreign_key_check").all(), []);
+    assert.throws(() => store.db.prepare("INSERT INTO canonical_repo_sources VALUES (?,?)")
+      .run("https://github.com/example/canonical-a", "https://github.com/EXAMPLE/SHARED"), /UNIQUE/);
+    assert.throws(() => store.db.prepare("INSERT INTO canonical_repo_sources VALUES (?,?)")
+      .run("https://github.com/example/canonical-a", "https://github.com/example/missing"), /FOREIGN KEY/);
+    store.db.prepare("DELETE FROM canonical_repos WHERE name = ?").run("A");
+    assert.equal(store.db.prepare("SELECT count(*) AS n FROM source_repos").get()!.n, 2);
+    assert.equal(store.db.prepare("SELECT count(*) AS n FROM canonical_repo_sources").get()!.n, 1);
+    store.close();
+    store = openLocalStore(root);
+    assert.equal(store.db.prepare("SELECT count(*) AS n FROM canonical_repo_sources").get()!.n, 1);
+  } finally {
+    store.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("opening SQLite suppresses only its import notice and restores warning delivery", (t) => {
   const root = mkdtempSync(join(tmpdir(), "gauge-store-warnings-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));

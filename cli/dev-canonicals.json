@@ -1,0 +1,14 @@
+[
+  {
+    "name": "Gauge Demo Event Analytics",
+    "repos": ["https://github.com/Swetrix/swetrix"],
+    "description": "A dashboard for understanding how visitors interact with a website.",
+    "Readme": "# Event Analytics\n\nThis example describes a dashboard for website operators. An operator selects a date range to see which pages visitors opened and which actions they completed.\n\n## Example task\n\nCompare this week's sign-ups with last week's and identify the pages where the most sign-ups started.\n"
+  },
+  {
+    "name": "Gauge Demo Customer Messaging",
+    "repos": ["https://github.com/laudspeaker/laudspeaker"],
+    "description": "A tool for planning customer messages around actions people take in a product.",
+    "Readme": "# Customer Messaging\n\nThis example describes a tool for customer success teams. A team defines an audience, chooses a message, and schedules it around a customer action.\n\n## Example task\n\nSend a welcome message after sign-up and schedule a reminder for customers who have yet to finish onboarding.\n"
+  }
+]

@@ -2,6 +2,7 @@
 import { Command, CommanderError, Help, Option } from "commander";
 import { fileURLToPath } from "node:url";
 import * as auth from "./commands/auth";
+import * as canonicalRepos from "./commands/canonicalRepos";
 import * as billing from "./commands/billing";
 import * as brands from "./commands/brands";
 import * as chat from "./commands/chat";
@@ -92,6 +93,7 @@ program.configureOutput({ outputError: () => {} });
 
 for (const group of [
   instructions,
+  canonicalRepos,
   localRuntime,
   cleanup,
   update,

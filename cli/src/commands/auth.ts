@@ -29,6 +29,7 @@ import {
 } from "../lib/identity";
 import { credentialKind } from "../lib/orgDirectory";
 import { readConfig, updateConfig } from "../lib/config";
+import { githubCredentialsPath, saveGithubToken } from "../lib/githubCredentials";
 import { hostedOnly, resolveOutput } from "../lib/context";
 import {
   clearToken,
@@ -541,6 +542,20 @@ export function register(program: Command): void {
   const auth = hostedOnly(program.command("auth"), {
     account: true,
   }).description("Authenticate the CLI");
+
+  auth
+    .command("provide-gh-token")
+    .description("Save a GitHub token for this CLI (reads stdin; GAUGE_GITHUB_TOKEN overrides the saved token)")
+    .action(async () => {
+      if (process.stdin.isTTY) console.error("Paste your GitHub token, then press Enter:");
+      const token = (await readStdin()).trim();
+      if (!token || /\s/.test(token))
+        throw new CliError("usage", "Expected a single nonempty GitHub token on stdin");
+      saveGithubToken(token);
+      console.log(`GitHub token saved to ${githubCredentialsPath()}`);
+      if (process.env.GAUGE_GITHUB_TOKEN?.trim())
+        console.error("GAUGE_GITHUB_TOKEN overrides the saved GitHub token. Unset it to use the saved token.");
+    });
 
   auth
     .command("login")
